@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Dashboard</title>
+   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+   <style>
+       .sort-header {
+           color: #888;
+           text-decoration: none;
+       }
+       .sort-header:hover {
+           color: #666;
+       }
+       .timestamp-column {
+           width: 180px;
+       }
+       table thead th {
+           padding: 0.5rem !important;
+       }
+       .webhook-type-buy { 
+           border-left: 4px solid #28a745; 
+       }
+       .webhook-type-sell { 
+           border-left: 4px solid #dc3545; 
+       }
+       .webhook-type-other { 
+           border-left: 4px solid #6c757d; 
+       }
+       .search-container {
+           margin-bottom: 1rem;
+       }
+       .json-compact {
+           white-space: nowrap;
+       }
+       .toggle-json {
+           color: #888;
+           text-decoration: none;
+           padding: 0;
+           border: none;
+       }
+       .toggle-json:hover {
+           color: #666;
+       }
+       .json-pretty {
+            white-space: pre-wrap;
+            display: none;
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 0.5rem;
+            position: relative;
+        }
+        td > div {
+            min-height: 1.5em;
+            position: relative;
+        }
+        .table td {
+            max-width: 0;
+            overflow: visible;
+        }
+        .payload-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+   </style>
+</head>
+<body class="bg-light">
+   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+       <div class="container">
+           <a class="navbar-brand" href="#">Webhook Manager</a>
+           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+               <span class="navbar-toggler-icon"></span>
+           </button>
+           <div class="collapse navbar-collapse" id="navbarNav">
+               <ul class="navbar-nav me-auto">
+                   <li class="nav-item">
+                       <a class="nav-link active" href="{{ url_for('dashboard.dashboard') }}">Dashboard</a>
+                   </li>
+                   <li class="nav-item">
+                       <a class="nav-link" href="{{ url_for('dashboard.settings') }}">Settings</a>
+                   </li>
+                   {% if session.get('is_admin') %}
+                   <li class="nav-item">
+                       <a class="nav-link" href="{{ url_for('dashboard.users') }}">Users</a>
+                   </li>
+                   {% endif %}
+               </ul>
+               <ul class="navbar-nav">
+                   <li class="nav-item">
+                       <a class="nav-link" href="{{ url_for('auth.logout') }}">Logout</a>
+                   </li>
+               </ul>
+           </div>
+       </div>
+   </nav>
+
+   <div class="container mt-4">
+       <div class="row">
+           <div class="col-md-12">
+               <div class="card">
+                   <div class="card-header">
+                       <h4>Webhook URL</h4>
+                   </div>
+                   <div class="card-body">
+                       <code>{{ webhook_url }}</code>
+                   </div>
+               </div>
+
+               <div class="card mt-4">
+                   <div class="card-header">
+                       <h4>Webhook Logs</h4>
+                   </div>
+                   <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="search-container">
+                            <input type="text" id="searchInput" class="form-control" placeholder="Search logs...">
+                        </div>
+                        <div>
+                            <button id="exportButton" class="btn btn-secondary me-2">Export to CSV</button>
+                            {% if session.get('is_admin') %}
+                            <button id="clearLogsButton" class="btn btn-danger">Clear Logs</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                       <table class="table" id="webhook-table">
+                           <thead>
+                               <tr>
+                                   <th class="timestamp-column">
+                                       <a href="#" class="sort-header" data-column="timestamp">Timestamp (UTC)</a>
+                                   </th>
+                                   <th>
+                                       <a href="#" class="sort-header" data-column="payload">Payload</a>
+                                   </th>
+                               </tr>
+                           </thead>
+                           <tbody id="logs">
+                               {% for log in logs %}
+                                   {% set entry = log|from_json %}
+                                   <tr class="webhook-type-{{ entry.payload.action|lower if entry.payload.action else 'other' }}">
+                                       <td><div>{{ entry.timestamp }}</div></td>
+                                       <td>
+                                            <div class="payload-container">
+                                                <div>
+                                                    <code class="json-compact">{{ entry.payload|tojson }}</code>
+                                                    <div class="json-pretty"><code>{{ entry.payload|tojson(indent=2) }}</code></div>
+                                                </div>
+                                                <button class="btn btn-sm toggle-json">Expand</button>
+                                            </div>
+                                        </td>
+                                   </tr>
+                               {% endfor %}
+                           </tbody>
+                       </table>
+                   </div>
+               </div>
+           </div>
+       </div>
+   </div>
+
+   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+   <script>
+       const eventSource = new EventSource('/webhook-updates');
+       const logsBody = document.getElementById('logs');
+       let currentSortColumn = 'timestamp';
+       let sortAscending = false;
+
+       function order_json(obj) {
+           if (obj === null) return null;
+           if (typeof obj !== 'object') return obj;
+           if (Array.isArray(obj)) return obj.map(order_json);
+           return Object.keys(obj).sort().reduce((sorted, key) => {
+               sorted[key] = order_json(obj[key]);
+               return sorted;
+           }, {});
+       }
+
+       function getWebhookType(payload) {
+           const action = payload.action?.toLowerCase();
+           if (action?.includes('buy')) return 'buy';
+           if (action?.includes('sell')) return 'sell';
+           return 'other';
+       }
+
+       eventSource.onmessage = function(event) {
+            const entry = JSON.parse(event.data);
+            const row = document.createElement('tr');
+            const orderedPayload = order_json(entry.payload);
+            row.className = `webhook-type-${getWebhookType(entry.payload)}`;
+            row.innerHTML = `
+                <td><div>${entry.timestamp}</div></td>
+                <td>
+                    <div class="payload-container">
+                        <div>
+                            <code class="json-compact">${JSON.stringify(orderedPayload)}</code>
+                            <div class="json-pretty"><code>${JSON.stringify(orderedPayload, null, 2)}</code></div>
+                        </div>
+                        <button class="btn btn-sm toggle-json">Expand</button>
+                    </div>
+                </td>
+            `;
+            if (!sortAscending) {
+                logsBody.insertBefore(row, logsBody.firstChild);
+            } else {
+                logsBody.appendChild(row);
+            }
+            sortTable(); // Add this line to maintain sort order
+        };
+
+       document.getElementById('searchInput').addEventListener('input', function(e) {
+           const searchTerm = e.target.value.toLowerCase();
+           document.querySelectorAll('#logs tr').forEach(row => {
+               const text = row.textContent.toLowerCase();
+               row.style.display = text.includes(searchTerm) ? '' : 'none';
+           });
+       });
+
+       document.getElementById('exportButton').addEventListener('click', function() {
+           const rows = Array.from(document.querySelectorAll('#logs tr'))
+               .filter(row => row.style.display !== 'none');
+           const csv = rows.map(row => {
+               const cols = [row.cells[0].textContent, row.cells[1].querySelector('.json-compact').textContent];
+               return cols.map(col => `"${col.replace(/"/g, '""')}"`).join(',');
+           }).join('\n');
+           
+           const blob = new Blob(['Timestamp,Payload\n' + csv], { type: 'text/csv' });
+           const url = window.URL.createObjectURL(blob);
+           const a = document.createElement('a');
+           a.href = url;
+           a.download = 'webhook_logs.csv';
+           a.click();
+       });
+
+       document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('toggle-json')) {
+                const td = e.target.closest('td');
+                const compact = td.querySelector('.json-compact');
+                const pretty = td.querySelector('.json-pretty');
+                const isExpanded = compact.style.display === 'none';
+                
+                compact.style.display = isExpanded ? 'block' : 'none';
+                pretty.style.display = isExpanded ? 'none' : 'block';
+                e.target.textContent = isExpanded ? 'Expand' : 'Collapse';
+            }
+        });
+
+       document.querySelectorAll('.sort-header').forEach(header => {
+           header.addEventListener('click', function(e) {
+               e.preventDefault();
+               const column = this.dataset.column;
+               if (currentSortColumn === column) {
+                   sortAscending = !sortAscending;
+               } else {
+                   currentSortColumn = column;
+                   sortAscending = true;
+               }
+               sortTable();
+           });
+       });
+
+        function sortTable() {
+            const rows = Array.from(logsBody.getElementsByTagName('tr'));
+            rows.sort((a, b) => {
+                const aVal = currentSortColumn === 'timestamp' ? 
+                    a.cells[0].textContent : 
+                    JSON.stringify(JSON.parse(a.cells[1].querySelector('.json-compact').textContent));
+                const bVal = currentSortColumn === 'timestamp' ? 
+                    b.cells[0].textContent : 
+                    JSON.stringify(JSON.parse(b.cells[1].querySelector('.json-compact').textContent));
+                return sortAscending ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            });
+            while (logsBody.firstChild) {
+                logsBody.removeChild(logsBody.firstChild);
+            }
+            rows.forEach(row => logsBody.appendChild(row));
+        }
+
+        window.addEventListener('DOMContentLoaded', (event) => {
+            sortTable();  // Initial sort
+        });
+
+        {% if session.get('is_admin') %}
+        document.getElementById('clearLogsButton').addEventListener('click', function() {
+            if (confirm('Are you sure you want to clear all logs? This action cannot be undone.')) {
+                fetch('/clear-logs', {
+                    method: 'POST',
+                    credentials: 'same-origin',  // Include session cookies
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        alert('Error: ' + data.error);
+                    } else {
+                        document.getElementById('logs').innerHTML = '';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error clearing logs. Please try again.');
+                });
+            }
+        });
+        {% endif %}
+   </script>
+</body>
+</html>

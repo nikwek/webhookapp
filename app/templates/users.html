@@ -1,40 +1,15 @@
-<!-- users.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Users</title>
+    <title>User Management</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
+    <!-- Navigation bar (same as other pages) -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="#">Webhook Manager</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('dashboard.dashboard') }}">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('dashboard.settings') }}">Settings</a>
-                    </li>
-                    {% if session.get('is_admin') %}
-                    <li class="nav-item">
-                        <a class="nav-link active" href="{{ url_for('dashboard.users') }}">Users</a>
-                    </li>
-                    {% endif %}
-                </ul>
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('auth.logout') }}">Logout</a>
-                    </li>
-                </ul>
-            </div>
-        </div>
+        <!-- ... existing navigation ... -->
     </nav>
 
     <div class="container mt-4">
@@ -47,7 +22,8 @@
                     <thead>
                         <tr>
                             <th>Username</th>
-                            <th>Admin Status</th>
+                            <th>Automations</th>
+                            <th>Last Activity</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -55,14 +31,46 @@
                         {% for user in users %}
                         <tr>
                             <td>{{ user.username }}</td>
-                            <td>{{ "Yes" if user.is_admin else "No" }}</td>
+                            <td>
+                                {% if user.automations %}
+                                    <ul class="list-unstyled mb-0">
+                                    {% for automation in user.automations %}
+                                        <li>
+                                            {{ automation.automation_id }}
+                                            <span class="badge {{ 'bg-success' if automation.is_active else 'bg-secondary' }}">
+                                                {{ 'Active' if automation.is_active else 'Inactive' }}
+                                            </span>
+                                            <button class="btn btn-sm btn-outline-primary view-logs"
+                                                    data-automation-id="{{ automation.automation_id }}">
+                                                View Logs
+                                            </button>
+                                            {% if automation.is_active %}
+                                            <button class="btn btn-sm btn-outline-danger deactivate-automation"
+                                                    data-automation-id="{{ automation.automation_id }}">
+                                                Deactivate
+                                            </button>
+                                            {% endif %}
+                                        </li>
+                                    {% endfor %}
+                                    </ul>
+                                {% else %}
+                                    No automations
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user.last_login %}
+                                    {{ user.last_login.strftime('%Y-%m-%d %H:%M:%S') }}
+                                {% else %}
+                                    Never
+                                {% endif %}
+                            </td>
                             <td>
                                 {% if not user.is_admin %}
-                                <a href="{{ url_for('delete_user', user_id=user.id) }}" 
-                                   class="btn btn-danger btn-sm"
-                                   onclick="return confirm('Are you sure you want to delete this user?')">
-                                    Delete
-                                </a>
+                                <button class="btn btn-danger btn-sm reset-user"
+                                        data-user-id="{{ user.id }}"
+                                        data-username="{{ user.username }}">
+                                    Reset Account
+                                </button>
                                 {% endif %}
                             </td>
                         </tr>
@@ -71,8 +79,103 @@
                 </table>
             </div>
         </div>
+
+        <!-- Modal for viewing logs -->
+        <div class="modal fade" id="logsModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Automation Logs</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="logs-container">
+                            <!-- Logs will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const logsModal = new bootstrap.Modal(document.getElementById('logsModal'));
+        
+        document.querySelectorAll('.view-logs').forEach(button => {
+            button.addEventListener('click', function() {
+                const automationId = this.dataset.automationId;
+                fetch(`/admin/logs/${automationId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const logsContainer = document.querySelector('.logs-container');
+                        logsContainer.innerHTML = ''; // Clear existing logs
+                        
+                        data.logs.forEach(log => {
+                            const logEntry = document.createElement('div');
+                            logEntry.className = 'log-entry mb-3';
+                            logEntry.innerHTML = `
+                                <div class="timestamp text-muted">${log.timestamp}</div>
+                                <pre class="payload bg-light p-2"><code>${JSON.stringify(log.payload, null, 2)}</code></pre>
+                            `;
+                            logsContainer.appendChild(logEntry);
+                        });
+                        
+                        logsModal.show();
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error loading logs');
+                    });
+            });
+        });
+
+        document.querySelectorAll('.deactivate-automation').forEach(button => {
+            button.addEventListener('click', function() {
+                const automationId = this.dataset.automationId;
+                if (confirm('Are you sure you want to deactivate this automation?')) {
+                    fetch(`/admin/deactivate-automation/${automationId}`, {
+                        method: 'POST'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + data.error);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error deactivating automation');
+                    });
+                }
+            });
+        });
+
+        document.querySelectorAll('.reset-user').forEach(button => {
+            button.addEventListener('click', function() {
+                const userId = this.dataset.userId;
+                const username = this.dataset.username;
+                if (confirm(`Are you sure you want to reset ${username}'s account? This will deactivate all automations.`)) {
+                    fetch(`/admin/reset-user/${userId}`, {
+                        method: 'POST'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + data.error);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error resetting user');
+                    });
+                }
+            });
+        });
+    </script>
 </body>
 </html>

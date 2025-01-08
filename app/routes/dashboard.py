@@ -1,12 +1,14 @@
 # app/routes/dashboard.py
 from flask import Blueprint, render_template, session, redirect, url_for, request, Response, jsonify
 from app.models.webhook import WebhookLog
+from app.models.automation import Automation
 from app.models.user import User
 from app import db, bcrypt
 import time, json
 from datetime import datetime, timezone
 
 bp = Blueprint('dashboard', __name__)
+
 def format_timestamp(ts):
     return ts.replace('T', ' ').rstrip('Z')
 
@@ -14,18 +16,18 @@ def format_timestamp(ts):
 def dashboard():
     if not session.get('user_id'):
         return redirect(url_for('auth.login'))
-    webhook_url = f"{request.url_root}webhook"
-    
-    all_logs = WebhookLog.query.order_by(WebhookLog.timestamp.desc()).all()
-    logs = []
-    for log in all_logs:
-        data = {
-            "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),  # Use database timestamp
-            "payload": log.payload
-        }
-        logs.append(json.dumps(data))
 
-    return render_template('dashboard.html', webhook_url=webhook_url, logs=logs)
+    user_automations = Automation.query.filter_by(user_id=session['user_id']).all()
+    automation_ids = [a.automation_id for a in user_automations]
+    
+    logs = WebhookLog.query\
+        .filter(WebhookLog.automation_id.in_(automation_ids))\
+        .order_by(WebhookLog.timestamp.desc())\
+        .all()
+
+    return render_template('dashboard.html', 
+                         automations=user_automations,
+                         logs=logs)
 
 @bp.route('/settings', methods=['GET', 'POST'])
 def settings():
@@ -78,3 +80,25 @@ def clear_logs():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)})
+    
+@bp.route('/create-automation', methods=['POST'])
+def create_automation():
+    if not session.get('user_id'):
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    try:
+        automation = Automation(
+            automation_id=Automation.generate_automation_id(),
+            user_id=session['user_id']
+        )
+        db.session.add(automation)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "automation_id": automation.automation_id
+        })
+    except Exception as e:
+        print(f"Error creating automation: {e}")  # For debugging
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500

@@ -20,10 +20,15 @@ def dashboard():
     user_automations = Automation.query.filter_by(user_id=session['user_id']).all()
     automation_ids = [a.automation_id for a in user_automations]
     
-    logs = WebhookLog.query\
+    webhook_logs = WebhookLog.query\
         .filter(WebhookLog.automation_id.in_(automation_ids))\
         .order_by(WebhookLog.timestamp.desc())\
         .all()
+
+    logs = [json.dumps({
+        "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        "payload": log.payload
+    }) for log in webhook_logs]
 
     return render_template('dashboard.html', 
                          automations=user_automations,
@@ -46,22 +51,34 @@ def users():
 
 @bp.route('/webhook-updates')
 def webhook_updates():
+    user_id = request.args.get('user_id')  # Get user_id outside the generator
+
     def generate():
         from app import create_app
         app = create_app()
+        
         with app.app_context():
             last_id = -1
             while True:
                 try:
-                    logs = WebhookLog.query.filter(WebhookLog.id > last_id).order_by(WebhookLog.timestamp.desc()).all()
-                    if logs:
-                        last_id = max(log.id for log in logs)
-                        for log in logs:
-                            data = {
-                                "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                                "payload": log.payload
-                            }
-                            yield f"data: {json.dumps(data)}\n\n"
+                    if user_id:  # Only proceed if we have a user_id
+                        user_automations = Automation.query.filter_by(user_id=user_id).all()
+                        automation_ids = [a.automation_id for a in user_automations]
+                        
+                        logs = WebhookLog.query\
+                            .filter(WebhookLog.id > last_id)\
+                            .filter(WebhookLog.automation_id.in_(automation_ids))\
+                            .order_by(WebhookLog.timestamp.desc())\
+                            .all()
+                        
+                        if logs:
+                            last_id = max(log.id for log in logs)
+                            for log in logs:
+                                data = {
+                                    "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                                    "payload": log.payload
+                                }
+                                yield f"data: {json.dumps(data)}\n\n"
                 except Exception as e:
                     print(f"Error in webhook updates: {e}")
                 time.sleep(0.5)
@@ -87,8 +104,10 @@ def create_automation():
         return jsonify({"error": "Unauthorized"}), 403
         
     try:
+        data = request.get_json()
         automation = Automation(
             automation_id=Automation.generate_automation_id(),
+            name=data.get('name'),
             user_id=session['user_id']
         )
         db.session.add(automation)
@@ -99,6 +118,76 @@ def create_automation():
             "automation_id": automation.automation_id
         })
     except Exception as e:
-        print(f"Error creating automation: {e}")  # For debugging
+        print(f"Error creating automation: {e}")
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    
+@bp.route('/update-automation-name', methods=['POST'])
+def update_automation_name():
+    if not session.get('user_id'):
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    try:
+        data = request.get_json()
+        automation = Automation.query.filter_by(
+            automation_id=data['automation_id'],
+            user_id=session['user_id']
+        ).first()
+        
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        automation.name = data['name']
+        db.session.commit()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"Error updating automation name: {e}")
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    
+@bp.route('/deactivate-automation/<automation_id>', methods=['POST'])
+def deactivate_automation(automation_id):
+    if not session.get('user_id'):
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    try:
+        automation = Automation.query.filter_by(
+            automation_id=automation_id,
+            user_id=session['user_id']
+        ).first()
+        
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        automation.is_active = False
+        db.session.commit()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"Error deactivating automation: {e}")
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    
+@bp.route('/activate-automation/<automation_id>', methods=['POST'])
+def activate_automation(automation_id):
+    if not session.get('user_id'):
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    try:
+        automation = Automation.query.filter_by(
+            automation_id=automation_id,
+            user_id=session['user_id']
+        ).first()
+        
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        automation.is_active = True
+        db.session.commit()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"Error activating automation: {e}")
         db.session.rollback()
         return jsonify({"error": str(e)}), 500

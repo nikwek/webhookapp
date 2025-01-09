@@ -1,6 +1,7 @@
 # app/routes/webhook.py
 from flask import Blueprint, request, jsonify
 from app.models.webhook import WebhookLog
+from app.models.automation import Automation  # Add this import
 from app import db
 from datetime import datetime, timezone
 import json

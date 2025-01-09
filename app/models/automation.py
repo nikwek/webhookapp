@@ -6,9 +6,11 @@ from datetime import datetime, timezone
 class Automation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     automation_id = db.Column(db.String(8), unique=True, nullable=False)
+    name = db.Column(db.String(100), nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.now(timezone.utc))
     is_active = db.Column(db.Boolean, default=True)
+    user = db.relationship('User', backref=db.backref('automations', lazy=True))
 
     @staticmethod
     def generate_automation_id():

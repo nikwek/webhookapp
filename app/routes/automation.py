@@ -3,9 +3,12 @@
 def create_automation():
     if not session.get('user_id'):
         return jsonify({"error": "Unauthorized"}), 403
+    
+    name = request.json.get('name', 'Unnamed Automation')
         
     automation = Automation(
         automation_id=Automation.generate_automation_id(),
+        name=name,
         user_id=session['user_id']
     )
     db.session.add(automation)

@@ -122,7 +122,7 @@ def create_automation():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
     
-@bp.route('/update-automation-name', methods=['POST'])
+@bp.route('/update_automation_name', methods=['POST'])
 def update_automation_name():
     if not session.get('user_id'):
         return jsonify({"error": "Unauthorized"}), 403
@@ -143,6 +143,30 @@ def update_automation_name():
         return jsonify({"success": True})
     except Exception as e:
         print(f"Error updating automation name: {e}")
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    
+@bp.route('/delete_automation', methods=['POST'])
+def delete_automation():
+    if not session.get('user_id'):
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    try:
+        data = request.get_json()
+        automation = Automation.query.filter_by(
+            automation_id=data['automation_id'],
+            user_id=session['user_id']
+        ).first()
+        
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        db.session.delete(automation)
+        db.session.commit()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"Error deleting automation: {e}")
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
     

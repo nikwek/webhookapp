@@ -1,6 +1,7 @@
 # app/routes/webhook.py
 from flask import Blueprint, request, jsonify
 from app.models.webhook import WebhookLog
+from app.models.automation import Automation  # Add this import
 from app import db
 from datetime import datetime, timezone
 import json
@@ -9,15 +10,22 @@ bp = Blueprint('webhook', __name__)
 
 @bp.route('/webhook', methods=['POST'])
 def webhook():
-    receipt_time = datetime.now(timezone.utc)
-    
-    # Standardize JSON formatting by parsing and re-stringifying
-    payload = json.loads(json.dumps(request.json))
-    
+    payload = request.json
+    if not payload or 'automation_id' not in payload:
+        return jsonify({"error": "Missing automation_id"}), 400
+
+    automation = Automation.query.filter_by(
+        automation_id=payload['automation_id'],
+        is_active=True
+    ).first()
+    if not automation:
+        return jsonify({"error": "Invalid automation_id"}), 404
+
     log = WebhookLog(
-        timestamp=receipt_time,
-        payload=payload
+        timestamp=datetime.now(timezone.utc),
+        payload=payload,
+        automation_id=automation.automation_id
     )
     db.session.add(log)
     db.session.commit()
-    return jsonify({"message": "Webhook received."})
+    return jsonify({"message": "Webhook received"})

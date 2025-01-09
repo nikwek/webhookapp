@@ -1,4 +1,3 @@
-# app/__init__.py
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
@@ -17,21 +16,29 @@ def create_app(config_class=Config):
     bcrypt.init_app(app)
     migrate.init_app(app, db)
 
-    from app.routes import auth, webhook, dashboard
+    from app.routes import auth, webhook, dashboard, admin
     app.register_blueprint(auth.bp)
     app.register_blueprint(webhook.bp)
     app.register_blueprint(dashboard.bp)
+    app.register_blueprint(admin.bp)
 
     # Add template filter
-    from json import loads
     @app.template_filter('from_json')
     def from_json(value):
-        return loads(value)
-    
+        import json
+        return json.loads(value) if value else {}
+
+    # Create tables and admin user
     with app.app_context():
-        db.create_all()
-        # Create admin if doesn't exist
+        # Import models so they're registered with SQLAlchemy
         from app.models.user import User
+        from app.models.automation import Automation
+        from app.models.webhook import WebhookLog
+        
+        # Create all tables
+        db.create_all()
+        
+        # Create admin user if it doesn't exist
         if not User.query.filter_by(username='admin').first():
             admin_user = User(
                 username='admin',

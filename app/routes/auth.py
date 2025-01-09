@@ -2,6 +2,7 @@
 from flask import Blueprint, render_template, redirect, url_for, request, session
 from app.models.user import User
 from app import db, bcrypt
+from datetime import datetime, timezone
 
 bp = Blueprint('auth', __name__)
 
@@ -13,6 +14,8 @@ def login():
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
         if user and bcrypt.check_password_hash(user.password, password):
+            user.last_login = datetime.now(timezone.utc)
+            db.session.commit()
             session['user_id'] = user.id
             session['username'] = user.username
             session['is_admin'] = user.is_admin

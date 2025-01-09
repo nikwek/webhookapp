@@ -141,14 +141,16 @@
                             <h4>Webhook Logs</h4>
                         </div>
                         <div class="card-body">
-                            <div class="search-container">
-                                <input type="text" id="searchInput" class="form-control" placeholder="Search logs...">
-                            </div>
-                            <div>
-                                <button id="exportButton" class="btn btn-secondary me-2">Export to CSV</button>
-                                {% if session.get('is_admin') %}
-                                <button id="clearLogsButton" class="btn btn-danger">Clear Logs</button>
-                                {% endif %}
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div class="search-container">
+                                    <input type="text" id="searchInput" class="form-control" placeholder="Search logs...">
+                                </div>
+                                <div>
+                                    <button id="exportButton" class="btn btn-secondary me-2">Export to CSV</button>
+                                    {% if session.get('is_admin') %}
+                                    <button id="clearLogsButton" class="btn btn-danger">Clear Logs</button>
+                                    {% endif %}
+                                </div>
                             </div>
                         </div>
                         <table class="table" id="webhook-table">
@@ -530,6 +532,14 @@
                     
                     statusModal.hide();
                 }
+            });
+
+            document.getElementById('searchInput').addEventListener('input', function(e) {
+                const searchTerm = e.target.value.toLowerCase();
+                document.querySelectorAll('#logs tr').forEach(row => {
+                    const text = row.textContent.toLowerCase();
+                    row.style.display = text.includes(searchTerm) ? '' : 'none';
+                });
             });
         </script>
     </body>

@@ -14,11 +14,16 @@ def login():
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
         if user and bcrypt.check_password_hash(user.password, password):
+            if user.is_suspended:
+                return "Account suspended. Please contact administrator.", 403
             user.last_login = datetime.now(timezone.utc)
-            db.session.commit()
             session['user_id'] = user.id
             session['username'] = user.username
             session['is_admin'] = user.is_admin
+            db.session.commit()
+            # Redirect admin to user management
+            if user.is_admin:
+                return redirect(url_for('admin.users'))
             return redirect(url_for('dashboard.dashboard'))
         error = "Invalid username or password"
     return render_template('login.html', error=error)

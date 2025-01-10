@@ -6,55 +6,123 @@
         <title>Dashboard</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <style>
-            .sort-header {
-            color: #888;
-            text-decoration: none;
-            }
-            .sort-header:hover {
-            color: #666;
-            }
+            /* Table Styles */
             .timestamp-column {
-            width: 180px;
+                width: 180px;
             }
+            
             table thead th {
-            padding: 0.5rem !important;
+                padding: 0.5rem !important;
             }
-            .webhook-type-buy { 
-            border-left: 4px solid #28a745; 
+        
+            /* Webhook Type Indicators */
+            tr.webhook-type-buy { 
+                border-left: 4px solid #28a745; 
             }
-            .webhook-type-sell { 
-            border-left: 4px solid #dc3545; 
+            
+            tr.webhook-type-sell { 
+                border-left: 4px solid #dc3545; 
             }
-            .webhook-type-other { 
-            border-left: 4px solid #6c757d; 
+            
+            tr.webhook-type-other { 
+                border-left: 4px solid #6c757d; 
             }
+        
+            /* Header and Search Styles */
+            .sort-header {
+                color: #888;
+                text-decoration: none;
+            }
+            
+            .sort-header:hover {
+                color: #666;
+            }
+        
             .search-container {
-            margin-bottom: 1rem;
+                min-width: 250px;
+                margin: 0;
             }
+        
+            .card-header .form-control {
+                height: 38px;  /* Standard Bootstrap button height */
+                padding: 0.375rem 0.75rem;  /* Bootstrap default padding */
+                font-size: 1rem;
+            }
+        
+            .card-header .btn {
+                height: 38px;
+                padding: 0.375rem 0.75rem;
+                font-size: 1rem;
+            }
+        
+            /* JSON Display Styles */
             .json-pretty {
-            white-space: pre-wrap;
-            display: none;
-            background-color: #f8f9fa;
-            padding: 1rem;
-            border-radius: 4px;
-            margin-top: 0.5rem;
+                white-space: pre-wrap;
+                display: none;
+                background-color: #f8f9fa;
+                padding: 1rem;
+                border-radius: 4px;
+                margin-top: 0.5rem;
             }
+            
             .json-compact {
-            white-space: nowrap;
+                white-space: nowrap;
             }
-            .toggle-json {
-            color: #888;
-            text-decoration: none;
-            padding: 0;
-            border: none;
-            }
-            .toggle-json:hover {
-            color: #666;
-            }
+            
             .payload-container {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+            
+            .toggle-json {
+                color: #888;
+                text-decoration: none;
+                padding: 0;
+                border: none;
+            }
+            
+            .toggle-json:hover {
+                color: #666;
+            }
+        
+            /* Automation Styles */
+            .automation-row {
+                cursor: pointer;
+            }
+            
+            .automation-row:hover {
+                background-color: rgba(0, 0, 0, 0.03);
+            }
+            
+            .automation-details {
+                background-color: #f8f9fa;
+                padding: 1rem;
+                border-top: 1px solid #dee2e6;
+            }
+            
+            .automation-container {
+                margin-bottom: 2rem;
+            }
+        
+            /* Card Header Layout */
+            .card-header h4 {
+                margin: 0;
+                line-height: 38px;  /* Match button height */
+            }
+        
+            .card-header .gap-3 {
+                gap: 1rem !important;
+            }
+
+            .automation-row.text-muted h5 {
+                color: #6c757d !important;  /* Bootstrap's text-muted color */
+                opacity: 0.65;  /* Additional dimming */
+            }
+
+            /* Dim the entire row slightly when inactive */
+            .automation-row.text-muted {
+                background-color: #f8f9fa;  /* Very light gray background */
             }
         </style>
     </head>
@@ -90,58 +158,78 @@
         <div class="container mt-4">
             <div class="row">
                 <div class="col-md-12">
-                    {% if automations %}
-                    {% for automation in automations %}
-                    <div class="card mb-4 {% if not automation.is_active %}border-secondary opacity-75{% endif %}">
-                        <div class="card-header d-flex justify-content-between align-items-center automation-header" 
-                             data-automation-id="{{ automation.automation_id }}">
-                                <h4>
-                                    {{ automation.name if automation.name else 'Unnamed Automation' }}
-                                </h4>
-                            <div>
-                                <!-- Edit button in the automation list -->
-                                <button class="btn btn-sm btn-primary edit-automation-name" 
-                                    data-automation-id="{{ automation.automation_id }}"
-                                    data-automation-name="{{ automation.name }}">
-                                    Edit
-                                </button>
-                                <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
-                                        data-automation-id="{{ automation.automation_id }}"
-                                        data-is-active="{{ automation.is_active | tojson }}">
-                                    {{ "Active" if automation.is_active else "Inactive" }}
-                                </button>
+                    <!-- Automations Section -->
+                    <div class="automation-container">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h4 class="mb-0">Automations</h4>
+                                <button id="createAutomationBtn" class="btn btn-secondary">Create New Automation</button>
                             </div>
-                        </div>
-                        <div class="card-body automation-details" style="display: none;">
-                            <h5>Webhook URL:</h5>
-                            <code class="d-block mb-3">{{ request.url_root }}webhook</code>
-                            <h5>Template:</h5>
-                            <div class="position-relative">
-                                <pre class="bg-light p-3 mb-2"><code id="template-{{ automation.automation_id }}">
+                            <div class="card-body p-0">
+                                <table class="table mb-0">
+                                    <tbody>
+                                        {% if automations %}
+                                            {% for automation in automations %}
+                                            <tr class="automation-row {% if not automation.is_active %}text-muted{% endif %}" 
+                                                data-automation-id="{{ automation.automation_id }}">
+                                                <td class="align-middle">
+                                                    <h5 class="mb-0">
+                                                        {{ automation.name if automation.name else 'Unnamed Automation' }}
+                                                    </h5>
+                                                </td>
+                                                <td class="text-end">
+                                                    <button class="btn btn-sm btn-secondary edit-automation-name" 
+                                                            data-automation-id="{{ automation.automation_id }}"
+                                                            data-automation-name="{{ automation.name }}">
+                                                        Edit
+                                                    </button>
+                                                    <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
+                                                            data-automation-id="{{ automation.automation_id }}"
+                                                            data-is-active="{{ automation.is_active | tojson }}">
+                                                        {{ "Active" if automation.is_active else "Inactive" }}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            <tr class="automation-details" style="display: none;">
+                                                <td colspan="2">
+                                                    <div class="p-3">
+                                                        <h5>Webhook URL:</h5>
+                                                        <code class="d-block mb-3">{{ request.url_root }}webhook</code>
+                                                        <h5>Template:</h5>
+                                                        <div class="position-relative">
+                                                            <pre class="bg-light p-3 mb-2"><code id="template-{{ automation.automation_id }}">
 {
     "automation_id": "{{ automation.automation_id }}",
     "ticker": "{% raw %}{{ticker}}{% endraw %}",
     "action": "{% raw %}{{strategy.order.action}}{% endraw %}",
     "timestamp": "{% raw %}{{time}}{% endraw %}"
 }</code></pre>
-                                <button class="btn btn-sm btn-secondary position-absolute top-0 end-0 m-2 copy-button" 
-                                    data-template-id="template-{{ automation.automation_id }}">
-                                Copy
-                                </button>
+                                                            <button class="btn btn-sm btn-secondary position-absolute top-0 end-0 m-2 copy-button" 
+                                                                    data-template-id="template-{{ automation.automation_id }}">
+                                                                Copy
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        {% endif %}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
-                    {% endfor %}
-                    {% endif %}
-                    <button id="createAutomationBtn" class="btn btn-primary mb-4">Create New Automation</button>
+
+                    <!-- Webhook Logs Section -->
+                    <!-- Updated Webhook Logs Section with compact header -->
                     <div class="card">
                         <div class="card-header">
-                            <h4>Webhook Logs</h4>
-                        </div>
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <div class="search-container">
-                                    <input type="text" id="searchInput" class="form-control" placeholder="Search logs...">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="d-flex align-items-center gap-3">
+                                    <h4 class="mb-0">Webhook Logs</h4>
+                                    <div class="search-container">
+                                        <input type="text" id="searchInput" class="form-control" placeholder="Search logs...">
+                                    </div>
                                 </div>
                                 <div>
                                     <button id="exportButton" class="btn btn-secondary me-2">Export to CSV</button>
@@ -185,7 +273,6 @@
                     </div>
                 </div>
             </div>
-        </div>
         </div>
 
         <!-- Modal for creating new automation -->
@@ -264,19 +351,19 @@
                 const createAutomationModal = new bootstrap.Modal(document.getElementById('createAutomationModal'));
                 const statusModal = new bootstrap.Modal(document.getElementById('automationStatusModal'));
                 const editAutomationModal = new bootstrap.Modal(document.getElementById('editAutomationModal'));
-            
+
                 let currentSortColumn = 'timestamp';
                 let sortAscending = false;
                 let currentAutomationId = null;
                 let currentStatusAction = null;
-            
+
                 // Webhook handling
                 eventSource.onmessage = function(event) {
                     const entry = JSON.parse(event.data);
                     const row = document.createElement('tr');
                     const action = entry.payload.action?.toLowerCase();
                     row.className = `webhook-type-${action || 'other'}`;
-            
+
                     row.innerHTML = `
                         <td><div>${entry.timestamp}</div></td>
                         <td>
@@ -289,36 +376,22 @@
                             </div>
                         </td>
                     `;
-            
+
                     if (!sortAscending) {
                         logsBody.insertBefore(row, logsBody.firstChild);
                     } else {
                         logsBody.appendChild(row);
                     }
-            
+
                     // Add event listener to the new row's toggle button
-                    row.querySelector('.toggle-json').addEventListener('click', function() {
-                        const payloadContainer = this.closest('.payload-container');
-                        const jsonCompact = payloadContainer.querySelector('.json-compact');
-                        const jsonPretty = payloadContainer.querySelector('.json-pretty');
-            
-                        if (jsonPretty.style.display === 'none' || jsonPretty.style.display === '') {
-                            jsonCompact.style.display = 'none';
-                            jsonPretty.style.display = 'block';
-                            this.textContent = 'Collapse';
-                        } else {
-                            jsonCompact.style.display = 'block';
-                            jsonPretty.style.display = 'none';
-                            this.textContent = 'Expand';
-                        }
-                    });
+                    row.querySelector('.toggle-json').addEventListener('click', toggleJson);
                 };
-            
+
                 // Create Automation
                 document.getElementById('createAutomationBtn').addEventListener('click', function() {
                     createAutomationModal.show();
                 });
-            
+
                 document.getElementById('submitCreateAutomation').addEventListener('click', function() {
                     const automationName = document.getElementById('automationName').value.trim();
                     if (automationName) {
@@ -344,16 +417,21 @@
                         });
                     }
                 });
-            
+
                 // Edit Automation
                 document.querySelectorAll('.edit-automation-name').forEach(button => {
-                    button.addEventListener('click', function() {
+                    button.addEventListener('click', function(e) {
+                        e.stopPropagation(); // Prevent row expansion when clicking edit
                         const automationId = this.dataset.automationId;
                         const automationName = this.dataset.automationName;
+                        
+                        // Store the automation ID for use in save/delete operations
+                        currentAutomationId = automationId;
 
                         // Populate the modal with current automation details
-                        document.getElementById('editAutomationName').value = automationName;
-                        document.getElementById('editAutomationName').dataset.automationId = automationId; // Save the ID for later use
+                        const editNameInput = document.getElementById('editAutomationName');
+                        editNameInput.value = automationName;
+                        editNameInput.dataset.automationId = automationId;
 
                         // Show the edit modal
                         editAutomationModal.show();
@@ -370,38 +448,55 @@
                         return;
                     }
 
-                    // Send updated name to the server
                     fetch('/update_automation_name', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ automation_id: automationId, name: newName }),
+                        body: JSON.stringify({
+                            automation_id: automationId,
+                            name: newName
+                        }),
                     })
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.success) {
-                                // Update the UI with the new name
-                                const header = document.querySelector(`.automation-header[data-automation-id="${automationId}"] h4`);
-                                if (header) {
-                                    header.textContent = newName;
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Update the UI with the new name
+                            const automationRow = document.querySelector(`tr[data-automation-id="${automationId}"]`);
+                            if (automationRow) {
+                                const nameElement = automationRow.querySelector('h5');
+                                if (nameElement) {
+                                    nameElement.textContent = newName;
                                 }
-
-                                // Close the modal
-                                editAutomationModal.hide();
-                            } else {
-                                alert(`Failed to update automation: ${data.error || 'Unknown error'}`);
+                                
+                                // Update the edit button's data attribute
+                                const editButton = automationRow.querySelector('.edit-automation-name');
+                                if (editButton) {
+                                    editButton.dataset.automationName = newName;
+                                }
                             }
-                        })
-                        .catch(error => {
-                            console.error('Error updating automation:', error);
-                            alert('Error updating automation. Please try again.');
-                        });
+
+                            // Close the modal
+                            editAutomationModal.hide();
+                        } else {
+                            alert(`Failed to update automation: ${data.error || 'Unknown error'}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error updating automation:', error);
+                        alert('Error updating automation. Please try again.');
+                    });
                 });
 
-            
                 // Delete Automation
                 document.getElementById('deleteAutomation').addEventListener('click', function() {
+                    const automationId = document.getElementById('editAutomationName').dataset.automationId;
+                    
+                    if (!automationId) {
+                        alert('No automation selected for deletion.');
+                        return;
+                    }
+
                     if (confirm('Are you sure you want to delete this automation? This action cannot be undone.')) {
                         fetch('/delete_automation', {
                             method: 'POST',
@@ -409,13 +504,24 @@
                                 'Content-Type': 'application/json',
                             },
                             body: JSON.stringify({
-                                automation_id: currentAutomationId
+                                automation_id: automationId
                             }),
                         })
                         .then(response => response.json())
                         .then(data => {
                             if (data.success) {
-                                location.reload();
+                                // Remove the automation rows from the UI
+                                const automationRow = document.querySelector(`tr[data-automation-id="${automationId}"]`);
+                                const detailsRow = automationRow?.nextElementSibling;
+                                if (automationRow) {
+                                    automationRow.remove();
+                                }
+                                if (detailsRow && detailsRow.classList.contains('automation-details')) {
+                                    detailsRow.remove();
+                                }
+                                
+                                // Close the modal
+                                editAutomationModal.hide();
                             } else {
                                 alert('Failed to delete automation: ' + (data.error || 'Unknown error'));
                             }
@@ -426,39 +532,53 @@
                         });
                     }
                 });
-            
-                document.querySelectorAll('.deactivate-automation').forEach(button => {
-                    button.addEventListener('click', function() {
-                        const automationId = this.dataset.automationId;
-                        if (confirm('Are you sure you want to deactivate this automation? This cannot be undone.')) {
-                            fetch(`/deactivate-automation/${automationId}`, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Accept': 'application/json'
-                                }
-                            })
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data.error) {
-                                    alert('Error: ' + data.error);
-                                } else {
-                                    window.location.reload();
-                                }
-                            })
-                            .catch(error => {
-                                console.error('Error:', error);
-                                alert('Error deactivating automation. Please try again.');
-                            });
+
+                // Toggle automation details
+                document.querySelectorAll('.automation-row').forEach(row => {
+                    row.addEventListener('click', function(e) {
+                        // Only toggle if not clicking a button
+                        if (!e.target.classList.contains('btn') && 
+                            !e.target.closest('.btn')) {
+                            const detailsRow = this.nextElementSibling;
+                            if (detailsRow && detailsRow.classList.contains('automation-details')) {
+                                const isHidden = detailsRow.style.display === 'none' || detailsRow.style.display === '';
+                                detailsRow.style.display = isHidden ? 'table-row' : 'none';
+                            }
                         }
                     });
                 });
-            
+
+                // Status button handling
+                document.querySelectorAll('.status-button').forEach(button => {
+                    button.addEventListener('click', function(e) {
+                        e.stopPropagation(); // Prevent row expansion
+                        const automationId = this.dataset.automationId;
+                        const isActive = JSON.parse(this.dataset.isActive);
+                        currentAutomationId = automationId;
+                        currentStatusAction = isActive ? 'deactivate' : 'activate';
+
+                        const modalTitle = document.querySelector('#automationStatusModal .modal-title');
+                        const modalBody = document.querySelector('#automationStatusModal .modal-body');
+                        const confirmButton = document.getElementById('confirmStatusChange');
+
+                        modalTitle.textContent = isActive ? 'Deactivate Automation' : 'Activate Automation';
+                        modalBody.textContent = isActive ? 
+                            'Are you sure you want to deactivate this automation? It will stop receiving webhooks.' :
+                            'Are you sure you want to activate this automation?';
+                        confirmButton.className = `btn ${isActive ? 'btn-danger' : 'btn-success'}`;
+                        confirmButton.textContent = isActive ? 'Deactivate' : 'Activate';
+
+                        statusModal.show();
+                    });
+                });
+
+                // Copy button functionality
                 document.querySelectorAll('.copy-button').forEach(button => {
-                    button.addEventListener('click', function() {
+                    button.addEventListener('click', function(e) {
+                        e.stopPropagation(); // Prevent row expansion
                         const templateId = this.dataset.templateId;
                         const templateText = document.getElementById(templateId).textContent;
-            
+
                         // Create a temporary textarea to copy the formatted JSON
                         const textarea = document.createElement('textarea');
                         textarea.value = templateText;
@@ -466,119 +586,28 @@
                         textarea.select();
                         document.execCommand('copy');
                         document.body.removeChild(textarea);
-            
+
                         // Visual feedback
                         const originalText = this.textContent;
                         this.textContent = 'Copied!';
-                        button.classList.remove('btn-secondary');
-                        button.classList.add('btn-success');
-            
+                        this.classList.remove('btn-secondary');
+                        this.classList.add('btn-success');
+
                         setTimeout(() => {
                             this.textContent = originalText;
-                            button.classList.remove('btn-success');
-                            button.classList.add('btn-secondary');
+                            this.classList.remove('btn-success');
+                            this.classList.add('btn-secondary');
                         }, 2000);
                     });
                 });
-            
-                // Toggle automation details
-                document.querySelectorAll('.automation-header').forEach(header => {
-                    header.addEventListener('click', function(e) {
-                        // Only toggle if not clicking a button
-                        if (!e.target.classList.contains('btn') && 
-                            !e.target.closest('.btn')) {  // This ensures we don't trigger when clicking button children
-                            const details = this.nextElementSibling;
-                            if (details) {
-                                const isHidden = details.style.display === 'none' || details.style.display === '';
-                                details.style.display = isHidden ? 'block' : 'none';
-                            }
-                        }
-                    });
-                });
-            
-                // toggle JSON payload
-                document.querySelectorAll('.toggle-json').forEach(button => {
-                    button.addEventListener('click', function() {
-                        const payloadContainer = this.closest('.payload-container');
-                        const jsonCompact = payloadContainer.querySelector('.json-compact');
-                        const jsonPretty = payloadContainer.querySelector('.json-pretty');
-            
-                        if (jsonPretty.style.display === 'none' || jsonPretty.style.display === '') {
-                            jsonCompact.style.display = 'none';
-                            jsonPretty.style.display = 'block';
-                            this.textContent = 'Collapse';
-                        } else {
-                            jsonCompact.style.display = 'block';
-                            jsonPretty.style.display = 'none';
-                            this.textContent = 'Expand';
-                        }
-                    });
-                });
-            
-                document.querySelectorAll('.sort-header').forEach(header => {
-                    header.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        const column = this.dataset.column;
-                        if (column === currentSortColumn) {
-                            sortAscending = !sortAscending;
-                        } else {
-                            currentSortColumn = column;
-                            sortAscending = true;
-                        }
-                        sortTable(column, sortAscending);
-                    });
-                });
-            
-                function sortTable(column, ascending) {
-                    const table = document.getElementById('webhook-table');
-                    const tbody = table.querySelector('tbody');
-                    const rows = Array.from(tbody.querySelectorAll('tr'));
-            
-                    rows.sort((a, b) => {
-                        let aValue, bValue;
-                        if (column === 'timestamp') {
-                            aValue = a.cells[0].textContent;
-                            bValue = b.cells[0].textContent;
-                        } else {
-                            aValue = a.cells[1].querySelector('.json-compact').textContent;
-                            bValue = b.cells[1].querySelector('.json-compact').textContent;
-                        }
-                        return ascending ? 
-                            aValue.localeCompare(bValue) : 
-                            bValue.localeCompare(aValue);
-                    });
-            
-                    rows.forEach(row => tbody.appendChild(row));
-                }
-            
-                document.querySelectorAll('.status-button').forEach(button => {
-                    button.addEventListener('click', function() {
-                        const automationId = this.dataset.automationId;
-                        const isActive = JSON.parse(this.dataset.isActive);
-                        currentAutomationId = automationId;
-                        currentStatusAction = isActive ? 'deactivate' : 'activate';
-            
-                        const modalTitle = document.querySelector('#automationStatusModal .modal-title');
-                        const modalBody = document.querySelector('#automationStatusModal .modal-body');
-                        const confirmButton = document.getElementById('confirmStatusChange');
-            
-                        modalTitle.textContent = isActive ? 'Deactivate Automation' : 'Activate Automation';
-                        modalBody.textContent = isActive ? 
-                            'Are you sure you want to deactivate this automation? It will stop receiving webhooks.' :
-                            'Are you sure you want to activate this automation?';
-                        confirmButton.className = `btn ${isActive ? 'btn-danger' : 'btn-success'}`;
-                        confirmButton.textContent = isActive ? 'Deactivate' : 'Activate';
-            
-                        statusModal.show();
-                    });
-                });
-            
+
+                // Status change confirmation
                 document.getElementById('confirmStatusChange').addEventListener('click', function() {
                     if (currentAutomationId && currentStatusAction) {
                         const endpoint = currentStatusAction === 'deactivate' ? 
                             `/deactivate-automation/${currentAutomationId}` :
                             `/activate-automation/${currentAutomationId}`;
-            
+
                         fetch(endpoint, {
                             method: 'POST',
                             headers: {
@@ -598,11 +627,12 @@
                             console.error('Error:', error);
                             alert(`Error ${currentStatusAction}ing automation. Please try again.`);
                         });
-            
+
                         statusModal.hide();
                     }
                 });
-            
+
+                // Search functionality
                 document.getElementById('searchInput').addEventListener('input', function(e) {
                     const searchTerm = e.target.value.toLowerCase();
                     document.querySelectorAll('#logs tr').forEach(row => {
@@ -610,7 +640,29 @@
                         row.style.display = text.includes(searchTerm) ? '' : 'none';
                     });
                 });
+
+                // Function to handle JSON toggle
+                function toggleJson() {
+                    const payloadContainer = this.closest('.payload-container');
+                    const jsonCompact = payloadContainer.querySelector('.json-compact');
+                    const jsonPretty = payloadContainer.querySelector('.json-pretty');
+
+                    if (jsonPretty.style.display === 'none' || jsonPretty.style.display === '') {
+                        jsonCompact.style.display = 'none';
+                        jsonPretty.style.display = 'block';
+                        this.textContent = 'Collapse';
+                    } else {
+                        jsonCompact.style.display = 'block';
+                        jsonPretty.style.display = 'none';
+                        this.textContent = 'Expand';
+                    }
+                }
+
+                // Add toggle-json listeners to existing buttons
+                document.querySelectorAll('.toggle-json').forEach(button => {
+                    button.addEventListener('click', toggleJson);
+                });
             });
-            </script>
+        </script>
     </body>
 </html>

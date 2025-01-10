@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Admin Navigation -->
+        <nav class="col-md-2 d-none d-md-block bg-light sidebar">
+            <div class="sidebar-sticky">
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'admin.users' %}active{% endif %}" 
+                           href="{{ url_for('admin.users') }}">
+                            <i class="fas fa-users"></i> Users
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'admin.automations' %}active{% endif %}" 
+                           href="{{ url_for('admin.automations') }}">
+                            <i class="fas fa-robot"></i> Automations
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'admin.settings' %}active{% endif %}" 
+                           href="{{ url_for('admin.settings') }}">
+                            <i class="fas fa-cog"></i> Settings
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main role="main" class="col-md-10 ml-sm-auto px-4">
+            {% block admin_content %}{% endblock %}
+        </main>
+    </div>
+</div>
+{% endblock %}

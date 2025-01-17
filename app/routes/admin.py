@@ -1,141 +1,170 @@
-from flask import Blueprint, jsonify, session, render_template, redirect, url_for
+from flask import Blueprint, jsonify, session, render_template, redirect, url_for, request
 from app.models.user import User
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
 from app import db
 from functools import wraps
 from datetime import datetime, timezone
+from flask_login import login_required
 
 bp = Blueprint('admin', __name__, url_prefix='/admin')
+
 
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get('is_admin'):
             return jsonify({"error": "Unauthorized"}), 403
+
+        # Get the current user
+        user = User.query.get(session.get('user_id'))
+        if user and user.require_password_change:
+            return redirect(url_for('auth.change_password'))
+
         return f(*args, **kwargs)
     return decorated_function
+
+
+@bp.route('/')
+@admin_required
+def index():
+    return redirect(url_for('admin.users'))
+
 
 @bp.route('/users')
 @admin_required
 def users():
-    users = User.query.all()
-    return render_template('users.html', users=users)
+    search = request.args.get('search', '')
+    query = User.query
+    if search:
+        query = query.filter(User.username.ilike(f'%{search}%'))
+    users = query.all()
+    return render_template('admin/users.html', users=users)
 
-@bp.route('/activate-automation/<automation_id>', methods=['POST'])
+
+@bp.route('/automations')
 @admin_required
-def activate_automation(automation_id):
+def automations():
+    automations = Automation.query.join(User).all()
+    return render_template('admin/automations.html', automations=automations)
+
+@bp.route('/settings')
+@admin_required
+def settings():
+    return render_template('admin/settings.html')
+
+# API endpoints for user management
+@bp.route('/api/user/<int:user_id>/reset', methods=['POST'])
+@admin_required
+def reset_user(user_id):
+    try:
+        user = User.query.get_or_404(user_id)
+        # Delete all logs for user's automations
+        automation_ids = [a.automation_id for a in user.automations]
+        if automation_ids:
+            WebhookLog.query.filter(WebhookLog.automation_id.in_(automation_ids)).delete()
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/api/user/<int:user_id>/suspend', methods=['POST'])
+@admin_required
+def suspend_user(user_id):
+    try:
+        user = User.query.get_or_404(user_id)
+        user.is_suspended = not user.is_suspended
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/api/user/<int:user_id>/delete', methods=['POST'])
+@admin_required
+def delete_user(user_id):
+    try:
+        user = User.query.get_or_404(user_id)
+        # Delete all associated logs and automations
+        automation_ids = [a.automation_id for a in user.automations]
+        if automation_ids:
+            WebhookLog.query.filter(WebhookLog.automation_id.in_(automation_ids)).delete()
+        for automation in user.automations:
+            db.session.delete(automation)
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+# API endpoints for automation management
+@bp.route('/api/automation/<automation_id>/toggle', methods=['POST'])
+@admin_required
+def toggle_automation(automation_id):
     try:
         automation = Automation.query.filter_by(automation_id=automation_id).first()
         if not automation:
             return jsonify({"error": "Automation not found"}), 404
-        
-        automation.is_active = True
+        automation.is_active = not automation.is_active
         db.session.commit()
         return jsonify({"success": True})
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-@bp.route('/deactivate-automation/<automation_id>', methods=['POST'])
+@bp.route('/api/automation/<automation_id>/purge', methods=['POST'])
 @admin_required
-def deactivate_automation(automation_id):
+def purge_automation_logs(automation_id):
     try:
-        automation = Automation.query.filter_by(automation_id=automation_id).first()
-        if not automation:
-            return jsonify({"error": "Automation not found"}), 404
-        
-        automation.is_active = False
+        WebhookLog.query.filter_by(automation_id=automation_id).delete()
         db.session.commit()
         return jsonify({"success": True})
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-@bp.route('/purge-logs/<automation_id>', methods=['POST'])
-@admin_required
-def purge_logs(automation_id):
-    try:
-        print(f"Purging logs for automation {automation_id}")  # Debug line
-        result = WebhookLog.query.filter_by(automation_id=automation_id).delete()
-        print(f"Deleted {result} logs")  # Debug line
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        print(f"Error purging logs: {e}")  # Debug line
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
-@bp.route('/delete-automation/<automation_id>', methods=['POST'])
+@bp.route('/api/automation/<automation_id>/delete', methods=['POST'])
 @admin_required
 def delete_automation(automation_id):
     try:
-        print(f"Deleting automation {automation_id}")  # Debug line
         # First delete all logs
-        log_result = WebhookLog.query.filter_by(automation_id=automation_id).delete()
-        print(f"Deleted {log_result} logs")  # Debug line
-        
+        WebhookLog.query.filter_by(automation_id=automation_id).delete()
         # Then delete the automation
         automation = Automation.query.filter_by(automation_id=automation_id).first()
         if automation:
             db.session.delete(automation)
             db.session.commit()
-            print(f"Successfully deleted automation")  # Debug line
             return jsonify({"success": True})
         return jsonify({"error": "Automation not found"}), 404
     except Exception as e:
-        print(f"Error deleting automation: {e}")  # Debug line
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+    
 
-@bp.route('/reset-user/<int:user_id>', methods=['POST'])
+@bp.route('/admin/dashboard')
+@login_required
 @admin_required
-def reset_user(user_id):
-    try:
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-        
-        # Get all automation IDs for this user
-        automation_ids = [a.automation_id for a in user.automations]
-        
-        # Delete all logs for all automations
-        if automation_ids:
-            WebhookLog.query.filter(WebhookLog.automation_id.in_(automation_ids)).delete()
-        
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+def admin_dashboard():
+    """Redirect admin users directly to the users page."""
+    return redirect(url_for('admin.users'))
 
-@bp.route('/suspend-user/<int:user_id>', methods=['POST'])
+@bp.route('/admin/users')
+@login_required
 @admin_required
-def suspend_user(user_id):
-    try:
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-        
-        user.is_suspended = True
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+def admin_users():
+    search = request.args.get('search', '')
+    query = User.query
+    if search:
+        query = query.filter(User.username.ilike(f'%{search}%'))
+    users = query.all()
+    return render_template('admin/users.html', users=users)
 
-@bp.route('/unsuspend-user/<int:user_id>', methods=['POST'])
+@bp.route('/admin/automations')
+@login_required
 @admin_required
-def unsuspend_user(user_id):
-    try:
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-        
-        user.is_suspended = False
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+def admin_automations():
+    automations = Automation.query.join(User).all()
+    return render_template('admin/automations.html', automations=automations)
     

@@ -12,11 +12,7 @@
                 Change Password
             </div>
             <div class="card-body">
-                <form method="POST" action="{{ url_for('auth.change_password') }}">
-                    <div class="form-group">
-                        <label for="current_password">Current Password</label>
-                        <input type="password" class="form-control" id="current_password" name="current_password" required>
-                    </div>
+                <form method="POST" action="{{ url_for('admin.settings') }}">
                     <div class="form-group">
                         <label for="new_password">New Password</label>
                         <input type="password" class="form-control" id="new_password" name="new_password" required>

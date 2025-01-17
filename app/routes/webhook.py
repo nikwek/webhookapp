@@ -1,38 +1,76 @@
 # app/routes/webhook.py
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response, stream_with_context, session
 from app.models.webhook import WebhookLog
 from app.models.automation import Automation
 from app import db
 from datetime import datetime, timezone
 import json
+import time
+from flask_login import login_required
 
 bp = Blueprint('webhook', __name__)
 
 @bp.route('/webhook', methods=['POST'])
 def webhook():
-    print("Received webhook:", request.json)
-    automation_id = request.json.get('automation_id')
+    automation_id = request.args.get('automation_id')
+    print(f"Received webhook for automation_id: {automation_id}")
     
-    automation = Automation.query.filter_by(
-        automation_id=automation_id,
-        is_active=True
-    ).first()
+    if not automation_id:
+        return jsonify({'error': 'Missing automation_id parameter'}), 400
+
+    automation = Automation.query.filter_by(automation_id=automation_id).first()
+    print(f"Found automation: {automation}")
     
     if not automation:
-        print(f"Automation {automation_id} not found or inactive")
-        return jsonify({"error": "Invalid or inactive automation"}), 404
+        return jsonify({'error': 'Automation not found'}), 404
 
-    # Convert payload to string with sorted keys and no spaces
-    payload_str = json.dumps(request.json, sort_keys=True, separators=(',', ':'))
-    # Convert back to dict to ensure consistent formatting
-    payload = json.loads(payload_str)
+    if not automation.is_active:
+        return jsonify({'error': 'Automation is not active'}), 403
 
+    # Store the webhook payload
+    payload = request.get_json(force=True)
+    print(f"Webhook payload: {payload}")
+    
     log = WebhookLog(
-        timestamp=datetime.now(timezone.utc),
+        automation_id=automation_id,
         payload=payload,
-        automation_id=automation_id
+        timestamp=datetime.now(timezone.utc)
     )
     db.session.add(log)
-    db.session.commit()
-    print(f"Webhook logged with id: {log.id}")
-    return jsonify({"message": "Webhook received"})
+    
+    # Update last_run timestamp
+    automation.last_run = datetime.now(timezone.utc)
+    
+    try:
+        db.session.commit()
+        print("Successfully stored webhook")
+        # Emit event for real-time updates (if using websockets)
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error storing webhook: {e}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@bp.route('/webhook-stream')
+@login_required
+def webhook_stream():
+    def event_stream():
+        last_id = 0
+        while True:
+            logs = (WebhookLog.query
+                   .join(Automation)
+                   .filter(Automation.user_id == session['user_id'])
+                   .filter(WebhookLog.id > last_id)
+                   .order_by(WebhookLog.timestamp.desc())
+                   .limit(100)
+                   .all())
+            
+            if logs:
+                last_id = logs[0].id
+                data = [log.to_dict() for log in logs]
+                yield f"data: {json.dumps(data)}\n\n"
+            
+            time.sleep(1)
+
+    return Response(stream_with_context(event_stream()),
+                   mimetype='text/event-stream')

@@ -1,54 +1,79 @@
 # app/routes/auth.py
-from flask import Blueprint, render_template, redirect, url_for, request, session
+from flask import Blueprint, render_template, redirect, url_for, request, session, flash
 from app.models.user import User
 from app import db, bcrypt
 from datetime import datetime, timezone
+from flask_login import login_user, logout_user, current_user
 
 bp = Blueprint('auth', __name__)
 
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
-    error = None
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard.dashboard'))
+        
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        user = User.query.filter_by(username=username).first()
-        if user and bcrypt.check_password_hash(user.password, password):
-            if user.is_suspended:
-                return "Account suspended. Please contact administrator.", 403
-            user.last_login = datetime.now(timezone.utc)
+        user = User.query.filter_by(username=request.form['username']).first()
+        if user and user.check_password(request.form['password']):
             session['user_id'] = user.id
-            session['username'] = user.username
             session['is_admin'] = user.is_admin
-            db.session.commit()
-            # Redirect admin to user management
-            if user.is_admin:
-                return redirect(url_for('admin.users'))
+            login_user(user)
+            
+            if user.require_password_change:
+                return redirect(url_for('auth.change_password'))
+                
             return redirect(url_for('dashboard.dashboard'))
-        error = "Invalid username or password"
-    return render_template('login.html', error=error)
+            
+        flash('Invalid username or password')
+    return render_template('login.html')
 
 @bp.route('/register', methods=['GET', 'POST'])
 def register():
-    error = None
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        if not username or not password:
-            error = "Username and password are required"
-        elif User.query.filter_by(username=username).first():
-            error = "Username already exists"
-        else:
-            try:
-                user = User(username=username, 
-                          password=bcrypt.generate_password_hash(password).decode('utf-8'),
-                          is_admin=False)
-                db.session.add(user)
-                db.session.commit()
-                return redirect(url_for('auth.login'))
-            except Exception:
-                error = "An error occurred. Please try again."
-    return render_template('register.html', error=error)
+        
+        if User.query.filter_by(username=username).first():
+            return "Error: Username already exists."
+        
+        user = User(
+            username=username,
+            is_admin=False,
+            require_password_change=False,
+            last_activity=datetime.now(timezone.utc)
+        )
+        user.set_password(password)
+        
+        try:
+            db.session.add(user)
+            db.session.commit()
+            return redirect(url_for('auth.login'))
+        except Exception as e:
+            db.session.rollback()
+            return f"Error creating user: {str(e)}"
+            
+    return render_template('register.html')
+
+@bp.route('/change-password', methods=['GET', 'POST'])
+def change_password():
+    if not session.get('user_id'):
+        return redirect(url_for('auth.login'))
+        
+    if request.method == 'POST':
+        user = User.query.get(session['user_id'])
+        new_password = request.form['new_password']
+        confirm_password = request.form['confirm_password']
+        
+        if new_password != confirm_password:
+            return "Passwords do not match"
+            
+        user.set_password(new_password)
+        user.require_password_change = False
+        db.session.commit()
+        
+        return redirect(url_for('dashboard.dashboard'))
+        
+    return render_template('auth/change_password.html')
 
 @bp.route('/logout')
 def logout():

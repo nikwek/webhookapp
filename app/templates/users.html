@@ -1,388 +1,125 @@
-<!-- users.html -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>User Management</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="bg-light">
-    <!-- Navigation bar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="#">Webhook Manager</a>
-            <div class="collapse navbar-collapse">
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link active" href="{{ url_for('admin.users') }}">User Management</a>
-                    </li>
-                </ul>
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('auth.logout') }}">Logout</a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+{% extends "base.html" %}
 
-    <div class="container mt-4">
-        <!-- Search bar -->
-        <div class="row mb-4">
-            <div class="col">
-                <input type="text" id="userSearch" class="form-control" placeholder="Search users...">
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">
-                <h4>User Management</h4>
-            </div>
-            <div class="card-body">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Username</th>
-                            <th>Automations</th>
-                            <th>Last Activity (UTC)</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for user in users if not user.is_admin %}
-                        <tr class="user-row" data-username="{{ user.username }}">
-                            <td>{{ user.username }}</td>
-                            <td>
-                                {% if user.automations %}
-                                    <div class="d-flex flex-column gap-2">
-                                    {% for automation in user.automations %}
-                                        <div class="automation-item">
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Users</h5>
+                    <form class="d-flex" action="{{ url_for('admin.admin_users') }}" method="GET">
+                        <input type="text" name="search" class="form-control form-control-sm me-2" 
+                               placeholder="Search users..." value="{{ request.args.get('search', '') }}">
+                        <button type="submit" class="btn btn-primary btn-sm">Search</button>
+                    </form>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                    <th>Automations</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in users %}
+                                <tr>
+                                    <td>{{ user.username }}</td>
+                                    <td>
+                                        <span class="badge {% if user.is_suspended %}bg-danger{% else %}bg-success{% endif %}">
+                                            {{ "Suspended" if user.is_suspended else "Active" }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm {% if user.is_suspended %}btn-success{% else %}btn-danger{% endif %}"
+                                                onclick="toggleUserStatus({{ user.id }})">
+                                            {{ "Activate" if user.is_suspended else "Suspend" }}
+                                        </button>
+                                    </td>
+                                    <td>
+                                        {% for automation in user.automations %}
+                                        <div class="automation-item mb-2">
                                             <span>{{ automation.name }} ({{ automation.automation_id }})</span>
-                                            <button class="btn btn-sm status-toggle {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}"
+                                            <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}"
                                                     data-automation-id="{{ automation.automation_id }}"
-                                                    data-is-active="{{ automation.is_active | tojson }}">
+                                                    data-is-active="{{ automation.is_active | tojson }}"
+                                                    data-is-admin="true">
                                                 {{ "Active" if automation.is_active else "Inactive" }}
                                             </button>
-                                            <button class="btn btn-sm btn-warning purge-logs"
-                                                    data-automation-id="{{ automation.automation_id }}">
+                                            <button class="btn btn-sm btn-warning"
+                                                    onclick="confirmAction('purge', '{{ automation.automation_id }}')">
                                                 Purge Logs
                                             </button>
-                                            <button class="btn btn-sm btn-danger delete-automation"
-                                                    data-automation-id="{{ automation.automation_id }}">
-                                                Delete
-                                            </button>
                                         </div>
-                                    {% endfor %}
-                                    </div>
-                                {% else %}
-                                    No automations
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if user.last_login %}
-                                    {{ user.last_login.strftime('%Y-%m-%d %H:%M:%S') }}
-                                {% else %}
-                                    Never
-                                {% endif %}
-                            </td>
-                            <td>
-                                <button class="btn btn-warning reset-user"
-                                        data-user-id="{{ user.id }}">
-                                    Reset
-                                </button>
-                                <button class="btn btn-danger suspend-user"
-                                        data-user-id="{{ user.id }}"
-                                        data-is-suspended="{{ user.is_suspended | tojson }}">
-                                    {{ "Unsuspend" if user.is_suspended else "Suspend" }}
-                                </button>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modals for confirmations -->
-    <!-- Status Change Modal -->
-    <div class="modal fade" id="statusChangeModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <!-- Content will be set dynamically -->
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn" id="confirmStatusChange">Confirm</button>
+                                        {% endfor %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
+{% endblock %}
 
-    <!-- Purge Logs Modal -->
-    <div class="modal fade" id="purgeLogsModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Purge Logs</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    Are you sure you want to purge all logs for this automation? This action cannot be undone.
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-warning" id="confirmPurgeLogs">Purge Logs</button>
-                </div>
-            </div>
-        </div>
-    </div>
+{% block scripts %}
+<script>
+function toggleUserStatus(userId) {
+    if (!confirm('Are you sure you want to change this user\'s status?')) return;
+    
+    fetch(`/admin/api/user/${userId}/suspend`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error changing user status. Please try again.');
+    });
+}
 
-    <!-- Delete Automation Modal -->
-    <div class="modal fade" id="deleteAutomationModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Delete Automation</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    Are you sure you want to delete this automation? This will remove all associated logs and cannot be undone.
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-danger" id="confirmDeleteAutomation">Delete</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Reset User Modal -->
-    <div class="modal fade" id="resetUserModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Reset User</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    Are you sure you want to reset this user? This will delete all logs from all automations but keep the automations intact.
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-warning" id="confirmResetUser">Reset</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Suspend User Modal -->
-    <div class="modal fade" id="suspendUserModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <!-- Content will be set dynamically -->
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-danger" id="confirmSuspendUser">Confirm</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- ... JavaScript for handling actions ... -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-        // Initialize modals
-        const modals = {
-            statusChange: new bootstrap.Modal('#statusChangeModal'),
-            purgeLogs: new bootstrap.Modal('#purgeLogsModal'),
-            deleteAutomation: new bootstrap.Modal('#deleteAutomationModal'),
-            resetUser: new bootstrap.Modal('#resetUserModal'),
-            suspendUser: new bootstrap.Modal('#suspendUserModal')
-        };
-
-        let currentTarget = null;
-
-        // Status toggle handlers
-        document.querySelectorAll('.status-toggle').forEach(button => {
-            button.addEventListener('click', function() {
-                currentTarget = this;
-                const isActive = JSON.parse(this.dataset.isActive);
-                const modal = document.getElementById('statusChangeModal');
-                
-                modal.querySelector('.modal-title').textContent = 
-                    isActive ? 'Deactivate Automation' : 'Activate Automation';
-                modal.querySelector('.modal-body').textContent = 
-                    isActive ? 'Are you sure you want to deactivate this automation?' 
-                            : 'Are you sure you want to activate this automation?';
-                
-                const confirmBtn = modal.querySelector('#confirmStatusChange');
-                confirmBtn.className = `btn ${isActive ? 'btn-danger' : 'btn-success'}`;
-                
-                modals.statusChange.show();
-            });
-        });
-
-        // Confirm status change
-        document.getElementById('confirmStatusChange').addEventListener('click', function() {
-            if (currentTarget) {
-                const automationId = currentTarget.dataset.automationId;
-                const isActive = JSON.parse(currentTarget.dataset.isActive);
-                const endpoint = isActive ? `/admin/deactivate-automation/${automationId}` 
-                                        : `/admin/activate-automation/${automationId}`;
-                
-                fetch(endpoint, { method: 'POST' })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.error) {
-                            alert('Error: ' + data.error);
-                        } else {
-                            window.location.reload();
-                        }
-                    })
-                    .catch(error => console.error('Error:', error));
-                
-                modals.statusChange.hide();
+function confirmAction(action, automationId) {
+    const messages = {
+        purge: "Are you sure you want to purge all logs for this automation?"
+    };
+    
+    if (confirm(messages[action])) {
+        fetch(`/admin/api/automation/${automationId}/${action}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             }
-        });
-
-        // Purge logs handler
-        document.querySelectorAll('.purge-logs').forEach(button => {
-            button.addEventListener('click', function() {
-                currentTarget = this;
-                modals.purgeLogs.show();
-            });
-        });
-
-        // Confirm purge logs
-        document.getElementById('confirmPurgeLogs').addEventListener('click', function() {
-            if (currentTarget) {
-                const automationId = currentTarget.dataset.automationId;
-                
-                fetch(`/admin/purge-logs/${automationId}`, { method: 'POST' })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.error) {
-                            alert('Error: ' + data.error);
-                        } else {
-                            window.location.reload();
-                        }
-                    })
-                    .catch(error => console.error('Error:', error));
-                
-                modals.purgeLogs.hide();
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
             }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred. Please try again.');
         });
-
-        // Delete automation handler
-        document.querySelectorAll('.delete-automation').forEach(button => {
-            button.addEventListener('click', function() {
-                currentTarget = this;
-                modals.deleteAutomation.show();
-            });
-        });
-
-        // Confirm delete automation
-        document.getElementById('confirmDeleteAutomation').addEventListener('click', function() {
-            if (currentTarget) {
-                const automationId = currentTarget.dataset.automationId;
-                
-                fetch(`/admin/delete-automation/${automationId}`, { method: 'POST' })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.error) {
-                            alert('Error: ' + data.error);
-                        } else {
-                            window.location.reload();
-                        }
-                    })
-                    .catch(error => console.error('Error:', error));
-                
-                modals.deleteAutomation.hide();
-            }
-        });
-
-        // Reset user handler
-        document.querySelectorAll('.reset-user').forEach(button => {
-            button.addEventListener('click', function() {
-                currentTarget = this;
-                modals.resetUser.show();
-            });
-        });
-
-        // Confirm reset user
-        document.getElementById('confirmResetUser').addEventListener('click', function() {
-            if (currentTarget) {
-                const userId = currentTarget.dataset.userId;
-                
-                fetch(`/admin/reset-user/${userId}`, { method: 'POST' })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.error) {
-                            alert('Error: ' + data.error);
-                        } else {
-                            window.location.reload();
-                        }
-                    })
-                    .catch(error => console.error('Error:', error));
-                
-                modals.resetUser.hide();
-            }
-        });
-
-        // Suspend user handler
-        document.querySelectorAll('.suspend-user').forEach(button => {
-            button.addEventListener('click', function() {
-                currentTarget = this;
-                const isSuspended = JSON.parse(this.dataset.isSuspended);
-                const modal = document.getElementById('suspendUserModal');
-                
-                modal.querySelector('.modal-title').textContent = 
-                    isSuspended ? 'Unsuspend User' : 'Suspend User';
-                modal.querySelector('.modal-body').textContent = 
-                    isSuspended ? 'Are you sure you want to unsuspend this user?' 
-                                : 'Are you sure you want to suspend this user? They will not be able to log in.';
-                
-                modals.suspendUser.show();
-            });
-        });
-
-        // Confirm suspend user
-        document.getElementById('confirmSuspendUser').addEventListener('click', function() {
-            if (currentTarget) {
-                const userId = currentTarget.dataset.userId;
-                const isSuspended = JSON.parse(currentTarget.dataset.isSuspended);
-                const endpoint = isSuspended ? `/admin/unsuspend-user/${userId}` 
-                                            : `/admin/suspend-user/${userId}`;
-                
-                fetch(endpoint, { method: 'POST' })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.error) {
-                            alert('Error: ' + data.error);
-                        } else {
-                            window.location.reload();
-                        }
-                    })
-                    .catch(error => console.error('Error:', error));
-                
-                modals.suspendUser.hide();
-            }
-        });
-        });
-    </script>
-</body>
-</html>
+    }
+}
+</script>
+{% endblock %}

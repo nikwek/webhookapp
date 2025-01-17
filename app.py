@@ -63,41 +63,6 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_entry = {
-        'timestamp': timestamp,
-        'payload': request.json
-    }
-    with open(webhook_log_file, 'a') as file:
-        file.write(json.dumps(log_entry) + '\n')
-    return jsonify({"message": "Webhook received."}), 200
-
-@app.route('/dashboard')
-def dashboard():
-    if not session.get('user_id'):
-        return redirect(url_for('login'))
-    webhook_url = f"{request.url_root}webhook"
-    with open(webhook_log_file, 'r') as file:
-        logs = [line.strip() for line in file.readlines()]
-    return render_template('dashboard.html', webhook_url=webhook_url, logs=logs)
-
-@app.route('/webhook-updates')
-def webhook_updates():
-    def generate():
-        try:
-            with open(webhook_log_file, 'r') as f:
-                f.seek(0, 2)
-                while True:
-                    line = f.readline()
-                    if line:
-                        yield f"data: {line}\n\n"
-                    time.sleep(0.5)
-        except GeneratorExit:
-            pass
-    return Response(generate(), mimetype='text/event-stream')
-
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
     if request.method == 'POST':

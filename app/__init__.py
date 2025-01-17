@@ -1,51 +1,77 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from flask_bcrypt import Bcrypt
-from config import Config
 from flask_migrate import Migrate
+from flask_bcrypt import Bcrypt
+from flask_login import LoginManager
+from config import Config
+import os
 
+# Initialize extensions
 db = SQLAlchemy()
-bcrypt = Bcrypt()
 migrate = Migrate()
+bcrypt = Bcrypt()
+login_manager = LoginManager()
+login_manager.login_view = 'auth.login'
 
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
+    # Ensure instance folder exists
+    try:
+        os.makedirs(app.instance_path)
+    except OSError:
+        pass
+
+    # Initialize Flask extensions
     db.init_app(app)
-    bcrypt.init_app(app)
     migrate.init_app(app, db)
+    bcrypt.init_app(app)
+    login_manager.init_app(app)
 
-    from app.routes import auth, webhook, dashboard, admin
-    app.register_blueprint(auth.bp)
-    app.register_blueprint(webhook.bp)
-    app.register_blueprint(dashboard.bp)
-    app.register_blueprint(admin.bp)
+    # Register Jinja2 filters
+    app.jinja_env.filters['from_json'] = from_json_filter
 
-    # Add template filter
-    @app.template_filter('from_json')
-    def from_json(value):
-        import json
-        return json.loads(value) if value else {}
-
-    # Create tables and admin user
     with app.app_context():
-        # Import models so they're registered with SQLAlchemy
+        # Import models (after db initialization)
         from app.models.user import User
         from app.models.automation import Automation
         from app.models.webhook import WebhookLog
-        
-        # Create all tables
+
+        # Register blueprints
+        from app.routes import auth, dashboard, webhook, admin, automation
+        app.register_blueprint(auth.bp)
+        app.register_blueprint(dashboard.bp)
+        app.register_blueprint(webhook.bp)
+        app.register_blueprint(admin.bp)
+        app.register_blueprint(automation.bp)
+
+        # Initialize database
         db.create_all()
         
-        # Create admin user if it doesn't exist
-        if not User.query.filter_by(username='admin').first():
+        # Create admin user if needed
+        admin_user = User.query.filter_by(username='admin').first()
+        if not admin_user:
             admin_user = User(
                 username='admin',
-                password=bcrypt.generate_password_hash('fahrvergnuegen').decode('utf-8'),
-                is_admin=True
+                is_admin=True,
+                require_password_change=True
             )
+            admin_user.set_password('admin')
             db.session.add(admin_user)
             db.session.commit()
 
     return app
+
+@login_manager.user_loader
+def load_user(id):
+    from app.models.user import User
+    return User.query.get(int(id))
+
+def from_json_filter(value):
+    """Convert a JSON string to a Python object."""
+    import json
+    try:
+        return json.loads(value)
+    except:
+        return value

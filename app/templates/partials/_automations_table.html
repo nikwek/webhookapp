@@ -1,0 +1,21 @@
+<table class="table mb-0">
+    <tbody>
+        {% if automations %}
+            {% for automation in automations %}
+            <tr class="automation-row {% if not automation.is_active %}text-muted{% endif %}" 
+                data-automation-id="{{ automation.automation_id }}">
+                <!-- Your existing automation row content -->
+            </tr>
+            <tr class="automation-details" style="display: none;">
+                <!-- Your existing automation details content -->
+            </tr>
+            {% endfor %}
+        {% else %}
+            <tr>
+                <td colspan="2" class="text-center py-4">
+                    No automations found. Create one to get started!
+                </td>
+            </tr>
+        {% endif %}
+    </tbody>
+</table> 

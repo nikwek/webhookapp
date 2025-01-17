@@ -17,10 +17,54 @@
         border-left: 4px solid rgba(108, 117, 125, 0.8);
     }
     
+    .table-responsive {
+        overflow-x: auto;
+        max-width: 100%;
+    }
+
+    #webhook-table {
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    /* Timestamp column - fixed width */
+    #webhook-table th:first-child,
+    #webhook-table td:first-child {
+        width: 180px;
+        min-width: 180px;
+        white-space: nowrap;
+    }
+
+    /* Automation name column - dynamic but capped */
+    #webhook-table th:nth-child(2),
+    #webhook-table td:nth-child(2) {
+        width: 250px;          /* Changed from auto to fixed width */
+        min-width: 100px;      /* Added minimum width */
+        max-width: 250px;
+        overflow-wrap: break-word;
+        word-wrap: break-word; /* Added for better browser compatibility */
+        word-break: normal;    /* Changed from break-all to normal for better readability */
+        hyphens: auto;         /* Added to help with word breaking */
+    }
+
+    /* Payload column - takes remaining space */
+    #webhook-table th:nth-child(3),
+    #webhook-table td:nth-child(3) {
+        width: auto;
+    }
+
+    /* Action column - fixed width */
+    #webhook-table th:last-child,
+    #webhook-table td:last-child {
+        width: 100px;
+        min-width: 100px;
+        white-space: nowrap;
+        text-align: center;
+    }
+    
     .payload-container {
         position: relative;
-        max-width: 100%;
-        overflow-x: auto;
+        width: 100%;
     }
     
     .json-compact, .json-pretty {
@@ -32,45 +76,6 @@
     
     .json-pretty {
         display: none;
-        padding-right: 3rem;
-    }
-    
-    .toggle-json {
-        position: absolute;
-        top: 0;
-        right: 0;
-        font-size: 0.8rem;
-        padding: 0.2rem 0.5rem;
-    }
-    
-    /* Table specific styles */
-    #webhook-table {
-        width: 100%;
-    }
-    
-    #webhook-table th:first-child {
-        width: 180px; /* Fixed width for timestamp */
-        white-space: nowrap;
-    }
-    
-    #webhook-table th:nth-child(2),
-    #webhook-table td:nth-child(2) {
-        width: fit-content;
-        max-width: 250px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    
-    #webhook-table td:last-child {
-        /* Payload column takes remaining space */
-        width: auto;
-    }
-    
-    /* Only wrap text if it exceeds max-width */
-    #webhook-table td:nth-child(2):hover {
-        white-space: normal;
-        word-wrap: break-word;
     }
 </style>
 {% endblock %}
@@ -144,15 +149,14 @@
             </div>
 
             <!-- Webhook Logs Section -->
-            <!-- Updated Webhook Logs Section with compact header -->
             <div class="card">
                 <div class="card-header">
                     <div class="d-flex justify-content-between align-items-center">
                         <div class="d-flex align-items-center gap-3">
                             <h4 class="mb-0">Webhook Logs</h4>
-                            <div class="search-container">
+                            <!-- <div class="search-container">
                                 <input type="text" id="searchInput" class="form-control" placeholder="Search logs...">
-                            </div>
+                            </div> -->
                         </div>
                         <div>
                             <button id="exportButton" class="btn btn-secondary me-2">Export to CSV</button>
@@ -162,30 +166,37 @@
                         </div>
                     </div>
                 </div>
-                <table class="table" id="webhook-table">
-                    <thead>
-                        <tr>
-                            <th class="sortable" data-sort="timestamp">Timestamp (UTC)</th>
-                            <th class="sortable" data-sort="automation">Automation</th>
-                            <th>Payload</th>
-                        </tr>
-                    </thead>
-                    <tbody id="logs">
-                        {% for log in logs %}
-                        <tr class="webhook-type-{{ log.payload.action|lower|default('other') }}">
-                            <td>{{ log.timestamp }}</td>
-                            <td>{{ log.automation_name }}</td>
-                            <td>
-                                <div class="payload-container">
-                                    <pre class="json-compact mb-0">{{ log.payload|tojson }}</pre>
-                                    <pre class="json-pretty mb-0" style="display:none">{{ log.payload|tojson(indent=2) }}</pre>
-                                    <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table" id="webhook-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort="timestamp">Timestamp (UTC)</th>
+                                    <th class="sortable" data-sort="automation">Automation</th>
+                                    <th>Payload</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logs">
+                                {% for log in logs %}
+                                <tr class="webhook-type-{{ log.payload.action|lower|default('other') }}">
+                                    <td>{{ log.timestamp }}</td>
+                                    <td>{{ log.automation_name }}</td>
+                                    <td>
+                                        <div class="payload-container">
+                                            <pre class="json-compact mb-0">${JSON.stringify(log.payload)}</pre>
+                                            <pre class="json-pretty mb-0">${JSON.stringify(log.payload, null, 2)}</pre>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -271,7 +282,6 @@ evtSource.onmessage = function(event) {
     const logsTable = document.querySelector('#logs');
     if (!logsTable) return;
     
-    // Only update if we have new logs
     if (!logs.length) return;
     
     logsTable.innerHTML = '';
@@ -287,15 +297,33 @@ evtSource.onmessage = function(event) {
             <td>
                 <div class="payload-container">
                     <pre class="json-compact mb-0">${JSON.stringify(log.payload)}</pre>
-                    <pre class="json-pretty mb-0" style="display:none">${JSON.stringify(log.payload, null, 2)}</pre>
-                    <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
+                    <pre class="json-pretty mb-0">${JSON.stringify(log.payload, null, 2)}</pre>
                 </div>
             </td>
+            <td>
+                <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
+            </td>
         `;
+        
+        // Add event listener to the new toggle button
+        const toggleButton = row.querySelector('.toggle-json');
+        toggleButton.addEventListener('click', function() {
+            const compact = row.querySelector('.json-compact');
+            const pretty = row.querySelector('.json-pretty');
+            
+            if (compact.style.display === 'none') {
+                compact.style.display = 'block';
+                pretty.style.display = 'none';
+                this.textContent = 'Expand';
+            } else {
+                compact.style.display = 'none';
+                pretty.style.display = 'block';
+                this.textContent = 'Collapse';
+            }
+        });
+        
         logsTable.appendChild(row);
     });
-    
-    WebhookManager.initializeEventListeners();
 };
 
 // Handle page visibility

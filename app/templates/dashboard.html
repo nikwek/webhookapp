@@ -274,6 +274,7 @@
 
 {% block scripts %}
 <script>
+
 // Initialize SSE connection
 let evtSource = new EventSource('/webhook-stream');
 
@@ -281,36 +282,34 @@ evtSource.onmessage = function(event) {
     const logs = JSON.parse(event.data);
     const logsTable = document.querySelector('#logs');
     if (!logsTable) return;
-    
+
     if (!logs.length) return;
-    
-    logsTable.innerHTML = '';
-    
+
     logs.forEach(log => {
         const action = log.payload.action?.toLowerCase();
         const row = document.createElement('tr');
         row.className = `webhook-type-${action || 'other'}`;
-        
+
         row.innerHTML = `
             <td>${log.timestamp}</td>
             <td>${log.automation_name}</td>
             <td>
                 <div class="payload-container">
                     <pre class="json-compact mb-0">${JSON.stringify(log.payload)}</pre>
-                    <pre class="json-pretty mb-0">${JSON.stringify(log.payload, null, 2)}</pre>
+                    <pre class="json-pretty mb-0" style="display: none;">${JSON.stringify(log.payload, null, 2)}</pre>
                 </div>
             </td>
             <td>
                 <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
             </td>
         `;
-        
+
         // Add event listener to the new toggle button
         const toggleButton = row.querySelector('.toggle-json');
         toggleButton.addEventListener('click', function() {
             const compact = row.querySelector('.json-compact');
             const pretty = row.querySelector('.json-pretty');
-            
+
             if (compact.style.display === 'none') {
                 compact.style.display = 'block';
                 pretty.style.display = 'none';
@@ -321,8 +320,24 @@ evtSource.onmessage = function(event) {
                 this.textContent = 'Collapse';
             }
         });
-        
-        logsTable.appendChild(row);
+
+        // Insert the new row at the correct position to maintain sorting
+        let inserted = false;
+        for (let i = 0; i < logsTable.rows.length; i++) {
+            if (new Date(log.timestamp) > new Date(logsTable.rows[i].cells[0].textContent)) {
+                logsTable.insertBefore(row, logsTable.rows[i]);
+                inserted = true;
+                break;
+            }
+        }
+        if (!inserted) {
+            logsTable.appendChild(row);
+        }
+
+        // Remove oldest row if we have more than 100 rows
+        if (logsTable.rows.length > 100) {
+            logsTable.deleteRow(logsTable.rows.length - 1);
+        }
     });
 };
 
@@ -467,5 +482,80 @@ document.getElementById('createAutomationForm').addEventListener('submit', funct
         alert('An error occurred. Please try again.');
     });
 });
+
+// Export to CSV functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const exportButton = document.getElementById('exportButton');
+    if (exportButton) {
+        exportButton.addEventListener('click', function() {
+            console.log('Export button clicked');
+            const table = document.getElementById('webhook-table');
+            if (!table) {
+                console.error('Webhook table not found');
+                return;
+            }
+            const rows = table.querySelectorAll('tbody tr');
+            console.log(`Found ${rows.length} rows`);
+
+            let csvContent = "data:text/csv;charset=utf-8,";
+
+            // Collect all unique keys from payloads
+            const allKeys = new Set();
+            rows.forEach(row => {
+                const payloadElement = row.querySelector('.json-compact');
+                if (payloadElement) {
+                    try {
+                        const payload = JSON.parse(payloadElement.textContent);
+                        Object.keys(payload).forEach(key => allKeys.add(key));
+                    } catch (error) {
+                        console.error('Error parsing payload:', error);
+                    }
+                }
+            });
+            console.log('Unique keys:', Array.from(allKeys));
+
+            // Add headers
+            csvContent += `"Timestamp (UTC)","Automation",${Array.from(allKeys).map(key => `"${key}"`).join(',')}\n`;
+
+            // Add row data
+            rows.forEach(row => {
+                const timestamp = row.cells[0].textContent;
+                const automation = row.cells[1].textContent;
+                const payloadElement = row.querySelector('.json-compact');
+                let payload = {};
+                if (payloadElement) {
+                    try {
+                        payload = JSON.parse(payloadElement.textContent);
+                    } catch (error) {
+                        console.error('Error parsing payload:', error);
+                    }
+                }
+
+                let rowData = `"${timestamp}","${automation}",`;
+                allKeys.forEach(key => {
+                    const value = payload[key] !== undefined ? payload[key] : '';
+                    rowData += `"${String(value).replace(/"/g, '""')}",`;
+                });
+
+                csvContent += rowData.slice(0, -1) + '\n'; // Remove trailing comma and add newline
+            });
+
+            console.log('CSV content generated');
+
+            // Create download link and trigger download
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "webhook_logs.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            console.log('Download triggered');
+        });
+    } else {
+        console.error('Export button not found');
+    }
+});
+
 </script>
 {% endblock %}

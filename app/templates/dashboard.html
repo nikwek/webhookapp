@@ -148,56 +148,43 @@
                 </div>
             </div>
 
-            <!-- Webhook Logs Section -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div class="d-flex align-items-center gap-3">
-                            <h4 class="mb-0">Webhook Logs</h4>
-                            <!-- <div class="search-container">
-                                <input type="text" id="searchInput" class="form-control" placeholder="Search logs...">
-                            </div> -->
-                        </div>
-                        <div>
-                            <button id="exportButton" class="btn btn-secondary me-2">Export to CSV</button>
-                            {% if session.get('is_admin') %}
-                            <button id="clearLogsButton" class="btn btn-danger">Clear Logs</button>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table" id="webhook-table">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" data-sort="timestamp">Timestamp (UTC)</th>
-                                    <th class="sortable" data-sort="automation">Automation</th>
-                                    <th>Payload</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="logs">
-                                {% for log in logs %}
-                                <tr class="webhook-type-{{ log.payload.action|lower|default('other') }}">
-                                    <td>{{ log.timestamp }}</td>
-                                    <td>{{ log.automation_name }}</td>
-                                    <td>
-                                        <div class="payload-container">
-                                            <pre class="json-compact mb-0">${JSON.stringify(log.payload)}</pre>
-                                            <pre class="json-pretty mb-0">${JSON.stringify(log.payload, null, 2)}</pre>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+<!-- ... other code ... -->
+
+<!-- Webhook Logs Section -->
+<div class="card">
+    <div class="card-header">
+        <h4 class="mb-0">Webhook Logs</h4>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table" id="webhook-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp (UTC)</th>
+                        <th>Automation</th>
+                        <th>Payload</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="logs">
+                    {% for log in logs %}
+                    <tr class="webhook-type-{{ log.payload.action|lower|default('other') }}">
+                        <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td>{{ log.automation.name if log.automation else 'N/A' }}</td>
+                        <td>
+                            <div class="payload-container">
+                                <pre class="json-compact mb-0">{{ log.payload | tojson }}</pre>
+                                <pre class="json-pretty mb-0" style="display: none;">{{ log.payload | tojson(indent=2) }}</pre>
+                            </div>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
+                            <button class="btn btn-sm btn-secondary copy-json" style="display: none;">Copy</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
@@ -275,6 +262,31 @@
 {% block scripts %}
 <script>
 
+// Function to handle expand/collapse functionality
+function setupLogInteractions() {
+    document.querySelectorAll('.toggle-json').forEach(button => {
+        button.addEventListener('click', function() {
+            const row = this.closest('tr');
+            const payloadContainer = row.querySelector('.payload-container');
+            const jsonCompact = payloadContainer.querySelector('.json-compact');
+            const jsonPretty = payloadContainer.querySelector('.json-pretty');
+
+            if (this.textContent === 'Expand') {
+                jsonCompact.style.display = 'none';
+                jsonPretty.style.display = 'block';
+                this.textContent = 'Collapse';
+            } else {
+                jsonCompact.style.display = 'block';
+                jsonPretty.style.display = 'none';
+                this.textContent = 'Expand';
+            }
+        });
+    });
+}
+
+// Call the function to set up interactions for existing logs
+setupLogInteractions();
+
 // Initialize SSE connection
 let evtSource = new EventSource('/webhook-stream');
 
@@ -286,13 +298,13 @@ evtSource.onmessage = function(event) {
     if (!logs.length) return;
 
     logs.forEach(log => {
-        const action = log.payload.action?.toLowerCase();
+        const action = log.payload.action?.toLowerCase() || 'other';
         const row = document.createElement('tr');
-        row.className = `webhook-type-${action || 'other'}`;
+        row.className = `webhook-type-${action}`;
 
         row.innerHTML = `
-            <td>${log.timestamp}</td>
-            <td>${log.automation_name}</td>
+            <td>${new Date(log.timestamp).toISOString().replace('T', ' ').substr(0, 19)}</td>
+            <td>${log.automation_name || 'N/A'}</td>
             <td>
                 <div class="payload-container">
                     <pre class="json-compact mb-0">${JSON.stringify(log.payload)}</pre>
@@ -304,41 +316,11 @@ evtSource.onmessage = function(event) {
             </td>
         `;
 
-        // Add event listener to the new toggle button
-        const toggleButton = row.querySelector('.toggle-json');
-        toggleButton.addEventListener('click', function() {
-            const compact = row.querySelector('.json-compact');
-            const pretty = row.querySelector('.json-pretty');
-
-            if (compact.style.display === 'none') {
-                compact.style.display = 'block';
-                pretty.style.display = 'none';
-                this.textContent = 'Expand';
-            } else {
-                compact.style.display = 'none';
-                pretty.style.display = 'block';
-                this.textContent = 'Collapse';
-            }
-        });
-
-        // Insert the new row at the correct position to maintain sorting
-        let inserted = false;
-        for (let i = 0; i < logsTable.rows.length; i++) {
-            if (new Date(log.timestamp) > new Date(logsTable.rows[i].cells[0].textContent)) {
-                logsTable.insertBefore(row, logsTable.rows[i]);
-                inserted = true;
-                break;
-            }
-        }
-        if (!inserted) {
-            logsTable.appendChild(row);
-        }
-
-        // Remove oldest row if we have more than 100 rows
-        if (logsTable.rows.length > 100) {
-            logsTable.deleteRow(logsTable.rows.length - 1);
-        }
+        logsTable.insertBefore(row, logsTable.firstChild);
     });
+
+    // Set up interactions for newly added logs
+    setupLogInteractions();
 };
 
 // Handle page visibility

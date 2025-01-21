@@ -22,6 +22,7 @@ def dashboard():
 
     return render_template('dashboard.html', automations=automations, logs=logs)
 
+
 @bp.route('/clear-logs', methods=['POST'])
 @login_required
 def clear_logs():

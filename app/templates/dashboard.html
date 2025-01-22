@@ -72,6 +72,15 @@
         white-space: normal;
         word-wrap: break-word;
     }
+
+    th.sortable::after {
+    content: '\25B2'; /* Up arrow */
+    margin-left: 5px;
+    }
+
+    th.sortable.desc::after {
+        content: '\25BC'; /* Down arrow */
+    }
 </style>
 {% endblock %}
 

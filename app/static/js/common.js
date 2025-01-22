@@ -39,10 +39,7 @@ const WebhookManager = {
     },
 
     initializeEventListeners: function() {
-        // JSON toggle buttons
-        document.querySelectorAll('.toggle-json').forEach(button => {
-            button.addEventListener('click', this.toggleJson);
-        });
+        // ... other event listeners ...
 
         // Status toggle buttons
         document.querySelectorAll('.status-button').forEach(button => {
@@ -52,7 +49,19 @@ const WebhookManager = {
                 const isAdmin = this.dataset.isAdmin === 'true';
 
                 WebhookManager.toggleAutomationStatus(automationId, isActive, isAdmin)
-                    .then(() => window.location.reload())
+                    .then(() => {
+                        // Update button state without page reload
+                        this.textContent = isActive ? 'Inactive' : 'Active';
+                        this.classList.toggle('btn-success');
+                        this.classList.toggle('btn-danger');
+                        this.dataset.isActive = (!isActive).toString();
+
+                        // Update the automation row style
+                        const automationRow = this.closest('.automation-row');
+                        if (automationRow) {
+                            automationRow.classList.toggle('text-muted', !isActive);
+                        }
+                    })
                     .catch(error => alert('Error: ' + error.message));
             });
         });

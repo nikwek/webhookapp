@@ -99,19 +99,27 @@ def delete_user(user_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# API endpoints for automation management
-@bp.route('/api/automation/<automation_id>/toggle', methods=['POST'])
+from app import db
+from app.models.automation import Automation
+from flask import Blueprint, jsonify, session, render_template, redirect, url_for, request
 @admin_required
 def toggle_automation(automation_id):
     try:
         automation = Automation.query.filter_by(automation_id=automation_id).first()
         if not automation:
             return jsonify({"error": "Automation not found"}), 404
+
         automation.is_active = not automation.is_active
         db.session.commit()
-        return jsonify({"success": True})
+
+        # Add a log entry for the status change
+        log_message = f"Automation '{automation.name}' has been {'activated' if automation.is_active else 'deactivated'}."
+        current_app.logger.info(log_message)
+
+        return jsonify({"success": True, "is_active": automation.is_active})
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"Error toggling automation: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/api/automation/<automation_id>/purge', methods=['POST'])

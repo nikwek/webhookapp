@@ -18,6 +18,11 @@ const WebhookManager = {
     },
 
     toggleAutomationStatus: function(automationId, isActive, isAdmin = false) {
+        const button = document.querySelector(`.status-button[data-automation-id="${automationId}"]`);
+        if (button) {
+            button.disabled = true; // Prevent multiple clicks
+        }
+
         const endpoint = isAdmin ? 
             `/admin/api/automation/${automationId}/${isActive ? 'deactivate' : 'activate'}` :
             `/${isActive ? 'deactivate' : 'activate'}-automation/${automationId}`;
@@ -34,7 +39,28 @@ const WebhookManager = {
             if (data.error) {
                 throw new Error(data.error);
             }
+
+            if (button) {
+                const newIsActive = !isActive;
+                button.textContent = newIsActive ? 'Active' : 'Inactive';
+                button.classList.remove(newIsActive ? 'btn-danger' : 'btn-success');
+                button.classList.add(newIsActive ? 'btn-success' : 'btn-danger');
+                button.dataset.isActive = newIsActive.toString();
+                button.disabled = false;
+
+                // Update row styling
+                const row = button.closest('.automation-row');
+                if (row) {
+                    row.classList.toggle('text-muted', !newIsActive);
+                }
+            }
             return data;
+        })
+        .catch(error => {
+            if (button) {
+                button.disabled = false;
+            }
+            throw error;
         });
     },
 

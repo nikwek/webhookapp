@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Webhook Manager{% endblock %}
+{% block title %}Dashboard - Webhook Manager{% endblock title %}
 
 {% block styles %}
 <style>
@@ -73,122 +73,80 @@
         word-wrap: break-word;
     }
 </style>
-{% endblock %}
+{% endblock styles %}
 
 {% block content %}
 <div class="container mt-4">
-    <div class="row">
-        <div class="col-md-12">
-            <!-- Automations Section -->
-            <div class="automation-container mb-4">
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h4 class="mb-0">Automations</h4>
-                        <button id="createAutomationBtn" class="btn btn-secondary">Create New Automation</button>
-                    </div>
-                    <div class="card-body p-0">
-                        <table class="table mb-0">
-                            <tbody>
-                                {% if automations %}
-                                    {% for automation in automations %}
-                                    <tr class="automation-row {% if not automation.is_active %}text-muted{% endif %}" 
-                                        data-automation-id="{{ automation.automation_id }}">
-                                        <td>
-                                            <i class="fas fa-chevron-right chevron-icon me-2"></i>
-                                            {{ automation.name }}
-                                        </td>
-                                        <td class="text-end">
-                                            <button class="btn btn-sm btn-secondary edit-automation-name" 
-                                                    data-automation-id="{{ automation.automation_id }}"
-                                                    data-automation-name="{{ automation.name }}">
-                                                Edit
-                                            </button>
-                                            <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
-                                                    data-automation-id="{{ automation.automation_id }}"
-                                                    data-is-active="{{ automation.is_active | tojson }}">
-                                                {{ "Active" if automation.is_active else "Inactive" }}
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    <tr class="automation-details" style="display: none;">
-                                        <td colspan="2">
-                                            <div class="p-3">
-                                                <h5>Webhook URL:</h5>
-                                                <code class="d-block mb-3">{{ request.url_root }}webhook?automation_id={{ automation.automation_id }}</code>
-                                                <h5>Template:</h5>
-                                                <div class="position-relative">
-                                                    <pre class="bg-light p-3 mb-2"><code id="template-{{ automation.automation_id }}">
-{
-    "action": "{% raw %}{{strategy.order.action}}{% endraw %}",
-    "ticker": "{% raw %}{{ticker}}{% endraw %}",
-    "order_size": "100%",
-    "position_size": "{% raw %}{{strategy.position_size}}{% endraw %}",
-    "schema": "2",
-    "timestamp": "{% raw %}{{time}}{% endraw %}"
-}
-</code></pre>
-                                                    <button class="btn btn-sm btn-secondary position-absolute top-0 end-0 m-2 copy-button" 
-                                                            data-template-id="template-{{ automation.automation_id }}">
-                                                        Copy
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                {% endif %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Webhook Logs Section -->
-            <!-- Updated Webhook Logs Section with compact header -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div class="d-flex align-items-center gap-3">
-                            <h4 class="mb-0">Webhook Logs</h4>
-                            <div class="search-container">
-                                <input type="text" id="searchInput" class="form-control" placeholder="Search logs...">
-                            </div>
-                        </div>
+    <!-- Automations Section -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h4 class="mb-0">Automations</h4>
+            <button id="createAutomationBtn" class="btn btn-secondary">Create New Automation</button>
+        </div>
+        <div class="card-body">
+            <div id="automations-container">
+                {% for automation in automations %}
+                <div class="automation-row {% if not automation.is_active %}text-muted{% endif %}" data-automation-id="{{ automation.automation_id }}">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>
+                            <i class="fas fa-chevron-right chevron-icon me-2"></i>
+                            {{ automation.name }}
+                        </span>
                         <div>
-                            <button id="exportButton" class="btn btn-secondary me-2">Export to CSV</button>
-                            {% if session.get('is_admin') %}
-                            <button id="clearLogsButton" class="btn btn-danger">Clear Logs</button>
-                            {% endif %}
+                            <button class="btn btn-sm btn-secondary edit-automation-name" data-automation-id="{{ automation.automation_id }}" data-automation-name="{{ automation.name }}">
+                                Edit
+                            </button>
+                            <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
+                                data-automation-id="{{ automation.automation_id }}" 
+                                data-is-active="{{ automation.is_active | string | lower }}"> 
+                                {{ "Active" if automation.is_active else "Inactive" }}
+                            </button>
+                        </div>
+                    </div>
+                    <div class="automation-details" style="display: none;">
+                        <div class="mb-3">
+                            <strong>Webhook URL:</strong>
+                            <input type="text" class="form-control" value="{{ automation.webhook_url }}" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <strong>Template JSON:</strong>
+                            <pre class="bg-light p-3 mb-2"><code id="template-{{ automation.automation_id }}">{{ automation.template | default({
+                                "action": "{{strategy.order.action}}",
+                                "ticker": "{{ticker}}",
+                                "order_size": "100%",
+                                "position_size": "{{strategy.position_size}}",
+                                "schema": "2",
+                                "timestamp": "{{time}}"
+                            }) | tojson(indent=2) }}</code></pre>
                         </div>
                     </div>
                 </div>
-                <table class="table" id="webhook-table">
-                    <thead>
-                        <tr>
-                            <th class="sortable" data-sort="timestamp">Timestamp (UTC)</th>
-                            <th class="sortable" data-sort="automation">Automation</th>
-                            <th>Payload</th>
-                        </tr>
-                    </thead>
-                    <tbody id="logs">
-                        {% for log in logs %}
-                        <tr class="webhook-type-{{ log.payload.action|lower|default('other') }}">
-                            <td>{{ log.timestamp }}</td>
-                            <td>{{ log.automation_name }}</td>
-                            <td>
-                                <div class="payload-container">
-                                    <pre class="json-compact mb-0">{{ log.payload|tojson }}</pre>
-                                    <pre class="json-pretty mb-0" style="display:none">{{ log.payload|tojson(indent=2) }}</pre>
-                                    <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                {% endfor %}
             </div>
         </div>
     </div>
+
+    <!-- Webhook Logs Section -->
+    <div class="card">
+        <div class="card-header">
+            <h4 class="mb-0">Webhook Logs</h4>
+        </div>
+        <div class="card-body">
+            <table class="table" id="logs">
+                <thead>
+                    <tr>
+                        <th>Timestamp (UTC)</th>
+                        <th>Automation</th>
+                        <th>Payload</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Logs will be loaded here dynamically -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
 </div>
 
 <!-- Modal for creating new automation -->
@@ -235,18 +193,19 @@
 </div>
 
 <!-- Modal for editing automation -->
-<div class="modal fade" id="editAutomationModal" tabindex="-1">
+<div class="modal fade" id="editAutomationModal" tabindex="-1" aria-labelledby="editAutomationModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Edit Automation</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="editAutomationModalLabel">Edit Automation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <form id="editAutomationForm">
                     <div class="mb-3">
                         <label for="editAutomationName" class="form-label">Automation Name</label>
-                        <input type="text" class="form-control" id="editAutomationName" required>
+                        <input type="text" class="form-control" id="editAutomationName" name="automationName" required>
+                        <input type="hidden" id="editAutomationId" name="automationId">
                     </div>
                 </form>
             </div>
@@ -259,185 +218,26 @@
     </div>
 </div>
 
-{% endblock %}
+{% include 'partials/_dashboard_modals.html' %}
+{% endblock content %}
 
 {% block scripts %}
-<script>
-// Initialize SSE connection
-let evtSource = new EventSource('/webhook-stream');
-
-evtSource.onmessage = function(event) {
-    const logs = JSON.parse(event.data);
-    const logsTable = document.querySelector('#logs');
-    if (!logsTable) return;
-    
-    // Only update if we have new logs
-    if (!logs.length) return;
-    
-    logsTable.innerHTML = '';
-    
-    logs.forEach(log => {
-        const action = log.payload.action?.toLowerCase();
-        const row = document.createElement('tr');
-        row.className = `webhook-type-${action || 'other'}`;
-        
-        row.innerHTML = `
-            <td>${log.timestamp}</td>
-            <td>${log.automation_name}</td>
-            <td>
-                <div class="payload-container">
-                    <pre class="json-compact mb-0">${JSON.stringify(log.payload)}</pre>
-                    <pre class="json-pretty mb-0" style="display:none">${JSON.stringify(log.payload, null, 2)}</pre>
-                    <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
-                </div>
-            </td>
-        `;
-        logsTable.appendChild(row);
-    });
-    
-    WebhookManager.initializeEventListeners();
-};
-
-// Handle page visibility
-document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-        evtSource.close();
-    } else {
-        evtSource = new EventSource('/webhook-stream');
-    }
-});
-
-// Clean up on page unload
-window.addEventListener('beforeunload', () => {
-    evtSource.close();
-});
-
-// Initialize event listeners
-document.addEventListener('DOMContentLoaded', () => {
-    // Create automation button
-    const createBtn = document.getElementById('createAutomationBtn');
-    if (createBtn) {
-        createBtn.addEventListener('click', () => {
-            const modal = new bootstrap.Modal(document.getElementById('createAutomationModal'));
-            modal.show();
-        });
-    }
-
-    // Automation row click handler
-    document.querySelectorAll('.automation-row').forEach(row => {
-        row.addEventListener('click', function(e) {
-            if (!e.target.closest('button')) {
-                const details = this.nextElementSibling;
-                const chevron = this.querySelector('.chevron-icon');
-                
-                // Toggle visibility
-                const isVisible = details.style.display !== 'none';
-                details.style.display = isVisible ? 'none' : '';
-                
-                // Toggle chevron
-                chevron.classList.toggle('fa-chevron-right', isVisible);
-                chevron.classList.toggle('fa-chevron-down', !isVisible);
+{{ super() }}
+<script type="text/javascript">
+document.addEventListener('DOMContentLoaded', function() {
+    const automationRows = document.querySelectorAll('.automation-row');
+    automationRows.forEach(row => {
+        const chevron = row.querySelector('.chevron-icon');
+        chevron.addEventListener('click', function(event) {
+            event.stopPropagation(); // Prevent the row click event from firing
+            const detailsDiv = row.querySelector('.automation-details');
+            if (detailsDiv) {
+                detailsDiv.style.display = detailsDiv.style.display === 'none' ? 'block' : 'none';
+                this.classList.toggle('fa-chevron-down');
+                this.classList.toggle('fa-chevron-right');
             }
         });
-    });
-
-    // Copy button handler
-    document.querySelectorAll('.copy-button').forEach(button => {
-        button.addEventListener('click', function() {
-            const templateId = this.dataset.templateId;
-            const template = document.getElementById(templateId);
-            const textToCopy = template.textContent.trim();
-
-            // Try using Clipboard API first
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(textToCopy)
-                    .then(() => {
-                        this.textContent = 'Copied!';
-                        setTimeout(() => this.textContent = 'Copy', 2000);
-                    })
-                    .catch(err => {
-                        console.error('Failed to copy:', err);
-                        fallbackCopyText(textToCopy, this);
-                    });
-            } else {
-                // Fallback for browsers that don't support Clipboard API
-                fallbackCopyText(textToCopy, this);
-            }
-        });
-    });
-
-    // Fallback copy function using textarea
-    function fallbackCopyText(text, button) {
-        const textArea = document.createElement('textarea');
-        textArea.value = text;
-        textArea.style.position = 'fixed';  // Avoid scrolling to bottom
-        textArea.style.opacity = '0';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-
-        try {
-            document.execCommand('copy');
-            button.textContent = 'Copied!';
-            setTimeout(() => button.textContent = 'Copy', 2000);
-        } catch (err) {
-            console.error('Fallback copy failed:', err);
-            button.textContent = 'Copy failed';
-            setTimeout(() => button.textContent = 'Copy', 2000);
-        }
-
-        document.body.removeChild(textArea);
-    }
-
-    // Edit button handler
-    document.querySelectorAll('.edit-automation-name').forEach(button => {
-        button.addEventListener('click', function(e) {
-            e.stopPropagation();
-            const automationId = this.dataset.automationId;
-            const currentName = this.dataset.automationName;
-            const modal = new bootstrap.Modal(document.getElementById('editAutomationModal'));
-            document.getElementById('editAutomationName').value = currentName;
-            document.getElementById('currentAutomationId').value = automationId;
-            modal.show();
-        });
-    });
-
-    // Search functionality
-    const searchInput = document.getElementById('searchInput');
-    if (searchInput) {
-        searchInput.addEventListener('input', function(e) {
-            const searchTerm = e.target.value.toLowerCase();
-            document.querySelectorAll('#logs tr').forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(searchTerm) ? '' : 'none';
-            });
-        });
-    }
-});
-
-document.getElementById('createAutomationForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const name = document.getElementById('automationName').value;
-    
-    fetch('/create-automation', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name: name })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.automation_id) {
-            window.location.reload();
-        } else {
-            alert('Error: ' + (data.error || 'Unknown error'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('An error occurred. Please try again.');
     });
 });
 </script>
-{% endblock %}
+{% endblock scripts %}

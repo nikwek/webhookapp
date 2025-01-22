@@ -65,6 +65,34 @@ const WebhookManager = {
                     .catch(error => alert('Error: ' + error.message));
             });
         });
+
+        // Sorting functionality
+        document.querySelectorAll('th.sortable').forEach(header => {
+            header.addEventListener('click', function() {
+                const table = this.closest('table');
+                const tbody = table.querySelector('tbody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                const column = this.cellIndex;
+                const dataSort = this.getAttribute('data-sort');
+
+                rows.sort((a, b) => {
+                    const aValue = a.cells[column].textContent;
+                    const bValue = b.cells[column].textContent;
+                    return aValue.localeCompare(bValue);
+                });
+
+                if (this.classList.contains('asc')) {
+                    rows.reverse();
+                    this.classList.remove('asc');
+                    this.classList.add('desc');
+                } else {
+                    this.classList.remove('desc');
+                    this.classList.add('asc');
+                }
+
+                tbody.append(...rows);
+            });
+        });
     }
 };
 

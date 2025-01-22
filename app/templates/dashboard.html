@@ -77,6 +77,19 @@
     .json-pretty {
         display: none;
     }
+
+    th.sortable {
+        cursor: pointer;
+    }
+
+    th.sortable:hover {
+        background-color: #f8f9fa;
+    }
+
+    th.sortable i {
+        margin-left: 5px;
+    }
+
 </style>
 {% endblock %}
 
@@ -438,6 +451,47 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
+});
+
+// Function to handle sorting
+function sortTable(column) {
+    const table = document.getElementById('webhook-table');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    const sortOrder = table.getAttribute('data-sort-order') === 'asc' ? 'desc' : 'asc';
+    table.setAttribute('data-sort-order', sortOrder);
+
+    rows.sort((a, b) => {
+        let aValue = a.cells[column === 'timestamp' ? 0 : 1].textContent.trim();
+        let bValue = b.cells[column === 'timestamp' ? 0 : 1].textContent.trim();
+
+        if (column === 'timestamp') {
+            aValue = new Date(aValue);
+            bValue = new Date(bValue);
+        }
+
+        if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+
+    // Update sort icons
+    table.querySelectorAll('th.sortable i').forEach(icon => {
+        icon.className = 'fas fa-sort';
+    });
+    const sortedHeader = table.querySelector(`th[data-sort="${column}"] i`);
+    sortedHeader.className = `fas fa-sort-${sortOrder === 'asc' ? 'up' : 'down'}`;
+}
+
+// Add event listeners for sorting
+document.querySelectorAll('#webhook-table th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+        const column = th.getAttribute('data-sort');
+        sortTable(column);
+    });
 });
 
 document.getElementById('createAutomationForm').addEventListener('submit', function(e) {

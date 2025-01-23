@@ -95,6 +95,7 @@ const WebhookManager = {
         document.querySelectorAll('.toggle-json').forEach(button => {
             button.addEventListener('click', this.toggleJson);
         });
+        // ... other event listeners ...
 
         // Status toggle buttons
         document.querySelectorAll('.status-button').forEach(button => {

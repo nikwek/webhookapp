@@ -61,6 +61,7 @@ def stream_logs():
     return Response(generate(), mimetype='text/event-stream')
 
 
+
 @bp.route('/clear-logs', methods=['POST'])
 @login_required
 def clear_logs():

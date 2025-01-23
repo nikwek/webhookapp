@@ -58,10 +58,54 @@
         border-left: 4px solid rgba(108, 117, 125, 0.8);
     }
     
+    .table-responsive {
+        overflow-x: auto;
+        max-width: 100%;
+    }
+
+    #webhook-table {
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    /* Timestamp column - fixed width */
+    #webhook-table th:first-child,
+    #webhook-table td:first-child {
+        width: 180px;
+        min-width: 180px;
+        white-space: nowrap;
+    }
+
+    /* Automation name column - dynamic but capped */
+    #webhook-table th:nth-child(2),
+    #webhook-table td:nth-child(2) {
+        width: 250px;          /* Changed from auto to fixed width */
+        min-width: 100px;      /* Added minimum width */
+        max-width: 250px;
+        overflow-wrap: break-word;
+        word-wrap: break-word; /* Added for better browser compatibility */
+        word-break: normal;    /* Changed from break-all to normal for better readability */
+        hyphens: auto;         /* Added to help with word breaking */
+    }
+
+    /* Payload column - takes remaining space */
+    #webhook-table th:nth-child(3),
+    #webhook-table td:nth-child(3) {
+        width: auto;
+    }
+
+    /* Action column - fixed width */
+    #webhook-table th:last-child,
+    #webhook-table td:last-child {
+        width: 100px;
+        min-width: 100px;
+        white-space: nowrap;
+        text-align: center;
+    }
+    
     .payload-container {
         position: relative;
-        max-width: 100%;
-        overflow-x: auto;
+        width: 100%;
     }
     
     .json-compact, .json-pretty {
@@ -73,46 +117,20 @@
     
     .json-pretty {
         display: none;
-        padding-right: 3rem;
     }
-    
-    .toggle-json {
-        position: absolute;
-        top: 0;
-        right: 0;
-        font-size: 0.8rem;
-        padding: 0.2rem 0.5rem;
+
+    th.sortable {
+        cursor: pointer;
     }
-    
-    /* Table specific styles */
-    #webhook-table {
-        width: 100%;
+
+    th.sortable:hover {
+        background-color: #f8f9fa;
     }
-    
-    #webhook-table th:first-child {
-        width: 180px; /* Fixed width for timestamp */
-        white-space: nowrap;
+
+    th.sortable i {
+        margin-left: 5px;
     }
-    
-    #webhook-table th:nth-child(2),
-    #webhook-table td:nth-child(2) {
-        width: fit-content;
-        max-width: 250px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    
-    #webhook-table td:last-child {
-        /* Payload column takes remaining space */
-        width: auto;
-    }
-    
-    /* Only wrap text if it exceeds max-width */
-    #webhook-table td:nth-child(2):hover {
-        white-space: normal;
-        word-wrap: break-word;
-    }
+
 </style>
 {% endblock styles %}
 
@@ -148,50 +166,48 @@
                             </div>
                         </div>
                     </div>
-                    <div class="automation-details" style="display: none;">
-                        <div class="mb-3">
-                            <strong>Webhook URL:</strong>
-                            <input type="text" class="form-control" value="{{ automation.webhook_url }}" readonly>
-                        </div>
-                        <div class="mb-3">
-                            <strong>Template JSON:</strong>
-                            <pre class="bg-light p-3 mb-2"><code id="template-{{ automation.automation_id }}">{{ automation.template | default({
-                                "action": "{{strategy.order.action}}",
-                                "ticker": "{{ticker}}",
-                                "order_size": "100%",
-                                "position_size": "{{strategy.position_size}}",
-                                "schema": "2",
-                                "timestamp": "{{time}}"
-                            }) | tojson(indent=2) }}</code></pre>
-                        </div>
-                    </div>
                 </div>
-                {% endfor %}
             </div>
-        </div>
-    </div>
 
-    <!-- Webhook Logs Section -->
-    <div class="card">
-        <div class="card-header">
-            <h4 class="mb-0">Webhook Logs</h4>
-        </div>
-        <div class="card-body">
-            <table class="table" id="logs">
+<!-- ... other code ... -->
+
+<!-- Webhook Logs Section -->
+<div class="card">
+    <div class="card-header">
+        <h4 class="mb-0">Webhook Logs</h4>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table" id="webhook-table">
                 <thead>
                     <tr>
-                        <th>Timestamp (UTC)</th>
-                        <th>Automation</th>
+                        <th class="sortable" data-sort="timestamp">Timestamp (UTC) <i class="fas fa-sort"></i></th>
+                        <th class="sortable" data-sort="automation">Automation <i class="fas fa-sort"></i></th>
                         <th>Payload</th>
+                        <th></th>
                     </tr>
                 </thead>
-                <tbody>
-                    <!-- Logs will be loaded here dynamically -->
+                <tbody id="logs">
+                    {% for log in logs %}
+                    <tr class="webhook-type-{{ log.payload.action|lower|default('other') }}">
+                        <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td>{{ log.automation.name if log.automation else 'N/A' }}</td>
+                        <td>
+                            <div class="payload-container">
+                                <pre class="json-compact mb-0">{{ log.payload | tojson }}</pre>
+                                <pre class="json-pretty mb-0" style="display: none;">{{ log.payload | tojson(indent=2) }}</pre>
+                            </div>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
+                            <button class="btn btn-sm btn-secondary copy-json" style="display: none;">Copy</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
-</div>
 </div>
 
 <!-- Modal for creating new automation -->
@@ -267,22 +283,367 @@
 {% endblock content %}
 
 {% block scripts %}
-{{ super() }}
-<script type="text/javascript">
-document.addEventListener('DOMContentLoaded', function() {
-    const automationRows = document.querySelectorAll('.automation-row');
-    automationRows.forEach(row => {
-        const chevron = row.querySelector('.chevron-icon');
-        chevron.addEventListener('click', function(event) {
-            event.stopPropagation(); // Prevent the row click event from firing
-            const detailsDiv = row.querySelector('.automation-details');
-            if (detailsDiv) {
-                detailsDiv.style.display = detailsDiv.style.display === 'none' ? 'block' : 'none';
-                this.classList.toggle('fa-chevron-down');
-                this.classList.toggle('fa-chevron-right');
+<script>
+
+// Function to handle expand/collapse functionality
+function setupLogInteractions() {
+    document.querySelectorAll('.toggle-json').forEach(button => {
+        button.addEventListener('click', function() {
+            const row = this.closest('tr');
+            const payloadContainer = row.querySelector('.payload-container');
+            const jsonCompact = payloadContainer.querySelector('.json-compact');
+            const jsonPretty = payloadContainer.querySelector('.json-pretty');
+
+            if (this.textContent === 'Expand') {
+                jsonCompact.style.display = 'none';
+                jsonPretty.style.display = 'block';
+                this.textContent = 'Collapse';
+            } else {
+                jsonCompact.style.display = 'block';
+                jsonPretty.style.display = 'none';
+                this.textContent = 'Expand';
             }
         });
     });
+}
+
+// Call the function to set up interactions for existing logs
+setupLogInteractions();
+
+// Initialize SSE connection
+let evtSource = new EventSource('/webhook-stream');
+
+evtSource.onmessage = function(event) {
+    const logs = JSON.parse(event.data);
+    const logsTable = document.querySelector('#logs');
+    if (!logsTable) return;
+
+    if (!logs.length) return;
+
+    logs.forEach(log => {
+        const action = log.payload.action?.toLowerCase() || 'other';
+        const row = document.createElement('tr');
+        row.className = `webhook-type-${action}`;
+
+        row.innerHTML = `
+            <td>${new Date(log.timestamp).toISOString().replace('T', ' ').substr(0, 19)}</td>
+            <td>${log.automation_name || 'N/A'}</td>
+            <td>
+                <div class="payload-container">
+                    <pre class="json-compact mb-0">${JSON.stringify(log.payload)}</pre>
+                    <pre class="json-pretty mb-0" style="display: none;">${JSON.stringify(log.payload, null, 2)}</pre>
+                </div>
+            </td>
+            <td>
+                <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
+            </td>
+        `;
+
+        logsTable.insertBefore(row, logsTable.firstChild);
+    });
+
+    // Set up interactions for newly added logs
+    setupLogInteractions();
+};
+
+// Handle page visibility
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        evtSource.close();
+    } else {
+        evtSource = new EventSource('/webhook-stream');
+    }
 });
+
+// Clean up on page unload
+window.addEventListener('beforeunload', () => {
+    evtSource.close();
+});
+
+// Initialize event listeners
+document.addEventListener('DOMContentLoaded', () => {
+    // Create automation button
+    const createBtn = document.getElementById('createAutomationBtn');
+    if (createBtn) {
+        createBtn.addEventListener('click', () => {
+            const modal = new bootstrap.Modal(document.getElementById('createAutomationModal'));
+            modal.show();
+        });
+    }
+
+    // Automation row expand/contract handler
+    document.querySelectorAll('.automation-row').forEach(row => {
+        row.addEventListener('click', function(e) {
+            if (!e.target.closest('button')) {
+                const details = this.nextElementSibling;
+                const chevron = this.querySelector('.chevron-icon');
+                
+                // Toggle visibility
+                const isVisible = details.style.display !== 'none';
+                details.style.display = isVisible ? 'none' : '';
+                
+                // Toggle chevron
+                chevron.classList.toggle('fa-chevron-right', isVisible);
+                chevron.classList.toggle('fa-chevron-down', !isVisible);
+            }
+        });
+    });
+
+    // Copy button handler
+    document.querySelectorAll('.copy-button').forEach(button => {
+        button.addEventListener('click', function() {
+            const templateId = this.dataset.templateId;
+            const template = document.getElementById(templateId);
+            const textToCopy = template.textContent.trim();
+
+            // Try using Clipboard API first
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(textToCopy)
+                    .then(() => {
+                        this.textContent = 'Copied!';
+                        setTimeout(() => this.textContent = 'Copy', 2000);
+                    })
+                    .catch(err => {
+                        console.error('Failed to copy:', err);
+                        fallbackCopyText(textToCopy, this);
+                    });
+            } else {
+                // Fallback for browsers that don't support Clipboard API
+                fallbackCopyText(textToCopy, this);
+            }
+        });
+    });
+
+    // Fallback copy function using textarea
+    function fallbackCopyText(text, button) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';  // Avoid scrolling to bottom
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+            document.execCommand('copy');
+            button.textContent = 'Copied!';
+            setTimeout(() => button.textContent = 'Copy', 2000);
+        } catch (err) {
+            console.error('Fallback copy failed:', err);
+            button.textContent = 'Copy failed';
+            setTimeout(() => button.textContent = 'Copy', 2000);
+        }
+
+        document.body.removeChild(textArea);
+    }
+
+    // Edit button handler
+    document.querySelectorAll('.edit-automation-name').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const automationId = this.dataset.automationId;
+            const currentName = this.dataset.automationName;
+            const modal = new bootstrap.Modal(document.getElementById('editAutomationModal'));
+            document.getElementById('editAutomationName').value = currentName;
+            document.getElementById('currentAutomationId').value = automationId;
+            modal.show();
+        });
+    });
+
+    // Search functionality
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase();
+            document.querySelectorAll('#logs tr').forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(searchTerm) ? '' : 'none';
+            });
+        });
+    }
+});
+
+// Function to handle sorting
+function sortTable(column) {
+    const table = document.getElementById('webhook-table');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    const sortOrder = table.getAttribute('data-sort-order') === 'asc' ? 'desc' : 'asc';
+    table.setAttribute('data-sort-order', sortOrder);
+
+    rows.sort((a, b) => {
+        let aValue = a.cells[column === 'timestamp' ? 0 : 1].textContent.trim();
+        let bValue = b.cells[column === 'timestamp' ? 0 : 1].textContent.trim();
+
+        if (column === 'timestamp') {
+            aValue = new Date(aValue);
+            bValue = new Date(bValue);
+        }
+
+        if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+
+    // Update sort icons
+    table.querySelectorAll('th.sortable i').forEach(icon => {
+        icon.className = 'fas fa-sort';
+    });
+    const sortedHeader = table.querySelector(`th[data-sort="${column}"] i`);
+    sortedHeader.className = `fas fa-sort-${sortOrder === 'asc' ? 'up' : 'down'}`;
+}
+
+// Add event listeners for sorting
+document.querySelectorAll('#webhook-table th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+        const column = th.getAttribute('data-sort');
+        sortTable(column);
+    });
+});
+
+document.getElementById('createAutomationForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const name = document.getElementById('automationName').value;
+    
+    fetch('/create-automation', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: name })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.automation_id) {
+            window.location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred. Please try again.');
+    });
+});
+
+// Export to CSV functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const exportButton = document.getElementById('exportButton');
+    if (exportButton) {
+        exportButton.addEventListener('click', function() {
+            console.log('Export button clicked');
+            const table = document.getElementById('webhook-table');
+            if (!table) {
+                console.error('Webhook table not found');
+                return;
+            }
+            const rows = table.querySelectorAll('tbody tr');
+            console.log(`Found ${rows.length} rows`);
+
+            let csvContent = "data:text/csv;charset=utf-8,";
+
+            // Collect all unique keys from payloads
+            const allKeys = new Set();
+            rows.forEach(row => {
+                const payloadElement = row.querySelector('.json-compact');
+                if (payloadElement) {
+                    try {
+                        const payload = JSON.parse(payloadElement.textContent);
+                        Object.keys(payload).forEach(key => allKeys.add(key));
+                    } catch (error) {
+                        console.error('Error parsing payload:', error);
+                    }
+                }
+            });
+            console.log('Unique keys:', Array.from(allKeys));
+
+            // Add headers
+            csvContent += `"Timestamp (UTC)","Automation",${Array.from(allKeys).map(key => `"${key}"`).join(',')}\n`;
+
+            // Add row data
+            rows.forEach(row => {
+                const timestamp = row.cells[0].textContent;
+                const automation = row.cells[1].textContent;
+                const payloadElement = row.querySelector('.json-compact');
+                let payload = {};
+                if (payloadElement) {
+                    try {
+                        payload = JSON.parse(payloadElement.textContent);
+                    } catch (error) {
+                        console.error('Error parsing payload:', error);
+                    }
+                }
+
+                let rowData = `"${timestamp}","${automation}",`;
+                allKeys.forEach(key => {
+                    const value = payload[key] !== undefined ? payload[key] : '';
+                    rowData += `"${String(value).replace(/"/g, '""')}",`;
+                });
+
+                csvContent += rowData.slice(0, -1) + '\n'; // Remove trailing comma and add newline
+            });
+
+            console.log('CSV content generated');
+
+            // Create download link and trigger download
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "webhook_logs.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            console.log('Download triggered');
+        });
+    } else {
+        console.error('Export button not found');
+    }
+});
+
+// Function to handle sorting
+function sortTable(column) {
+    const table = document.getElementById('webhook-table');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    const sortOrder = table.getAttribute('data-sort-order') === 'asc' ? 'desc' : 'asc';
+    table.setAttribute('data-sort-order', sortOrder);
+
+    rows.sort((a, b) => {
+        let aValue = a.cells[column === 'timestamp' ? 0 : 1].textContent.trim();
+        let bValue = b.cells[column === 'timestamp' ? 0 : 1].textContent.trim();
+
+        if (column === 'timestamp') {
+            aValue = new Date(aValue);
+            bValue = new Date(bValue);
+        }
+
+        if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+
+    // Update sort icons
+    table.querySelectorAll('th.sortable i').forEach(icon => {
+        icon.className = 'fas fa-sort';
+    });
+    const sortedHeader = table.querySelector(`th[data-sort="${column}"] i`);
+    sortedHeader.className = `fas fa-sort-${sortOrder === 'asc' ? 'up' : 'down'}`;
+}
+
+// Add event listeners for sorting
+document.querySelectorAll('#webhook-table th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+        const column = th.getAttribute('data-sort');
+        sortTable(column);
+    });
+});
+
+
 </script>
 {% endblock scripts %}

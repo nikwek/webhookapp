@@ -34,14 +34,23 @@ def create_automation():
         
         webhook_url = f"{request.url_root}webhook?automation_id={automation.automation_id}"
         
+        template = {
+            "action": "{{strategy.order.action}}",
+            "ticker": "{{ticker}}",
+            "order_size": "100%",
+            "position_size": "{{strategy.position_size}}",
+            "schema": "2",
+            "timestamp": "{{time}}"
+        }
+        
+        # Save the template to the automation
+        automation.template = template
+        db.session.commit()
+        
         return jsonify({
             "automation_id": automation.automation_id,
             "webhook_url": webhook_url,
-            "template": {
-                "ticker": "{{ticker}}",
-                "action": "{{strategy.order.action}}",
-                "timestamp": "{{time}}"
-            }
+            "template": template
         })
     except Exception as e:
         print(f"Error creating automation: {e}")  # Add logging

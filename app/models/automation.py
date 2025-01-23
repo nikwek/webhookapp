@@ -14,7 +14,8 @@ class Automation(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     last_run = db.Column(db.DateTime, default=None)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    
+    template = db.Column(db.JSON, default={})
+
     # Add the relationship
     user = db.relationship('User', backref=db.backref('automations', lazy=True))
 

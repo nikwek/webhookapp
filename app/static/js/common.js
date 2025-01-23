@@ -1,4 +1,3 @@
-// Working code refactored by Claude.ai
 // Common utilities for webhook manager
 const WebhookManager = {
     toggleJson: function(event) {
@@ -82,10 +81,6 @@ const WebhookManager = {
     "timestamp": "{{time}}"
 }
 </code></pre>
-                            <button class="btn btn-sm btn-secondary position-absolute top-0 end-0 m-2 copy-button" 
-                                    data-template-id="template-${data.automation_id}">
-                                Copy
-                            </button>
                         </div>
                     </div>
                 </td>
@@ -227,6 +222,16 @@ const WebhookManager = {
                         console.error('Error:', error);
                         alert('Error creating automation: ' + error.message);
                     });
+            });
+        }
+
+        // Edit Automation form handler
+        const editForm = document.getElementById('editAutomationForm');
+        if (editForm && !editForm.hasListener) {
+            editForm.hasListener = true;
+            editForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                document.getElementById('saveAutomationChanges').click();
             });
         }
 

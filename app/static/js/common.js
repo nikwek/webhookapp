@@ -217,11 +217,10 @@ const WebhookManager = {
             });
         }
 
-        // Edit Automation form handler
-        const editForm = document.getElementById('editAutomationForm');
-        if (editForm) {
-            editForm.addEventListener('submit', function(e) {
-                e.preventDefault();
+        // Save Changes button handler
+        const saveChangesBtn = document.getElementById('saveAutomationChanges');
+        if (saveChangesBtn) {
+            saveChangesBtn.addEventListener('click', function() {
                 const nameInput = document.getElementById('editAutomationName');
                 const idInput = document.getElementById('editAutomationId');
                 const name = nameInput.value.trim();
@@ -232,7 +231,7 @@ const WebhookManager = {
                     return;
                 }
 
-                fetch('/update-automation', {
+                fetch('/update_automation_name', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -277,7 +276,7 @@ const WebhookManager = {
                 const automationId = document.getElementById('editAutomationId').value;
                 
                 if (confirm('Are you sure you want to delete this automation? This action cannot be undone.')) {
-                    fetch('/delete-automation', {
+                    fetch('/delete_automation', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',

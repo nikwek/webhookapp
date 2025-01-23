@@ -76,46 +76,54 @@ const WebhookManager = {
     },
 
     initializeEventListeners: function() {
-        // Remove existing event listeners
-        document.querySelectorAll('.automation-header').forEach(header => {
-            const oldHeader = header.cloneNode(true);
-            header.parentNode.replaceChild(oldHeader, header);
-        });
+        const self = this;  // Store reference to WebhookManager
 
         // Create New Automation button
         const createBtn = document.getElementById('createAutomationBtn');
         if (createBtn) {
-            createBtn.addEventListener('click', function() {
+            createBtn.onclick = function() {
                 const modal = new bootstrap.Modal(document.getElementById('createAutomationModal'));
                 modal.show();
-            });
+            };
         }
 
         // JSON toggle buttons
         document.querySelectorAll('.toggle-json').forEach(button => {
-            button.addEventListener('click', this.toggleJson);
+            button.onclick = function(e) {
+                e.stopPropagation();
+                self.toggleJson(e);
+            };
         });
-        // ... other event listeners ...
+
+        // Automation header click handlers
+        document.querySelectorAll('.automation-header').forEach(header => {
+            header.onclick = function(e) {
+                if (!e.target.closest('button')) {  // Ignore clicks on buttons
+                    const row = this.closest('.automation-row');
+                    self.toggleAutomationDetails(row);
+                }
+            };
+        });
 
         // Status toggle buttons
         document.querySelectorAll('.status-button').forEach(button => {
-            button.addEventListener('click', (e) => {
-                e.stopPropagation(); // Prevent row expansion when clicking status button
-                const automationId = button.dataset.automationId;
-                const isActive = JSON.parse(button.dataset.isActive);
-                const isAdmin = button.dataset.isAdmin === 'true';
+            button.onclick = function(e) {
+                e.stopPropagation();
+                const automationId = this.dataset.automationId;
+                const isActive = JSON.parse(this.dataset.isActive);
+                const isAdmin = this.dataset.isAdmin === 'true';
 
-                WebhookManager.toggleAutomationStatus(automationId, isActive, isAdmin)
+                self.toggleAutomationStatus(automationId, isActive, isAdmin)
                     .catch(error => alert('Error: ' + error.message));
-            });
+            };
         });
 
         // Edit buttons
         document.querySelectorAll('.edit-automation-name').forEach(button => {
-            button.addEventListener('click', (e) => {
-                e.stopPropagation(); // Prevent row expansion when clicking edit button
-                const automationId = button.dataset.automationId;
-                const automationName = button.dataset.automationName;
+            button.onclick = function(e) {
+                e.stopPropagation();
+                const automationId = this.dataset.automationId;
+                const automationName = this.dataset.automationName;
                 
                 // Set up edit modal
                 const modal = new bootstrap.Modal(document.getElementById('editAutomationModal'));
@@ -126,17 +134,7 @@ const WebhookManager = {
                 idInput.value = automationId;
                 
                 modal.show();
-            });
-        });
-
-        // Automation header click handlers
-        document.querySelectorAll('.automation-header').forEach(header => {
-            header.addEventListener('click', (e) => {
-                if (!e.target.closest('button')) {  // Ignore clicks on buttons
-                    const row = header.closest('.automation-row');
-                    WebhookManager.toggleAutomationDetails(row);
-                }
-            });
+            };
         });
 
         // Create Automation form
@@ -151,6 +149,10 @@ const WebhookManager = {
                     alert('Please enter an automation name');
                     return;
                 }
+
+                // Disable submit button to prevent double submission
+                const submitButton = createForm.querySelector('button[type="submit"]');
+                submitButton.disabled = true;
 
                 fetch('/create-automation', {
                     method: 'POST',
@@ -167,6 +169,13 @@ const WebhookManager = {
                     
                     // Add the new automation to the DOM at the top
                     const container = document.getElementById('automations-container');
+                    
+                    // Remove any existing automation with the same ID (prevent duplicates)
+                    const existingAutomation = container.querySelector(`[data-automation-id="${data.automation_id}"]`);
+                    if (existingAutomation) {
+                        existingAutomation.remove();
+                    }
+                    
                     const newAutomationHtml = `
                         <div class="automation-row" data-automation-id="${data.automation_id}">
                             <div class="automation-header">
@@ -208,12 +217,74 @@ const WebhookManager = {
                     modal.hide();
                     createForm.reset();
                     
-                    // Reinitialize event listeners for the new automation
-                    WebhookManager.initializeEventListeners();
+                    // Re-enable the submit button
+                    submitButton.disabled = false;
+                    
+                    // Clean up modal artifacts
+                    document.body.classList.remove('modal-open');
+                    document.body.style.overflow = '';
+                    document.body.style.paddingRight = '';
+                    const modalBackdrop = document.querySelector('.modal-backdrop');
+                    if (modalBackdrop) {
+                        modalBackdrop.remove();
+                    }
+                    
+                    // Remove any existing event listeners from the new automation
+                    const newAutomation = container.querySelector(`[data-automation-id="${data.automation_id}"]`);
+                    const newHeader = newAutomation.querySelector('.automation-header');
+                    const newButtons = newAutomation.querySelectorAll('button');
+                    
+                    // Add event listeners specifically to the new automation
+                    newHeader.onclick = function(e) {
+                        if (!e.target.closest('button')) {
+                            self.toggleAutomationDetails(newAutomation);
+                        }
+                    };
+                    
+                    // Add event listeners to the new automation's buttons
+                    newButtons.forEach(button => {
+                        if (button.classList.contains('status-button')) {
+                            button.onclick = function(e) {
+                                e.stopPropagation();
+                                const automationId = this.dataset.automationId;
+                                const isActive = JSON.parse(this.dataset.isActive);
+                                const isAdmin = this.dataset.isAdmin === 'true';
+                                self.toggleAutomationStatus(automationId, isActive, isAdmin)
+                                    .catch(error => alert('Error: ' + error.message));
+                            };
+                        } else if (button.classList.contains('edit-automation-name')) {
+                            button.onclick = function(e) {
+                                e.stopPropagation();
+                                const automationId = this.dataset.automationId;
+                                const automationName = this.dataset.automationName;
+                                
+                                const modal = new bootstrap.Modal(document.getElementById('editAutomationModal'));
+                                const nameInput = document.getElementById('editAutomationName');
+                                const idInput = document.getElementById('editAutomationId');
+                                
+                                nameInput.value = automationName;
+                                idInput.value = automationId;
+                                
+                                modal.show();
+                            };
+                        }
+                    });
                 })
+                
                 .catch(error => {
                     console.error('Error:', error);
                     alert('Error creating automation: ' + error.message);
+                    submitButton.disabled = false;
+                })
+                .finally(() => {
+                    // Ensure modal cleanup happens even on error
+                    document.body.classList.remove('modal-open');
+                    document.body.style.overflow = '';
+                    document.body.style.paddingRight = '';
+                    const modalBackdrop = document.querySelector('.modal-backdrop');
+                    if (modalBackdrop) {
+                        modalBackdrop.remove();
+                    }
                 });
             });
         }

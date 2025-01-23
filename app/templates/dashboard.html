@@ -166,17 +166,46 @@
                             </div>
                         </div>
                     </div>
+                    <div class="automation-details" style="display: none;">
+                        <div class="mb-3">
+                            <strong>Webhook URL:</strong>
+                            <input type="text" class="form-control" value="{{ automation.webhook_url }}" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <strong>Template JSON:</strong>
+                            <pre class="bg-light p-3 mb-2"><code id="template-{{ automation.automation_id }}">{{ automation.template | default({
+                                "action": "{{strategy.order.action}}",
+                                "ticker": "{{ticker}}",
+                                "order_size": "100%",
+                                "position_size": "{{strategy.position_size}}",
+                                "schema": "2",
+                                "timestamp": "{{time}}"
+                            }) | tojson(indent=2) }}</code></pre>
+                            <button class="btn btn-sm btn-secondary copy-button" 
+                                    data-template-id="template-{{ automation.automation_id }}">
+                                Copy
+                            </button>
+                        </div>
+                    </div>
                 </div>
+                {% endfor %}
             </div>
-
-<!-- ... other code ... -->
-
-<!-- Webhook Logs Section -->
-<div class="card">
-    <div class="card-header">
-        <h4 class="mb-0">Webhook Logs</h4>
+        </div>
     </div>
-    <div class="card-body p-0">
+
+    <!-- Webhook Logs Section -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h4 class="mb-0">Webhook Logs</h4>
+            <div>
+                <input type="text" id="searchInput" class="form-control form-control-sm d-inline-block mr-2" 
+                       placeholder="Search logs..." style="width: 200px;">
+                <button id="exportButton" class="btn btn-secondary btn-sm">
+                    <i class="fas fa-download me-1"></i>Export to CSV
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table" id="webhook-table">
                 <thead>
@@ -266,7 +295,7 @@
                     <div class="mb-3">
                         <label for="editAutomationName" class="form-label">Automation Name</label>
                         <input type="text" class="form-control" id="editAutomationName" name="automationName" required>
-                        <input type="hidden" id="editAutomationId" name="automationId">
+                        <input type="hidden" id="editAutomationId" name="automationId" value="">
                     </div>
                 </form>
             </div>
@@ -285,65 +314,31 @@
 {% block scripts %}
 <script>
 
-// Function to handle expand/collapse functionality
-function setupLogInteractions() {
-    document.querySelectorAll('.toggle-json').forEach(button => {
-        button.addEventListener('click', function() {
-            const row = this.closest('tr');
-            const payloadContainer = row.querySelector('.payload-container');
-            const jsonCompact = payloadContainer.querySelector('.json-compact');
-            const jsonPretty = payloadContainer.querySelector('.json-pretty');
-
-            if (this.textContent === 'Expand') {
-                jsonCompact.style.display = 'none';
-                jsonPretty.style.display = 'block';
-                this.textContent = 'Collapse';
-            } else {
-                jsonCompact.style.display = 'block';
-                jsonPretty.style.display = 'none';
-                this.textContent = 'Expand';
-            }
-        });
-    });
-}
-
-// Call the function to set up interactions for existing logs
-setupLogInteractions();
-
 // Initialize SSE connection
 let evtSource = new EventSource('/webhook-stream');
 
 evtSource.onmessage = function(event) {
     const logs = JSON.parse(event.data);
     const logsTable = document.querySelector('#logs');
-    if (!logsTable) return;
+    if (!logsTable || !logs.length) return;
 
-    if (!logs.length) return;
-
-    logs.forEach(log => {
-        const action = log.payload.action?.toLowerCase() || 'other';
-        const row = document.createElement('tr');
-        row.className = `webhook-type-${action}`;
-
-        row.innerHTML = `
-            <td>${new Date(log.timestamp).toISOString().replace('T', ' ').substr(0, 19)}</td>
+    // Update logs table
+    logsTable.innerHTML = logs.map(log => `
+        <tr class="webhook-type-${(log.payload.action || '').toLowerCase() || 'other'}">
+            <td>${new Date(log.timestamp).toLocaleString()}</td>
             <td>${log.automation_name || 'N/A'}</td>
             <td>
                 <div class="payload-container">
                     <pre class="json-compact mb-0">${JSON.stringify(log.payload)}</pre>
-                    <pre class="json-pretty mb-0" style="display: none;">${JSON.stringify(log.payload, null, 2)}</pre>
+                    <pre class="json-pretty mb-0" style="display:none">${JSON.stringify(log.payload, null, 2)}</pre>
+                    <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
                 </div>
             </td>
-            <td>
-                <button class="btn btn-sm btn-secondary toggle-json">Expand</button>
-            </td>
-        `;
+        </tr>
+    `).join('');
 
-        logsTable.insertBefore(row, logsTable.firstChild);
-    });
-
-    // Set up interactions for newly added logs
-    setupLogInteractions();
+    // Reinitialize event listeners
+    WebhookManager.initializeEventListeners();
 };
 
 // Handle page visibility
@@ -360,174 +355,65 @@ window.addEventListener('beforeunload', () => {
     evtSource.close();
 });
 
-// Initialize event listeners
-document.addEventListener('DOMContentLoaded', () => {
-    // Create automation button
-    const createBtn = document.getElementById('createAutomationBtn');
-    if (createBtn) {
-        createBtn.addEventListener('click', () => {
-            const modal = new bootstrap.Modal(document.getElementById('createAutomationModal'));
-            modal.show();
-        });
-    }
+// Copy button handler
+document.querySelectorAll('.copy-button').forEach(button => {
+    button.addEventListener('click', function() {
+        const templateId = this.dataset.templateId;
+        const template = document.getElementById(templateId);
+        const textToCopy = template.textContent.trim();
 
-    // Automation row expand/contract handler
-    document.querySelectorAll('.automation-row').forEach(row => {
-        row.addEventListener('click', function(e) {
-            if (!e.target.closest('button')) {
-                const details = this.nextElementSibling;
-                const chevron = this.querySelector('.chevron-icon');
-                
-                // Toggle visibility
-                const isVisible = details.style.display !== 'none';
-                details.style.display = isVisible ? 'none' : '';
-                
-                // Toggle chevron
-                chevron.classList.toggle('fa-chevron-right', isVisible);
-                chevron.classList.toggle('fa-chevron-down', !isVisible);
-            }
-        });
-    });
-
-    // Copy button handler
-    document.querySelectorAll('.copy-button').forEach(button => {
-        button.addEventListener('click', function() {
-            const templateId = this.dataset.templateId;
-            const template = document.getElementById(templateId);
-            const textToCopy = template.textContent.trim();
-
-            // Try using Clipboard API first
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(textToCopy)
-                    .then(() => {
-                        this.textContent = 'Copied!';
-                        setTimeout(() => this.textContent = 'Copy', 2000);
-                    })
-                    .catch(err => {
-                        console.error('Failed to copy:', err);
-                        fallbackCopyText(textToCopy, this);
-                    });
-            } else {
-                // Fallback for browsers that don't support Clipboard API
-                fallbackCopyText(textToCopy, this);
-            }
-        });
-    });
-
-    // Fallback copy function using textarea
-    function fallbackCopyText(text, button) {
-        const textArea = document.createElement('textarea');
-        textArea.value = text;
-        textArea.style.position = 'fixed';  // Avoid scrolling to bottom
-        textArea.style.opacity = '0';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-
-        try {
-            document.execCommand('copy');
-            button.textContent = 'Copied!';
-            setTimeout(() => button.textContent = 'Copy', 2000);
-        } catch (err) {
-            console.error('Fallback copy failed:', err);
-            button.textContent = 'Copy failed';
-            setTimeout(() => button.textContent = 'Copy', 2000);
+        // Try using Clipboard API first
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(textToCopy)
+                .then(() => {
+                    this.textContent = 'Copied!';
+                    setTimeout(() => this.textContent = 'Copy', 2000);
+                })
+                .catch(err => {
+                    console.error('Failed to copy:', err);
+                    fallbackCopyText(textToCopy, this);
+                });
+        } else {
+            // Fallback for browsers that don't support Clipboard API
+            fallbackCopyText(textToCopy, this);
         }
-
-        document.body.removeChild(textArea);
-    }
-
-    // Edit button handler
-    document.querySelectorAll('.edit-automation-name').forEach(button => {
-        button.addEventListener('click', function(e) {
-            e.stopPropagation();
-            const automationId = this.dataset.automationId;
-            const currentName = this.dataset.automationName;
-            const modal = new bootstrap.Modal(document.getElementById('editAutomationModal'));
-            document.getElementById('editAutomationName').value = currentName;
-            document.getElementById('currentAutomationId').value = automationId;
-            modal.show();
-        });
     });
-
-    // Search functionality
-    const searchInput = document.getElementById('searchInput');
-    if (searchInput) {
-        searchInput.addEventListener('input', function(e) {
-            const searchTerm = e.target.value.toLowerCase();
-            document.querySelectorAll('#logs tr').forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(searchTerm) ? '' : 'none';
-            });
-        });
-    }
 });
 
-// Function to handle sorting
-function sortTable(column) {
-    const table = document.getElementById('webhook-table');
-    const tbody = table.querySelector('tbody');
-    const rows = Array.from(tbody.querySelectorAll('tr'));
+// Fallback copy function using textarea
+function fallbackCopyText(text, button) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';  // Avoid scrolling to bottom
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
 
-    const sortOrder = table.getAttribute('data-sort-order') === 'asc' ? 'desc' : 'asc';
-    table.setAttribute('data-sort-order', sortOrder);
+    try {
+        document.execCommand('copy');
+        button.textContent = 'Copied!';
+        setTimeout(() => button.textContent = 'Copy', 2000);
+    } catch (err) {
+        console.error('Fallback copy failed:', err);
+        button.textContent = 'Copy failed';
+        setTimeout(() => button.textContent = 'Copy', 2000);
+    }
 
-    rows.sort((a, b) => {
-        let aValue = a.cells[column === 'timestamp' ? 0 : 1].textContent.trim();
-        let bValue = b.cells[column === 'timestamp' ? 0 : 1].textContent.trim();
-
-        if (column === 'timestamp') {
-            aValue = new Date(aValue);
-            bValue = new Date(bValue);
-        }
-
-        if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
-        if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
-        return 0;
-    });
-
-    rows.forEach(row => tbody.appendChild(row));
-
-    // Update sort icons
-    table.querySelectorAll('th.sortable i').forEach(icon => {
-        icon.className = 'fas fa-sort';
-    });
-    const sortedHeader = table.querySelector(`th[data-sort="${column}"] i`);
-    sortedHeader.className = `fas fa-sort-${sortOrder === 'asc' ? 'up' : 'down'}`;
+    document.body.removeChild(textArea);
 }
 
-// Add event listeners for sorting
-document.querySelectorAll('#webhook-table th.sortable').forEach(th => {
-    th.addEventListener('click', () => {
-        const column = th.getAttribute('data-sort');
-        sortTable(column);
+// Search functionality
+const searchInput = document.getElementById('searchInput');
+if (searchInput) {
+    searchInput.addEventListener('input', function(e) {
+        const searchTerm = e.target.value.toLowerCase();
+        document.querySelectorAll('#logs tr').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(searchTerm) ? '' : 'none';
+        });
     });
-});
-
-document.getElementById('createAutomationForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const name = document.getElementById('automationName').value;
-    
-    fetch('/create-automation', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name: name })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.automation_id) {
-            window.location.reload();
-        } else {
-            alert('Error: ' + (data.error || 'Unknown error'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('An error occurred. Please try again.');
-    });
-});
+}
 
 // Export to CSV functionality
 document.addEventListener('DOMContentLoaded', function() {

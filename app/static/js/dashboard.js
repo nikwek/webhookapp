@@ -23,50 +23,6 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeSSE();
 });
 
-function handleStatusToggle(button) {
-    const automationId = button.dataset.automationId;
-    const isActive = JSON.parse(button.dataset.isActive);
-
-    fetch(`/api/automation/${automationId}/${isActive ? 'deactivate' : 'activate'}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) throw new Error(data.error);
-        button.textContent = isActive ? 'Inactive' : 'Active';
-        button.classList.toggle('btn-success');
-        button.classList.toggle('btn-danger');
-        button.dataset.isActive = (!isActive).toString();
-        button.closest('.automation-row').classList.toggle('text-muted', !isActive);
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('An error occurred while updating the automation status.');
-    });
-}
-
-function handleEditAutomation(button) {
-    const automationId = button.dataset.automationId;
-    const automationName = button.dataset.automationName;
-    // Implement edit automation logic here
-}
-
-function toggleAutomationDetails(chevron) {
-    const row = chevron.closest('.automation-row');
-    const details = row.querySelector('.automation-details');
-    details.style.display = details.style.display === 'none' ? 'block' : 'none';
-    chevron.classList.toggle('fa-chevron-down');
-    chevron.classList.toggle('fa-chevron-right');
-}
-
-function showCreateAutomationModal() {
-    // Implement show create automation modal logic here
-}
-
 let evtSource = null;
 
 function initializeSSE() {

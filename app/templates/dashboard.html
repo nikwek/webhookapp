@@ -4,6 +4,47 @@
 
 {% block styles %}
 <style>
+    /* Automation styles */
+    .automation-row {
+        border-bottom: 1px solid #dee2e6;
+        background-color: #fff;
+    }
+
+    .automation-header {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .automation-header:hover {
+        background-color: #f8f9fa;
+    }
+
+    .automation-details {
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-top: 1px solid #dee2e6;
+    }
+
+    .automation-row.inactive {
+        background-color: #f8f9fa;
+    }
+
+    .automation-row:first-child {
+        border-top: 1px solid #dee2e6;
+    }
+
+    .automation-row:last-child {
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    /* Container styles */
+    #automations-container {
+        border-left: 1px solid #dee2e6;
+        border-right: 1px solid #dee2e6;
+    }
+
+    /* Webhook type styles */
     .webhook-type-buy { 
         background-color: rgba(40, 167, 69, 0.1);
         border-left: 4px solid rgba(40, 167, 69, 0.8);
@@ -83,24 +124,28 @@
             <h4 class="mb-0">Automations</h4>
             <button id="createAutomationBtn" class="btn btn-secondary">Create New Automation</button>
         </div>
-        <div class="card-body">
-            <div id="automations-container">
+        <div id="automations-container">
                 {% for automation in automations %}
-                <div class="automation-row {% if not automation.is_active %}text-muted{% endif %}" data-automation-id="{{ automation.automation_id }}">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span>
-                            <i class="fas fa-chevron-right chevron-icon me-2"></i>
-                            {{ automation.name }}
-                        </span>
-                        <div>
-                            <button class="btn btn-sm btn-secondary edit-automation-name" data-automation-id="{{ automation.automation_id }}" data-automation-name="{{ automation.name }}">
-                                Edit
-                            </button>
-                            <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
-                                data-automation-id="{{ automation.automation_id }}" 
-                                data-is-active="{{ automation.is_active | string | lower }}"> 
-                                {{ "Active" if automation.is_active else "Inactive" }}
-                            </button>
+                <div class="automation-row {% if not automation.is_active %}inactive{% endif %}" 
+                     data-automation-id="{{ automation.automation_id }}">
+                    <div class="automation-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>
+                                <i class="fas fa-chevron-right chevron-icon me-2"></i>
+                                {{ automation.name }}
+                            </span>
+                            <div>
+                                <button class="btn btn-sm btn-secondary edit-automation-name" 
+                                        data-automation-id="{{ automation.automation_id }}" 
+                                        data-automation-name="{{ automation.name }}">
+                                    Edit
+                                </button>
+                                <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
+                                        data-automation-id="{{ automation.automation_id }}" 
+                                        data-is-active="{{ automation.is_active | string | lower }}"> 
+                                    {{ "Active" if automation.is_active else "Inactive" }}
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="automation-details" style="display: none;">

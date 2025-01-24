@@ -1,25 +1,4 @@
 document.addEventListener('DOMContentLoaded', function() {
-    // Automations Section
-    const automationsContainer = document.getElementById('automations-container');
-    if (automationsContainer) {
-        automationsContainer.addEventListener('click', function(e) {
-            if (e.target.classList.contains('status-button')) {
-                handleStatusToggle(e.target);
-            } else if (e.target.classList.contains('edit-automation-name')) {
-                handleEditAutomation(e.target);
-            } else if (e.target.classList.contains('chevron-icon')) {
-                toggleAutomationDetails(e.target);
-            }
-        });
-    }
-
-    // Create Automation Button
-    const createAutomationBtn = document.getElementById('createAutomationBtn');
-    if (createAutomationBtn) {
-        createAutomationBtn.addEventListener('click', showCreateAutomationModal);
-    }
-
-    // Webhook Logs Section
     initializeSSE();
 });
 

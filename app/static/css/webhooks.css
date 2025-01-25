@@ -1,11 +1,42 @@
-.table th.timestamp-col {
-    min-width: 200px;
-    width: 200px;
+.table-responsive {
+    overflow-x: hidden;
 }
 
-.table th.automation-col {
-    min-width: 150px;
-    width: 150px;
+.table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.table tbody {
+    width: 100%;
+}
+
+.table th[class*='cursor-pointer']:nth-child(1),
+.table td:nth-child(1) {
+    /* min-width: 150px;
+    max-width: 250px; */
+    width: 15%;
+    white-space: normal;
+    word-wrap: break-word;
+}
+
+.table th[class*='cursor-pointer']:nth-child(2),
+.table td:nth-child(2) {
+    /* min-width: 150px;
+    max-width: 200px; */
+    width: 15%;
+    white-space: normal;
+    word-wrap: break-word;
+}
+
+.table td:nth-child(3) {
+    padding: 8px;
+}
+
+.table td:nth-child(3) pre {
+    /* white-space: pre-wrap;
+    word-wrap: break-word; */
+    max-width: 100%;
 }
 
 .webhook-type-buy { 

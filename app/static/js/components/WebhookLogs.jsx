@@ -97,7 +97,7 @@ const WebhookLogs = ({ isAdmin }) => {
           </div>
         </div>
       </div>
-      <div className="card-body p-0">
+      <div className="card-body p-0 table-responsive">
         <table className="table mb-0">
           <thead>
             <tr>

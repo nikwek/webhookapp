@@ -1,12 +1,14 @@
 # app/routes/webhook.py
-from flask import Blueprint, request, jsonify, Response, stream_with_context, session
+from flask import Blueprint, request, jsonify, Response, stream_with_context, session, send_from_directory
+from flask_login import login_required
 from app.models.webhook import WebhookLog
 from app.models.automation import Automation
 from app import db
 from datetime import datetime, timezone
 import json
 import time
-from flask_login import login_required
+import os
+
 
 bp = Blueprint('webhook', __name__)
 
@@ -60,17 +62,22 @@ def webhook_stream():
             logs = (WebhookLog.query
                    .join(Automation)
                    .filter(Automation.user_id == session['user_id'])
-                   .filter(WebhookLog.id > last_id)
                    .order_by(WebhookLog.timestamp.desc())
                    .limit(100)
                    .all())
             
             if logs:
-                last_id = logs[0].id
                 data = [log.to_dict() for log in logs]
                 yield f"data: {json.dumps(data)}\n\n"
             
             time.sleep(1)
 
-    return Response(stream_with_context(event_stream()),
-                   mimetype='text/event-stream')
+    return Response(
+        stream_with_context(event_stream()),
+        mimetype='text/event-stream'
+    )
+
+@bp.route('/static/js/components/WebhookLogs.jsx')
+def serve_component():
+    component_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'js', 'components')
+    return send_from_directory(component_dir, 'WebhookLogs.jsx', mimetype='text/javascript')

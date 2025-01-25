@@ -1,9 +1,10 @@
 # app/routes/automation.py
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, send_from_directory
 from flask_login import current_user
 from functools import wraps
 from app import db
 from app.models.automation import Automation
+import os
 
 bp = Blueprint('automation', __name__)
 
@@ -15,6 +16,12 @@ def api_login_required(f):
             return jsonify({"error": "Unauthorized"}), 403
         return f(*args, **kwargs)
     return decorated_function
+
+@bp.route('/static/js/components/WebhookLogs.jsx')
+def serve_component(filename):
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    static_dir = os.path.join(root_dir, 'static', 'js', 'components')
+    return send_from_directory(static_dir, filename, mimetype='text/jsx')
 
 @bp.route('/create-automation', methods=['POST'])
 @api_login_required

@@ -1,0 +1,24 @@
+.table th.timestamp-col {
+    min-width: 200px;
+    width: 200px;
+}
+
+.table th.automation-col {
+    min-width: 150px;
+    width: 150px;
+}
+
+.webhook-type-buy { 
+    background-color: rgba(40, 167, 69, 0.1) !important;
+    border-left: 4px solid rgba(40, 167, 69, 0.8);
+}
+
+.webhook-type-sell { 
+    background-color: rgba(220, 53, 69, 0.1) !important;
+    border-left: 4px solid rgba(220, 53, 69, 0.8);
+}
+
+.webhook-type-other { 
+    background-color: rgba(108, 117, 125, 0.1) !important;
+    border-left: 4px solid rgba(108, 117, 125, 0.8);
+}

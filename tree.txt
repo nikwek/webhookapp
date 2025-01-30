@@ -1,8 +1,13 @@
 .
+├── __pycache__
 ├── app
 │   ├── __init__.py
+│   ├── __pycache__
+│   │
+│   ├── app.py
 │   ├── models
 │   │   ├── __init__.py
+│   │   ├── __pycache__
 │   │   ├── automation.py
 │   │   ├── user.py
 │   │   └── webhook.py
@@ -17,50 +22,61 @@
 │   │   ├── __init__.py
 │   │   ├── api_client.py
 │   │   └── webhook_processor.py
-│   └── templates
-│       ├── admin
-│       │   ├── automations.html
-│       │   ├── base.html
-│       │   ├── settings.html
-│       │   └── users.html
-│       ├── change_password.html
-│       ├── dashboard.html
-│       ├── login.html
-│       ├── register.html
-│       ├── settings.html
-│       └── users.html
+│   ├── static
+│   │   ├── css
+│   │   │   └── webhooks.css
+│   │   └── js
+│   │       ├── common.js
+│   │       ├── components
+│   │       │   └── WebhookLogs.jsx
+│   │       └── webhooks.js
+│   ├── templates
+│   │   ├── admin
+│   │   │   ├── automations.html
+│   │   │   ├── base.html
+│   │   │   ├── settings.html
+│   │   │   └── users.html
+│   │   ├── auth
+│   │   │   └── change_password.html
+│   │   ├── base.html
+│   │   ├── change_password.html
+│   │   ├── dashboard.html
+│   │   ├── login.html
+│   │   ├── partials
+│   │   │   ├── _automations_table.html
+│   │   │   └── _dashboard_modals.html
+│   │   ├── register.html
+│   │   ├── settings.html
+│   │   └── users.html
+│   └── tests
+│       ├── __init__.py
+│       ├── __pycache__
+│       │   ├── __init__.cpython-312.pyc
+│       │   ├── conftest.cpython-312-pytest-8.3.4.pyc
+│       │   ├── test_admin.cpython-312-pytest-8.3.4.pyc
+│       │   ├── test_auth.cpython-312-pytest-8.3.4.pyc
+│       │   ├── test_automation.cpython-312-pytest-8.3.4.pyc
+│       │   └── test_webhook.cpython-312-pytest-8.3.4.pyc
+│       ├── conftest.py
+│       ├── test_auth.py
+│       ├── test_automation.py
+│       └── test_webhook.py
+├── app.py
 ├── bin
-│   ├── Activate.ps1
-│   ├── activate
-│   ├── activate.csh
-│   ├── activate.fish
-│   ├── alembic
-│   ├── flask
-│   ├── gunicorn
-│   ├── mako-render
-│   ├── pip
-│   ├── pip3
-│   ├── pip3.11
-│   ├── python -> python3
-│   ├── python3 -> /usr/bin/python3
-│   └── python3.11 -> python3
 ├── config.py
+├── generate_jwt.py
 ├── include
-│   └── site
-│       └── python3.11
-│           └── greenlet
-│               └── greenlet.h
+├── instance
+│   └── webhook.db
+├── lib
+├── lib64 -> lib
 ├── migrations
-│   ├── README
-│   ├── alembic.ini
-│   ├── env.py
-│   ├── script.py.mako
-│   └── versions
-│       ├── 186efbc74640_add_require_password_change_to_user_.py
-│       └── e406fe635c39_initial_migration.py
+├── pytest.ini
 ├── pyvenv.cfg
 ├── requirements.txt
 ├── run.py
-└── tree.txt
+├── tree.txt
+├── venv
+└── webhook.log
 
-14 directories, 50 files
+686 directories, 5386 files

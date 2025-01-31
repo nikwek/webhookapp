@@ -1,0 +1,12 @@
+/* Base styles and utilities */
+
+/* Opacity transitions */
+.hover-opacity-100 {
+    transition: opacity 0.2s;
+}
+
+.hover-opacity-100:hover {
+    opacity: 1 !important;
+}
+
+/* Add more common utilities and base styles here as needed */

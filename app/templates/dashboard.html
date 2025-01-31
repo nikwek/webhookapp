@@ -18,25 +18,26 @@
                                 {% if automations %}
                                     {% for automation in automations %}
                                     <tr class="automation-row {% if not automation.is_active %}text-muted{% endif %}" 
-                                        data-automation-id="{{ automation.automation_id }}">
-                                        <td>
-                                            <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
-                                               class="text-decoration-none text-dark">
-                                                {{ automation.name }}
-                                            </a>
-                                        </td>
-                                        <td class="text-end">
-                                            <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
-                                               class="btn btn-sm btn-secondary">
-                                                Edit
-                                            </a>
-                                            <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
-                                                    data-automation-id="{{ automation.automation_id }}"
-                                                    data-is-active="{{ automation.is_active | tojson }}">
-                                                {{ "Active" if automation.is_active else "Inactive" }}
-                                            </button>
-                                        </td>
-                                    </tr>
+                                    data-automation-id="{{ automation.automation_id }}">
+                                    <td>
+                                        <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
+                                           class="text-decoration-none ps-3"
+                                           style="color: #2c3e50; font-weight: 500; font-size: 1.1em;">
+                                            {{ automation.name }}
+                                        </a>
+                                    </td>
+                                    <td class="text-end">
+                                        <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
+                                           class="btn btn-sm btn-secondary">
+                                            Edit
+                                        </a>
+                                        <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
+                                                data-automation-id="{{ automation.automation_id }}"
+                                                data-is-active="{{ automation.is_active | tojson }}">
+                                            {{ "Active" if automation.is_active else "Inactive" }}
+                                        </button>
+                                    </td>
+                                </tr>
                                     {% endfor %}
                                 {% else %}
                                     <tr>

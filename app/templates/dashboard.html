@@ -10,7 +10,7 @@
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h4 class="mb-0">Automations</h4>
-                        <button id="createAutomationBtn" class="btn btn-secondary">Create New Automation</button>
+                        <a href="{{ url_for('automation.new_automation') }}" class="btn btn-secondary">Create New Automation</a>
                     </div>
                     <div class="card-body p-0">
                         <table class="table mb-0">
@@ -20,15 +20,16 @@
                                     <tr class="automation-row {% if not automation.is_active %}text-muted{% endif %}" 
                                         data-automation-id="{{ automation.automation_id }}">
                                         <td>
-                                            <i class="fas fa-chevron-right chevron-icon me-2"></i>
-                                            {{ automation.name }}
+                                            <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
+                                               class="text-decoration-none text-dark">
+                                                {{ automation.name }}
+                                            </a>
                                         </td>
                                         <td class="text-end">
-                                            <button class="btn btn-sm btn-secondary edit-automation-name" 
-                                                    data-automation-id="{{ automation.automation_id }}"
-                                                    data-automation-name="{{ automation.name }}">
+                                            <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
+                                               class="btn btn-sm btn-secondary">
                                                 Edit
-                                            </button>
+                                            </a>
                                             <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
                                                     data-automation-id="{{ automation.automation_id }}"
                                                     data-is-active="{{ automation.is_active | tojson }}">
@@ -36,32 +37,13 @@
                                             </button>
                                         </td>
                                     </tr>
-                                    <tr class="automation-details" style="display: none;">
-                                        <td colspan="2">
-                                            <div class="p-3">
-                                                <h5>Webhook URL:</h5>
-                                                <code class="d-block mb-3">{{ request.url_root }}webhook?automation_id={{ automation.automation_id }}</code>
-                                                <h5>Template:</h5>
-                                                <div class="position-relative">
-                                                    <pre class="bg-light p-3 mb-2"><code id="template-{{ automation.automation_id }}">
-{
-    "action": "{% raw %}{{strategy.order.action}}{% endraw %}",
-    "ticker": "{% raw %}{{ticker}}{% endraw %}",
-    "order_size": "100%",
-    "position_size": "{% raw %}{{strategy.position_size}}{% endraw %}",
-    "schema": "2",
-    "timestamp": "{% raw %}{{time}}{% endraw %}"
-}
-</code></pre>
-                                                    <button class="btn btn-sm btn-secondary position-absolute top-0 end-0 m-2 copy-button" 
-                                                            data-template-id="template-{{ automation.automation_id }}">
-                                                        Copy
-                                                    </button>
-                                                </div>
-                                            </div>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="2" class="text-center py-4">
+                                            No automations found. Create one to get started!
                                         </td>
                                     </tr>
-                                    {% endfor %}
                                 {% endif %}
                             </tbody>
                         </table>
@@ -69,71 +51,6 @@
                 </div>
             </div>
             <div id="webhook-logs"></div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="createAutomationModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Create New Automation</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="createAutomationForm">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="automationName" class="form-label">Automation Name</label>
-                        <input type="text" class="form-control" id="automationName" required>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="automationStatusModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="confirmStatusChange">Confirm</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="editAutomationModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Edit Automation</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="editAutomationForm">
-                    <div class="mb-3">
-                        <label for="editAutomationName" class="form-label">Automation Name</label>
-                        <input type="text" class="form-control" id="editAutomationName" required>
-                        <input type="hidden" id="editAutomationId">
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-danger" id="deleteAutomation">Delete Automation</button>
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="saveAutomationChanges">Save Changes</button>
-            </div>
         </div>
     </div>
 </div>
@@ -269,6 +186,51 @@
            )
        );
    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add click handlers for status buttons
+        document.querySelectorAll('.status-button').forEach(button => {
+            if (!button.hasListener) {
+                button.hasListener = true;
+                button.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const automationId = this.dataset.automationId;
+                    const isActive = JSON.parse(this.dataset.isActive);
+                    
+                    fetch(`/automation/${automationId}/status`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ 
+                            is_active: !isActive 
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) throw new Error(data.error);
+                        
+                        // Update button state
+                        const newIsActive = !isActive;
+                        this.textContent = newIsActive ? 'Active' : 'Inactive';
+                        this.classList.remove(newIsActive ? 'btn-danger' : 'btn-success');
+                        this.classList.add(newIsActive ? 'btn-success' : 'btn-danger');
+                        this.dataset.isActive = newIsActive.toString();
+                        
+                        // Update row styling
+                        const row = this.closest('.automation-row');
+                        if (row) {
+                            row.classList.toggle('text-muted', !newIsActive);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error updating status: ' + error.message);
+                    });
+                });
+            }
+        });
+    });
 
    const root = ReactDOM.createRoot(document.getElementById('webhook-logs'));
    const isAdmin = {{ session.get('is_admin', False) | tojson }};

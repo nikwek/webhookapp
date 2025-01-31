@@ -94,13 +94,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 this.previousElementSibling.value :
                 this.closest('.position-relative').querySelector('pre code').textContent;
 
-            navigator.clipboard.writeText(textToCopy).then(() => {
+            // Create temporary textarea
+            const textarea = document.createElement('textarea');
+            textarea.value = textToCopy;
+            textarea.style.position = 'fixed';  // Prevent scrolling to bottom
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
                 button.textContent = 'Copied!';
                 setTimeout(() => button.textContent = 'Copy', 2000);
-            }).catch(err => {
+            } catch (err) {
                 console.error('Failed to copy:', err);
                 alert('Failed to copy to clipboard');
-            });
+            } finally {
+                document.body.removeChild(textarea);
+            }
         });
     });
 

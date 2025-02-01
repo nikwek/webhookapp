@@ -1,17 +1,60 @@
 import React, { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
 
-const WebhookLogs = ({ isAdmin }) => {
-  const [logs, setLogs] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [expandedRows, setExpandedRows] = useState(new Set());
-  const [sortConfig, setSortConfig] = useState({
-    key: 'timestamp',
-    direction: 'desc'
+const WebhookLogs = function({ isAdmin }) {
+  const [logs, setLogs] = React.useState([]);
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [expandedRows, setExpandedRows] = React.useState(new Set());
+  const [sortConfig, setSortConfig] = React.useState({
+      key: 'timestamp',
+      direction: 'desc'
   });
 
-  useEffect(() => {
-    const evtSource = new EventSource('/webhook-stream');
+  React.useEffect(() => {
+    // Load initial logs
+    fetch('/api/logs')
+        .then(response => response.json())
+        .then(data => {
+            console.log('Initial logs received:', data);
+            if (Array.isArray(data)) {
+                setLogs(data);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading initial logs:', error);
+        });
+
+    // Set up SSE connection for real-time updates
+    const userId = document.querySelector('meta[name="user-id"]').content;
+    console.log('Setting up webhook SSE connection for user:', userId);
+    
+    const evtSource = new EventSource(`/events`);  // Changed from /stream/channel/user_${userId}
+    
+    evtSource.addEventListener('webhook_update', (event) => {
+        console.log('Received webhook update:', event.data);
+        try {
+            const data = JSON.parse(event.data);
+            if (data.logs && Array.isArray(data.logs)) {
+                setLogs(data.logs);
+            }
+        } catch (error) {
+            console.error('Error processing webhook update:', error);
+        }
+    });
+
+    evtSource.onerror = (error) => {
+        console.error('SSE Error:', error);
+    };
+
+    evtSource.onopen = (e) => {
+        console.log('Webhook SSE Connection opened');
+    };
+
+    return () => {
+        console.log('Cleaning up webhook SSE connection');
+        evtSource.close();
+    };
+  }, []);  // Empty dependency array - only run on mount
     
     evtSource.onmessage = (event) => {
       try {

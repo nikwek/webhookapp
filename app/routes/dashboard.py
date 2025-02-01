@@ -1,15 +1,48 @@
-from flask import (
-    Blueprint, render_template, jsonify, session,
-    redirect, url_for, Response, request
-)
+from flask import current_app, Blueprint, render_template, jsonify, session, redirect, url_for, Response, request
 from flask_login import login_required, current_user
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
 from app import db
-import time
+from flask_sse import sse
+import json
+
+# Temporary for testing
+from redis import Redis
+import os
+# END Temporary for testing
 
 bp = Blueprint('dashboard', __name__)
 
+# Temporary for testing
+
+@bp.route('/test-redis')
+@login_required
+def test_redis():
+    redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+    r = Redis.from_url(redis_url)
+    try:
+        r.ping()
+        return "Redis connection successful!"
+    except Exception as e:
+        current_app.logger.error(f"Redis test error: {str(e)}")
+        return f"Redis connection failed: {str(e)}"
+
+@bp.route('/test-sse')
+@login_required
+def test_sse():
+    try:
+        # Test message through SSE
+        sse.publish(
+            {"test": "message"},
+            type='test',
+            channel=f'user_{current_user.id}'
+        )
+        return "SSE test message sent! Check browser console for incoming message."
+    except Exception as e:
+        current_app.logger.error(f"SSE test error: {str(e)}")
+        return f"SSE publish failed: {str(e)}"
+    
+# END Temporary for testing
 
 @bp.route('/dashboard')
 @login_required
@@ -28,39 +61,15 @@ def dashboard():
 
     return render_template('dashboard.html', automations=automations)
 
-
-@bp.route('/api/logs/stream')
+@bp.route('/api/logs')
 @login_required
-def stream_logs():
-    def generate():
-        last_id = 0
-        while True:
-            try:
-                # Create a new session for each query
-                with db.session.begin():
-                    logs = WebhookLog.query.join(Automation).filter(
-                        Automation.user_id == current_user.id
-                    ).order_by(WebhookLog.timestamp.desc()).limit(100).all()
-                    
-                    # Convert to dict before closing session
-                    log_data = [log.to_dict() for log in logs]
-                    
-                    if logs and logs[0].id != last_id:
-                        last_id = logs[0].id
-                        yield f"data: {json.dumps(log_data)}\n\n"
-                
-                db.session.remove()  # Explicitly remove the session
-                time.sleep(5)  # Update every 5 seconds
-                
-            except Exception as e:
-                print(f"Error in stream_logs: {e}")
-                db.session.remove()  # Ensure session is removed on error
-                yield f"data: {json.dumps([])}\n\n"
-                time.sleep(5)  # Wait before retrying
-
-    return Response(generate(), mimetype='text/event-stream')
-
-
+def get_logs():
+    """Get initial logs for the current user"""
+    logs = WebhookLog.query.join(Automation).filter(
+        Automation.user_id == current_user.id
+    ).order_by(WebhookLog.timestamp.desc()).limit(100).all()
+    
+    return jsonify([log.to_dict() for log in logs])
 
 @bp.route('/clear-logs', methods=['POST'])
 @login_required
@@ -71,14 +80,21 @@ def clear_logs():
         WebhookLog.query.join(Automation).filter(
             Automation.user_id == user_id
         ).delete(synchronize_session=False)
-
+        
         db.session.commit()
+
+        # Notify clients about the cleared logs
+        sse.publish(
+            {"logs": []},
+            type='webhook_update',
+            channel=f'user_{user_id}'
+        )
+
         return jsonify({"success": True})
     except Exception as e:
         print(f"Error clearing logs: {e}")
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-
 
 @bp.route('/settings')
 @login_required

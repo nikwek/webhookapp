@@ -1,22 +1,5 @@
 // Common utilities for webhook manager
 const WebhookManager = {
-    toggleJson: function(event) {
-        const container = event.target.closest('.payload-container');
-        const compact = container.querySelector('.json-compact');
-        const pretty = container.querySelector('.json-pretty');
-        const button = container.querySelector('.toggle-json');
-        
-        if (compact.style.display === 'none') {
-            compact.style.display = 'block';
-            pretty.style.display = 'none';
-            button.textContent = 'Expand';
-        } else {
-            compact.style.display = 'none';
-            pretty.style.display = 'block';
-            button.textContent = 'Collapse';
-        }
-    },
-
     toggleAutomationStatus: function(automationId, isActive, isAdmin = false) {
         const button = document.querySelector(`.status-button[data-automation-id="${automationId}"]`);
         if (button) {

@@ -2,10 +2,10 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_bcrypt import Bcrypt
+from flask_sse import sse
 from flask_login import LoginManager
 from config import Config
 import os
-
 
 # Initialize extensions
 db = SQLAlchemy()
@@ -17,18 +17,24 @@ login_manager.login_view = 'auth.login'
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+    
+    # Configure Redis and SSE
+    app.config["REDIS_URL"] = os.getenv('REDIS_URL', 'redis://localhost:6379')
+    
+    # Register SSE blueprint FIRST
+    app.register_blueprint(sse, url_prefix='/events')
+    
+    # Initialize Flask extensions
+    db.init_app(app)
+    migrate.init_app(app, db)
+    bcrypt.init_app(app)
+    login_manager.init_app(app)
 
     # Ensure instance folder exists
     try:
         os.makedirs(app.instance_path)
     except OSError:
         pass
-
-    # Initialize Flask extensions
-    db.init_app(app)
-    migrate.init_app(app, db)
-    bcrypt.init_app(app)
-    login_manager.init_app(app)
 
     # Register Jinja2 filters
     app.jinja_env.filters['from_json'] = from_json_filter

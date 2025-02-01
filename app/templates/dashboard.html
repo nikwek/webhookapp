@@ -59,106 +59,138 @@
 
 {% block scripts %}
 <script type="text/babel">
-   const WebhookLogs = function({ isAdmin }) {
-       const [logs, setLogs] = React.useState([]);
-       const [searchTerm, setSearchTerm] = React.useState('');
-       const [expandedRows, setExpandedRows] = React.useState(new Set());
-       const [sortConfig, setSortConfig] = React.useState({
-           key: 'timestamp',
-           direction: 'desc'
-       });
+const WebhookLogs = function({ isAdmin }) {
+    console.log('WebhookLogs component mounting');  // Debug log
+    
+    const [logs, setLogs] = React.useState([]);
+    const [searchTerm, setSearchTerm] = React.useState('');
+    const [expandedRows, setExpandedRows] = React.useState(new Set());
+    const [sortConfig, setSortConfig] = React.useState({
+        key: 'timestamp',
+        direction: 'desc'
+    });
 
-       React.useEffect(() => {
-           const evtSource = new EventSource('/webhook-stream');
-           evtSource.onmessage = (event) => {
-               try {
-                   const newLogs = JSON.parse(event.data);
-                   if (Array.isArray(newLogs) && newLogs.length > 0) {
-                       setLogs(newLogs);
-                   }
-               } catch (error) {
-                   console.error('Error parsing webhook logs:', error);
-               }
-           };
+    React.useEffect(() => {
+        console.log('WebhookLogs useEffect running');  // Debug log
+        
+        // Load initial logs
+        fetch('/api/logs')
+            .then(response => response.json())
+            .then(data => {
+                console.log('Initial logs received:', data);  // Debug log
+                if (Array.isArray(data)) {
+                    setLogs(data);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading initial logs:', error);
+            });
 
-           evtSource.onerror = (error) => {
-               console.error('SSE Error:', error);
-               evtSource.close();
-           };
+        // Set up SSE connection for real-time updates
+        const userId = document.querySelector('meta[name="user-id"]').content;
+        console.log('Setting up webhook SSE connection for user:', userId);
+        
+        const evtSource = new EventSource(`/stream/channel/user_${userId}`);
+        
+        evtSource.addEventListener('webhook_update', (event) => {
+            console.log('Received webhook update:', event.data);  // Debug log
+            try {
+                const data = JSON.parse(event.data);
+                if (data.logs && Array.isArray(data.logs)) {
+                    setLogs(data.logs);
+                }
+            } catch (error) {
+                console.error('Error processing webhook update:', error);
+            }
+        });
 
-           return () => evtSource.close();
-       }, []);
+        evtSource.onerror = (error) => {
+            console.error('SSE Error:', error);
+        };
 
-       const toggleRow = (id) => {
-           setExpandedRows(prev => {
-               const next = new Set(prev);
-               if (next.has(id)) {
-                   next.delete(id);
-               } else {
-                   next.add(id);
-               }
-               return next;
-           });
-       };
+        evtSource.onopen = (e) => {
+            console.log('Webhook SSE Connection opened');
+        };
 
-       const handleSort = (key) => {
-           setSortConfig(prev => ({
-               key,
-               direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
-           }));
-       };
+        return () => {
+            console.log('Cleaning up webhook SSE connection');
+            evtSource.close();
+        };
+    }, []);
 
-       const getSortedAndFilteredLogs = () => {
-           return logs
-               .filter(log => {
-                   const searchStr = searchTerm.toLowerCase();
-                   return (
-                       log.automation_name.toLowerCase().includes(searchStr) ||
-                       JSON.stringify(log.payload).toLowerCase().includes(searchStr)
-                   );
-               })
-               .sort((a, b) => {
-                   const direction = sortConfig.direction === 'asc' ? 1 : -1;
-                   if (sortConfig.key === 'timestamp') {
-                       return direction * (new Date(a.timestamp) - new Date(b.timestamp));
-                   }
-                   return direction * String(a[sortConfig.key]).localeCompare(String(b[sortConfig.key]));
-               });
-       };
+    const toggleRow = (id) => {
+        setExpandedRows(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    };
 
-       return React.createElement('div', { className: 'card' },
-           React.createElement('div', { className: 'card-header d-flex justify-content-between align-items-center' },
-               React.createElement('h4', { className: 'mb-0' }, 'Webhook Logs'),
-               React.createElement('div', { className: 'position-relative' },
-                   React.createElement('input', {
-                       type: 'text',
-                       placeholder: 'Search logs...',
-                       value: searchTerm,
-                       onChange: (e) => setSearchTerm(e.target.value),
-                       className: 'form-control'
-                   })
-               )
-           ),
-           React.createElement('div', { className: 'table-responsive' },
-               React.createElement('table', { className: 'table table-hover mb-0' },
-                   React.createElement('thead', null,
-                       React.createElement('tr', null,
-                           React.createElement('th', {
-                               onClick: () => handleSort('timestamp'),
-                               className: 'cursor-pointer'
-                           }, 'Timestamp (UTC)',
-                               sortConfig.key === 'timestamp' && React.createElement('span', { className: 'ml-1' }, sortConfig.direction === 'asc' ? '↑' : '↓')
-                           ),
-                           React.createElement('th', {
-                               onClick: () => handleSort('automation_name'),
-                               className: 'cursor-pointer'
-                           }, 'Automation',
-                               sortConfig.key === 'automation_name' && React.createElement('span', { className: 'ml-1' }, sortConfig.direction === 'asc' ? '↑' : '↓')
-                           ),
-                           React.createElement('th', null, 'Payload')
-                       )
-                   ),
-                    React.createElement('tbody', null,
+    const handleSort = (key) => {
+        setSortConfig(prev => ({
+            key,
+            direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+        }));
+    };
+
+    const getSortedAndFilteredLogs = () => {
+        return logs
+            .filter(log => {
+                const searchStr = searchTerm.toLowerCase();
+                return (
+                    log.automation_name.toLowerCase().includes(searchStr) ||
+                    JSON.stringify(log.payload).toLowerCase().includes(searchStr)
+                );
+            })
+            .sort((a, b) => {
+                const direction = sortConfig.direction === 'asc' ? 1 : -1;
+                if (sortConfig.key === 'timestamp') {
+                    return direction * (new Date(a.timestamp) - new Date(b.timestamp));
+                }
+                return direction * String(a[sortConfig.key]).localeCompare(String(b[sortConfig.key]));
+            });
+    };
+
+    console.log('Current logs state:', logs);  // Debug log
+
+    return React.createElement('div', { className: 'card' },
+        React.createElement('div', { className: 'card-header d-flex justify-content-between align-items-center' },
+            React.createElement('h4', { className: 'mb-0' }, 'Webhook Logs'),
+            React.createElement('div', { className: 'position-relative' },
+                React.createElement('input', {
+                    type: 'text',
+                    placeholder: 'Search logs...',
+                    value: searchTerm,
+                    onChange: (e) => setSearchTerm(e.target.value),
+                    className: 'form-control'
+                })
+            )
+        ),
+        React.createElement('div', { className: 'table-responsive' },
+            React.createElement('table', { className: 'table table-hover mb-0' },
+                React.createElement('thead', null,
+                    React.createElement('tr', null,
+                        React.createElement('th', {
+                            onClick: () => handleSort('timestamp'),
+                            className: 'cursor-pointer'
+                        }, 'Timestamp (UTC)',
+                            sortConfig.key === 'timestamp' && React.createElement('span', { className: 'ml-1' }, sortConfig.direction === 'asc' ? '↑' : '↓')
+                        ),
+                        React.createElement('th', {
+                            onClick: () => handleSort('automation_name'),
+                            className: 'cursor-pointer'
+                        }, 'Automation',
+                            sortConfig.key === 'automation_name' && React.createElement('span', { className: 'ml-1' }, sortConfig.direction === 'asc' ? '↑' : '↓')
+                        ),
+                        React.createElement('th', null, 'Payload')
+                    )
+                ),
+                React.createElement('tbody', null,
+                    getSortedAndFilteredLogs().length > 0 ? 
                         getSortedAndFilteredLogs().map(log =>
                             React.createElement('tr', {
                                 key: `${log.timestamp}-${log.automation_name}`,
@@ -173,7 +205,7 @@
                                     hour: '2-digit',
                                     minute: '2-digit',
                                     second: '2-digit'
-                            })),
+                                })),
                                 React.createElement('td', null, log.automation_name),
                                 React.createElement('td', null,
                                     expandedRows.has(`${log.timestamp}-${log.automation_name}`) ?
@@ -181,60 +213,67 @@
                                         React.createElement('pre', { className: 'mb-0 text-truncate' }, JSON.stringify(log.payload))
                                 )
                             )
+                        ) :
+                        React.createElement('tr', null,
+                            React.createElement('td', { colSpan: 3, className: 'text-center' },
+                                'No webhook logs found'
+                            )
                         )
-                    )
-               )
-           )
-       );
-   };
+                )
+            )
+        )
+    );
+};
 
-    document.addEventListener('DOMContentLoaded', function() {
-        // Add click handlers for status buttons
-        document.querySelectorAll('.status-button').forEach(button => {
-            if (!button.hasListener) {
-                button.hasListener = true;
-                button.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    const automationId = this.dataset.automationId;
-                    const isActive = JSON.parse(this.dataset.isActive);
+// Initialize React component immediately
+const root = ReactDOM.createRoot(document.getElementById('webhook-logs'));
+root.render(React.createElement(WebhookLogs, { 
+    isAdmin: {{ session.get('is_admin', False) | tojson }} 
+}));
+
+// Handle status buttons
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.status-button').forEach(button => {
+        if (!button.hasListener) {
+            button.hasListener = true;
+            button.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const automationId = this.dataset.automationId;
+                const isActive = JSON.parse(this.dataset.isActive);
+                
+                fetch(`/automation/${automationId}/status`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        is_active: !isActive 
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) throw new Error(data.error);
                     
-                    fetch(`/automation/${automationId}/status`, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ 
-                            is_active: !isActive 
-                        })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.error) throw new Error(data.error);
-                        
-                        // Update button state
-                        const newIsActive = !isActive;
-                        this.textContent = newIsActive ? 'Active' : 'Inactive';
-                        this.classList.remove(newIsActive ? 'btn-danger' : 'btn-success');
-                        this.classList.add(newIsActive ? 'btn-success' : 'btn-danger');
-                        this.dataset.isActive = newIsActive.toString();
-                        
-                        // Update row styling
-                        const row = this.closest('.automation-row');
-                        if (row) {
-                            row.classList.toggle('text-muted', !newIsActive);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        alert('Error updating status: ' + error.message);
-                    });
+                    // Update button state
+                    const newIsActive = !isActive;
+                    this.textContent = newIsActive ? 'Active' : 'Inactive';
+                    this.classList.remove(newIsActive ? 'btn-danger' : 'btn-success');
+                    this.classList.add(newIsActive ? 'btn-success' : 'btn-danger');
+                    this.dataset.isActive = newIsActive.toString();
+                    
+                    // Update row styling
+                    const row = this.closest('.automation-row');
+                    if (row) {
+                        row.classList.toggle('text-muted', !newIsActive);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error updating status: ' + error.message);
                 });
-            }
-        });
+            });
+        }
     });
-
-   const root = ReactDOM.createRoot(document.getElementById('webhook-logs'));
-   const isAdmin = {{ session.get('is_admin', False) | tojson }};
-   root.render(React.createElement(WebhookLogs, { isAdmin }));
+});
 </script>
 {% endblock %}

@@ -24,42 +24,21 @@ def dashboard():
     # Generate webhook URLs for each automation
     base_url = request.url_root.rstrip('/')
     for automation in automations:
-        automation.webhook_url = f"{base_url}/webhook?automation_id={automation.automation_id}"
+        automation.webhook_url = (
+            f"{base_url}/webhook?automation_id={automation.automation_id}"
+        )
 
-    return render_template('dashboard.html', automations=automations)
+    # Fetch the latest logs
+    logs = WebhookLog.query.join(Automation).filter(
+        Automation.user_id == user_id
+    ).order_by(WebhookLog.timestamp.desc()).limit(100).all()
 
+    # Convert logs to dictionary format
+    initial_logs = [log.to_dict() for log in logs]
 
-@bp.route('/api/logs/stream')
-@login_required
-def stream_logs():
-    def generate():
-        last_id = 0
-        while True:
-            try:
-                # Create a new session for each query
-                with db.session.begin():
-                    logs = WebhookLog.query.join(Automation).filter(
-                        Automation.user_id == current_user.id
-                    ).order_by(WebhookLog.timestamp.desc()).limit(100).all()
-                    
-                    # Convert to dict before closing session
-                    log_data = [log.to_dict() for log in logs]
-                    
-                    if logs and logs[0].id != last_id:
-                        last_id = logs[0].id
-                        yield f"data: {json.dumps(log_data)}\n\n"
-                
-                db.session.remove()  # Explicitly remove the session
-                time.sleep(5)  # Update every 5 seconds
-                
-            except Exception as e:
-                print(f"Error in stream_logs: {e}")
-                db.session.remove()  # Ensure session is removed on error
-                yield f"data: {json.dumps([])}\n\n"
-                time.sleep(5)  # Wait before retrying
-
-    return Response(generate(), mimetype='text/event-stream')
-
+    return render_template('dashboard.html', 
+                           automations=automations, 
+                           initial_logs=initial_logs)
 
 
 @bp.route('/clear-logs', methods=['POST'])

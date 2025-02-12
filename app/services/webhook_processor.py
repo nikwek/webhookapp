@@ -3,6 +3,7 @@
 from app.models.automation import Automation
 from app.models.webhook_log import WebhookLog
 from app import db
+from flask import current_app
 class WebhookProcessor:
     def process_webhook(self, automation_id, payload):
         automation = Automation.query.filter_by(automation_id=automation_id).first()

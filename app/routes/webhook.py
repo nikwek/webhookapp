@@ -53,30 +53,6 @@ def webhook():
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-@bp.route('/webhook-stream')
-@login_required
-def webhook_stream():
-    def event_stream():
-        last_id = 0
-        while True:
-            logs = (WebhookLog.query
-                   .join(Automation)
-                   .filter(Automation.user_id == session['user_id'])
-                   .order_by(WebhookLog.timestamp.desc())
-                   .limit(100)
-                   .all())
-            
-            if logs:
-                data = [log.to_dict() for log in logs]
-                yield f"data: {json.dumps(data)}\n\n"
-            
-            time.sleep(1)
-
-    return Response(
-        stream_with_context(event_stream()),
-        mimetype='text/event-stream'
-    )
-
 @bp.route('/static/js/components/WebhookLogs.jsx')
 def serve_component():
     component_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'js', 'components')

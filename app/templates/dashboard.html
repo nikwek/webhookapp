@@ -60,7 +60,8 @@
 {% block scripts %}
 <script type="text/babel">
    const WebhookLogs = function({ isAdmin }) {
-       const [logs, setLogs] = React.useState([]);
+       const initialLogs = {{ initial_logs | tojson | safe }};
+       const [logs, setLogs] = React.useState(initialLogs);
        const [searchTerm, setSearchTerm] = React.useState('');
        const [expandedRows, setExpandedRows] = React.useState(new Set());
        const [sortConfig, setSortConfig] = React.useState({
@@ -69,26 +70,11 @@
        });
 
        React.useEffect(() => {
-           const evtSource = new EventSource('/webhook-stream');
-           evtSource.onmessage = (event) => {
-               try {
-                   const newLogs = JSON.parse(event.data);
-                   if (Array.isArray(newLogs) && newLogs.length > 0) {
-                       setLogs(newLogs);
-                   }
-               } catch (error) {
-                   console.error('Error parsing webhook logs:', error);
-               }
-           };
-
-           evtSource.onerror = (error) => {
-               console.error('SSE Error:', error);
-               evtSource.close();
-           };
-
-           return () => evtSource.close();
+           // This effect will run once when the component mounts
+           // You can use it to fetch logs from an API if needed
+           // For now, we're using the initialLogs passed from the server
+           setLogs(initialLogs);
        }, []);
-
        const toggleRow = (id) => {
            setExpandedRows(prev => {
                const next = new Set(prev);
@@ -197,7 +183,7 @@
                     e.stopPropagation();
                     const automationId = this.dataset.automationId;
                     const isActive = JSON.parse(this.dataset.isActive);
-                    
+
                     fetch(`/automation/${automationId}/status`, {
                         method: 'PUT',
                         headers: {
@@ -210,14 +196,14 @@
                     .then(response => response.json())
                     .then(data => {
                         if (data.error) throw new Error(data.error);
-                        
+
                         // Update button state
                         const newIsActive = !isActive;
                         this.textContent = newIsActive ? 'Active' : 'Inactive';
                         this.classList.remove(newIsActive ? 'btn-danger' : 'btn-success');
                         this.classList.add(newIsActive ? 'btn-success' : 'btn-danger');
                         this.dataset.isActive = newIsActive.toString();
-                        
+
                         // Update row styling
                         const row = this.closest('.automation-row');
                         if (row) {

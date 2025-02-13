@@ -18,26 +18,26 @@
                                 {% if automations %}
                                     {% for automation in automations %}
                                     <tr class="automation-row {% if not automation.is_active %}text-muted{% endif %}" 
-                                    data-automation-id="{{ automation.automation_id }}">
-                                    <td>
-                                        <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
-                                           class="text-decoration-none ps-3"
-                                           style="color: #2c3e50; font-weight: 500; font-size: 1.1em;">
-                                            {{ automation.name }}
-                                        </a>
-                                    </td>
-                                    <td class="text-end">
-                                        <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
-                                           class="btn btn-sm btn-secondary">
-                                            Edit
-                                        </a>
-                                        <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
-                                                data-automation-id="{{ automation.automation_id }}"
-                                                data-is-active="{{ automation.is_active | tojson }}">
-                                            {{ "Active" if automation.is_active else "Inactive" }}
-                                        </button>
-                                    </td>
-                                </tr>
+                                        data-automation-id="{{ automation.automation_id }}">
+                                        <td>
+                                            <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
+                                               class="text-decoration-none ps-3"
+                                               style="color: #2c3e50; font-weight: 500; font-size: 1.1em;">
+                                                {{ automation.name }}
+                                            </a>
+                                        </td>
+                                        <td class="text-end">
+                                            <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
+                                               class="btn btn-sm btn-secondary">
+                                                Edit
+                                            </a>
+                                            <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
+                                                    data-automation-id="{{ automation.automation_id }}"
+                                                    data-is-active="{{ automation.is_active | tojson }}">
+                                                {{ "Active" if automation.is_active else "Inactive" }}
+                                            </button>
+                                        </td>
+                                    </tr>
                                     {% endfor %}
                                 {% else %}
                                     <tr>
@@ -58,183 +58,157 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="text/babel">
-   const WebhookLogs = function({ isAdmin }) {
-       const [logs, setLogs] = React.useState([]);
-       const [searchTerm, setSearchTerm] = React.useState('');
-       const [expandedRows, setExpandedRows] = React.useState(new Set());
-       const [sortConfig, setSortConfig] = React.useState({
-           key: 'timestamp',
-           direction: 'desc'
-       });
+    {{ super() }}
+    <script type="text/babel">
+        // WebhookLogs component definition
+        const WebhookLogs = () => {
+            const [logs, setLogs] = React.useState([]);
+            const [searchTerm, setSearchTerm] = React.useState('');
+            const [expandedRows, setExpandedRows] = React.useState(new Set());
+            const [sortConfig, setSortConfig] = React.useState({
+                key: 'timestamp',
+                direction: 'desc'
+            });
+            const [isLoading, setIsLoading] = React.useState(false);
 
-       React.useEffect(() => {
-           const evtSource = new EventSource('/webhook-stream');
-           evtSource.onmessage = (event) => {
-               try {
-                   const newLogs = JSON.parse(event.data);
-                   if (Array.isArray(newLogs) && newLogs.length > 0) {
-                       setLogs(newLogs);
-                   }
-               } catch (error) {
-                   console.error('Error parsing webhook logs:', error);
-               }
-           };
+            React.useEffect(() => {
+                fetchLogs();
+            }, []);
 
-           evtSource.onerror = (error) => {
-               console.error('SSE Error:', error);
-               evtSource.close();
-           };
+            const fetchLogs = async () => {
+                setIsLoading(true);
+                try {
+                    const response = await fetch('/api/logs');
+                    const newLogs = await response.json();
+                    if (Array.isArray(newLogs)) {
+                        setLogs(newLogs);
+                    }
+                } catch (error) {
+                    console.error('Error fetching logs:', error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
 
-           return () => evtSource.close();
-       }, []);
-
-       const toggleRow = (id) => {
-           setExpandedRows(prev => {
-               const next = new Set(prev);
-               if (next.has(id)) {
-                   next.delete(id);
-               } else {
-                   next.add(id);
-               }
-               return next;
-           });
-       };
-
-       const handleSort = (key) => {
-           setSortConfig(prev => ({
-               key,
-               direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
-           }));
-       };
-
-       const getSortedAndFilteredLogs = () => {
-           return logs
-               .filter(log => {
-                   const searchStr = searchTerm.toLowerCase();
-                   return (
-                       log.automation_name.toLowerCase().includes(searchStr) ||
-                       JSON.stringify(log.payload).toLowerCase().includes(searchStr)
-                   );
-               })
-               .sort((a, b) => {
-                   const direction = sortConfig.direction === 'asc' ? 1 : -1;
-                   if (sortConfig.key === 'timestamp') {
-                       return direction * (new Date(a.timestamp) - new Date(b.timestamp));
-                   }
-                   return direction * String(a[sortConfig.key]).localeCompare(String(b[sortConfig.key]));
-               });
-       };
-
-       return React.createElement('div', { className: 'card' },
-           React.createElement('div', { className: 'card-header d-flex justify-content-between align-items-center' },
-               React.createElement('h4', { className: 'mb-0' }, 'Webhook Logs'),
-               React.createElement('div', { className: 'position-relative' },
-                   React.createElement('input', {
-                       type: 'text',
-                       placeholder: 'Search logs...',
-                       value: searchTerm,
-                       onChange: (e) => setSearchTerm(e.target.value),
-                       className: 'form-control'
-                   })
-               )
-           ),
-           React.createElement('div', { className: 'table-responsive' },
-               React.createElement('table', { className: 'table table-hover mb-0' },
-                   React.createElement('thead', null,
-                       React.createElement('tr', null,
-                           React.createElement('th', {
-                               onClick: () => handleSort('timestamp'),
-                               className: 'cursor-pointer'
-                           }, 'Timestamp (UTC)',
-                               sortConfig.key === 'timestamp' && React.createElement('span', { className: 'ml-1' }, sortConfig.direction === 'asc' ? '↑' : '↓')
-                           ),
-                           React.createElement('th', {
-                               onClick: () => handleSort('automation_name'),
-                               className: 'cursor-pointer'
-                           }, 'Automation',
-                               sortConfig.key === 'automation_name' && React.createElement('span', { className: 'ml-1' }, sortConfig.direction === 'asc' ? '↑' : '↓')
-                           ),
-                           React.createElement('th', null, 'Payload')
-                       )
-                   ),
-                    React.createElement('tbody', null,
-                        getSortedAndFilteredLogs().map(log =>
-                            React.createElement('tr', {
-                                key: `${log.timestamp}-${log.automation_name}`,
-                                className: `webhook-type-${(log.payload?.action || '').toLowerCase() || 'other'}`,
-                                onClick: () => toggleRow(`${log.timestamp}-${log.automation_name}`)
-                            },
-                                React.createElement('td', null, new Date(log.timestamp).toLocaleString(undefined, {
-                                    hour12: false,
-                                    year: 'numeric',
-                                    month: '2-digit',
-                                    day: '2-digit',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                    second: '2-digit'
-                            })),
-                                React.createElement('td', null, log.automation_name),
-                                React.createElement('td', null,
-                                    expandedRows.has(`${log.timestamp}-${log.automation_name}`) ?
-                                        React.createElement('pre', { className: 'mb-0' }, JSON.stringify(log.payload, null, 2)) :
-                                        React.createElement('pre', { className: 'mb-0 text-truncate' }, JSON.stringify(log.payload))
-                                )
-                            )
-                        )
-                    )
-               )
-           )
-       );
-   };
-
-    document.addEventListener('DOMContentLoaded', function() {
-        // Add click handlers for status buttons
-        document.querySelectorAll('.status-button').forEach(button => {
-            if (!button.hasListener) {
-                button.hasListener = true;
-                button.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    const automationId = this.dataset.automationId;
-                    const isActive = JSON.parse(this.dataset.isActive);
-                    
-                    fetch(`/automation/${automationId}/status`, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ 
-                            is_active: !isActive 
-                        })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.error) throw new Error(data.error);
-                        
-                        // Update button state
-                        const newIsActive = !isActive;
-                        this.textContent = newIsActive ? 'Active' : 'Inactive';
-                        this.classList.remove(newIsActive ? 'btn-danger' : 'btn-success');
-                        this.classList.add(newIsActive ? 'btn-success' : 'btn-danger');
-                        this.dataset.isActive = newIsActive.toString();
-                        
-                        // Update row styling
-                        const row = this.closest('.automation-row');
-                        if (row) {
-                            row.classList.toggle('text-muted', !newIsActive);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        alert('Error updating status: ' + error.message);
-                    });
+            const toggleRow = (id) => {
+                setExpandedRows(prev => {
+                    const next = new Set(prev);
+                    if (next.has(id)) {
+                        next.delete(id);
+                    } else {
+                        next.add(id);
+                    }
+                    return next;
                 });
-            }
-        });
-    });
+            };
 
-   const root = ReactDOM.createRoot(document.getElementById('webhook-logs'));
-   const isAdmin = {{ session.get('is_admin', False) | tojson }};
-   root.render(React.createElement(WebhookLogs, { isAdmin }));
-</script>
+            const handleSort = (key) => {
+                setSortConfig(prev => ({
+                    key,
+                    direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+                }));
+            };
+
+            const getSortedAndFilteredLogs = () => {
+                return logs
+                    .filter(log => {
+                        const searchStr = searchTerm.toLowerCase();
+                        return (
+                            log.automation_name.toLowerCase().includes(searchStr) ||
+                            JSON.stringify(log.payload).toLowerCase().includes(searchStr)
+                        );
+                    })
+                    .sort((a, b) => {
+                        const direction = sortConfig.direction === 'asc' ? 1 : -1;
+                        if (sortConfig.key === 'timestamp') {
+                            return direction * (new Date(a.timestamp) - new Date(b.timestamp));
+                        }
+                        return direction * String(a[sortConfig.key]).localeCompare(String(b[sortConfig.key]));
+                    });
+            };
+
+            return (
+                <div className="card">
+                    <div className="card-header">
+                        <div className="d-flex justify-content-between align-items-center">
+                            <div className="d-flex align-items-center gap-3">
+                                <h4 className="mb-0">Webhook Logs</h4>
+                                <div className="position-relative">
+                                    <input
+                                        type="text"
+                                        placeholder="Search logs..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="form-control"
+                                    />
+                                </div>
+                            </div>
+                            <button 
+                                className="btn btn-secondary" 
+                                onClick={fetchLogs}
+                                disabled={isLoading}
+                                title="Refresh logs"
+                            >
+                                {isLoading ? (
+                                    <span className="spinner-border spinner-border-sm"></span>
+                                ) : (
+                                    <i className="fas fa-sync"></i>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                    <div className="card-body p-0 table-responsive">
+                        <table className="table mb-0">
+                            <thead>
+                                <tr>
+                                    <th 
+                                        onClick={() => handleSort('timestamp')}
+                                        className="cursor-pointer"
+                                    >
+                                        Timestamp (UTC)
+                                        {sortConfig.key === 'timestamp' && (
+                                            <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                                        )}
+                                    </th>
+                                    <th 
+                                        onClick={() => handleSort('automation_name')}
+                                        className="cursor-pointer"
+                                    >
+                                        Automation
+                                        {sortConfig.key === 'automation_name' && (
+                                            <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                                        )}
+                                    </th>
+                                    <th>Payload</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {getSortedAndFilteredLogs().map((log) => (
+                                    <tr 
+                                        key={`${log.timestamp}-${log.automation_name}`}
+                                        className={`webhook-type-${(log.payload?.action || '').toLowerCase() || 'other'}`}
+                                        onClick={() => toggleRow(`${log.timestamp}-${log.automation_name}`)}
+                                    >
+                                        <td>{new Date(log.timestamp).toLocaleString()}</td>
+                                        <td>{log.automation_name}</td>
+                                        <td className="position-relative">
+                                            {expandedRows.has(`${log.timestamp}-${log.automation_name}`) ? (
+                                                <pre className="mb-0 white-space-pre-wrap">{JSON.stringify(log.payload, null, 2)}</pre>
+                                            ) : (
+                                                <pre className="mb-0 text-truncate">{JSON.stringify(log.payload)}</pre>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        // Initialize WebhookLogs component
+        const container = document.getElementById('webhook-logs');
+        ReactDOM.render(React.createElement(WebhookLogs), container);
+    </script>
 {% endblock %}

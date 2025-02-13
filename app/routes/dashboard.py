@@ -1,12 +1,11 @@
 from flask import (
-    Blueprint, render_template, jsonify, session,
-    redirect, url_for, Response, request
+    Blueprint, render_template, jsonify,
+    session, redirect, url_for, request
 )
 from flask_login import login_required, current_user
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
 from app import db
-import time
 
 bp = Blueprint('dashboard', __name__)
 
@@ -29,37 +28,19 @@ def dashboard():
     return render_template('dashboard.html', automations=automations)
 
 
-@bp.route('/api/logs/stream')
+@bp.route('/api/logs')
 @login_required
-def stream_logs():
-    def generate():
-        last_id = 0
-        while True:
-            try:
-                # Create a new session for each query
-                with db.session.begin():
-                    logs = WebhookLog.query.join(Automation).filter(
-                        Automation.user_id == current_user.id
-                    ).order_by(WebhookLog.timestamp.desc()).limit(100).all()
-                    
-                    # Convert to dict before closing session
-                    log_data = [log.to_dict() for log in logs]
-                    
-                    if logs and logs[0].id != last_id:
-                        last_id = logs[0].id
-                        yield f"data: {json.dumps(log_data)}\n\n"
-                
-                db.session.remove()  # Explicitly remove the session
-                time.sleep(5)  # Update every 5 seconds
-                
-            except Exception as e:
-                print(f"Error in stream_logs: {e}")
-                db.session.remove()  # Ensure session is removed on error
-                yield f"data: {json.dumps([])}\n\n"
-                time.sleep(5)  # Wait before retrying
-
-    return Response(generate(), mimetype='text/event-stream')
-
+def get_logs():
+    """Get webhook logs for the current user."""
+    try:
+        logs = WebhookLog.query.join(Automation).filter(
+            Automation.user_id == current_user.id
+        ).order_by(WebhookLog.timestamp.desc()).limit(100).all()
+        
+        return jsonify([log.to_dict() for log in logs])
+    except Exception as e:
+        print(f"Error getting logs: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 @bp.route('/clear-logs', methods=['POST'])

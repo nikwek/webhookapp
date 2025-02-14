@@ -4,18 +4,16 @@
 
 {% block content %}
 <div class="container mt-4">
-    <div class="mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
         <a href="{{ url_for('dashboard.dashboard') }}" class="text-decoration-none text-secondary">
             <i class="fas fa-arrow-left"></i> Back to Dashboard
         </a>
-    </div>
-    {% if automation %}
-    <div class="text-end mb-2">
+        {% if automation %}
         <button class="btn btn-danger" id="deleteAutomationBtn">
             Delete Automation
         </button>
+        {% endif %}
     </div>
-    {% endif %}
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             {% if automation %}
@@ -80,10 +78,15 @@
             {% endif %}
         </div>
     </div>
+
+    {% if automation %}
+    <div id="automation-logs"></div>
+    {% endif %}
 </div>
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize copy buttons
@@ -248,4 +251,127 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+
+{% if automation %}
+    <script type="text/babel">
+        // AutomationLogs component definition
+        const AutomationLogs = () => {
+            const [logs, setLogs] = React.useState([]);
+            const [isLoading, setIsLoading] = React.useState(false);
+            const [error, setError] = React.useState(null);
+            const [expandedRows, setExpandedRows] = React.useState(new Set());
+
+
+            const fetchLogs = async () => {
+                setIsLoading(true);
+                setError(null);
+                try {
+                    const response = await fetch(`/automation/{{ automation.automation_id }}/logs`);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch logs');
+                    }
+                    const data = await response.json();
+                    setLogs(data);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const toggleRow = (timestamp) => {
+                setExpandedRows(prev => {
+                    const next = new Set(prev);
+                    if (next.has(timestamp)) {
+                        next.delete(timestamp);
+                    } else {
+                        next.add(timestamp);
+                    }
+                    return next;
+                });
+            };
+
+            React.useEffect(() => {
+                fetchLogs();
+                // Set up auto-refresh every 30 seconds
+                const interval = setInterval(fetchLogs, 30000);
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div className="mt-4">
+                    <div className="card">
+                        <div className="card-header d-flex justify-content-between align-items-center">
+                            <h5 className="mb-0">Webhook Logs</h5>
+                            <button 
+                                className="btn btn-secondary btn-sm" 
+                                onClick={fetchLogs}
+                                disabled={isLoading}
+                                title="Refresh logs"
+                            >
+                                {isLoading ? (
+                                    <span className="spinner-border spinner-border-sm"></span>
+                                ) : (
+                                    <i className="fas fa-sync"></i>
+                                )}
+                            </button>
+                        </div>
+                        <div className="card-body p-0">
+                            <div className="table-responsive">
+                                <table className="table mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th className="w-200">Timestamp (UTC)</th>
+                                            <th>Payload</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {logs.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="2" className="text-center py-4">
+                                                    No webhook logs found for this automation.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            logs.map((log) => (
+                                                <tr 
+                                                    key={log.timestamp}
+                                                    onClick={() => toggleRow(log.timestamp)}
+                                                    className="webhook-log-row cursor-pointer"
+                                                    className="webhook-log-row"
+                                                >
+                                                    <td>{new Date(log.timestamp).toLocaleString()}</td>
+                                                    <td>
+                                                        {expandedRows.has(log.timestamp) ? (
+                                                            <pre className="mb-0 payload-expanded">
+                                                                {JSON.stringify(log.payload, null, 2)}
+                                                            </pre>
+                                                        ) : (
+                                                            <pre className="mb-0 payload-collapsed text-truncate">
+                                                                {JSON.stringify(log.payload)}
+                                                            </pre>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {error && (
+                                <div className="alert alert-danger m-3" role="alert">
+                                    {error}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Initialize AutomationLogs component
+        const container = document.getElementById('automation-logs');
+        ReactDOM.render(React.createElement(AutomationLogs), container);
+    </script>
+{% endif %}
 {% endblock %}

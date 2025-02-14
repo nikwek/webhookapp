@@ -4,6 +4,7 @@ from flask_login import current_user
 from functools import wraps
 from app import db
 from app.models.automation import Automation
+from app.models.webhook import WebhookLog
 import os
 
 bp = Blueprint('automation', __name__)
@@ -131,6 +132,25 @@ def delete_automation(automation_id):
         return jsonify({"success": True})
     except Exception as e:
         db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    
+@bp.route('/automation/<automation_id>/logs')
+@api_login_required
+def get_automation_logs(automation_id):
+    """Get webhook logs for a specific automation."""
+    try:
+        # Verify user has access to this automation
+        automation = get_user_automation(automation_id)
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+        
+        logs = WebhookLog.query.filter_by(
+            automation_id=automation_id
+        ).order_by(WebhookLog.timestamp.desc()).limit(100).all()
+        
+        return jsonify([log.to_dict() for log in logs])
+    except Exception as e:
+        print(f"Error fetching automation logs: {e}")
         return jsonify({"error": str(e)}), 500
 
 # Legacy route aliases for backward compatibility

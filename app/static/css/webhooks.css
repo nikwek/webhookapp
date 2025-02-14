@@ -48,3 +48,39 @@
     background-color: rgba(108, 117, 125, 0.1) !important;
     border-left: 4px solid rgba(108, 117, 125, 0.8);
 }
+
+.w-200 {
+    width: 200px;
+}
+
+.webhook-log-row:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+.payload-collapsed {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+}
+
+.payload-expanded {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin: 0;
+    padding: 8px;
+    background-color: rgba(0, 0, 0, 0.02);
+    border-radius: 4px;
+}
+
+.table td pre {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.875rem;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+}

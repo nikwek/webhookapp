@@ -179,27 +179,50 @@
                                             <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
                                         )}
                                     </th>
-                                    <th>Payload</th>
+                                    <th 
+                                        onClick={() => handleSort('action')}
+                                        className="cursor-pointer"
+                                    >
+                                        Action
+                                        {sortConfig.key === 'action' && (
+                                            <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                                        )}
+                                    </th>
+                                    <th 
+                                        onClick={() => handleSort('ticker')}
+                                        className="cursor-pointer"
+                                    >
+                                        Ticker
+                                        {sortConfig.key === 'ticker' && (
+                                            <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                                        )}
+                                    </th>
+                                    <th>Message</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {getSortedAndFilteredLogs().map((log) => (
-                                    <tr 
-                                        key={`${log.timestamp}-${log.automation_name}`}
-                                        className={`webhook-type-${(log.payload?.action || '').toLowerCase() || 'other'}`}
-                                        onClick={() => toggleRow(`${log.timestamp}-${log.automation_name}`)}
-                                    >
-                                        <td>{new Date(log.timestamp).toLocaleString()}</td>
-                                        <td>{log.automation_name}</td>
-                                        <td className="position-relative">
-                                            {expandedRows.has(`${log.timestamp}-${log.automation_name}`) ? (
-                                                <pre className="mb-0 white-space-pre-wrap">{JSON.stringify(log.payload, null, 2)}</pre>
-                                            ) : (
-                                                <pre className="mb-0 text-truncate">{JSON.stringify(log.payload)}</pre>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
+                                {getSortedAndFilteredLogs().map((log) => {
+                                    const action = log.payload?.action || 'other';
+                                    const ticker = log.payload?.ticker || '';
+                                    const message = log.payload?.message || '';
+                                    
+                                    return (
+                                        <tr 
+                                            key={`${log.timestamp}-${log.automation_name}`}
+                                            className={`webhook-type-${action.toLowerCase()}`}
+                                        >
+                                            <td>{new Date(log.timestamp).toLocaleString()}</td>
+                                            <td>{log.automation_name}</td>
+                                            <td>{action}</td>
+                                            <td>{ticker}</td>
+                                            <td>
+                                                <div className="text-truncate" title={message}>
+                                                    {message}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>

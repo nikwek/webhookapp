@@ -1,14 +1,17 @@
 # app/routes/automation.py
-from flask import Blueprint, request, jsonify, session, send_from_directory, render_template
+from flask import Blueprint, request, jsonify, session, send_from_directory, render_template, current_app
 from flask_login import current_user
 from functools import wraps
 from app import db
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
+from app.models.exchange_credentials import ExchangeCredentials
+from datetime import datetime, timezone
 import os
 
 bp = Blueprint('automation', __name__)
 
+# Decorators
 def api_login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -18,6 +21,7 @@ def api_login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# Helper Functions
 def get_user_automation(automation_id):
     """Helper function to get an automation for the current user"""
     return Automation.query.filter_by(
@@ -25,6 +29,7 @@ def get_user_automation(automation_id):
         user_id=session['user_id']
     ).first()
 
+# Static File Routes
 @bp.route('/static/js/components/WebhookLogs.jsx')
 def serve_component(filename):
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -45,7 +50,7 @@ def view_automation(automation_id):
         return render_template('404.html'), 404
     return render_template('automation.html', automation=automation)
 
-# API Routes
+# Automation API Routes
 @bp.route('/automation', methods=['POST'])
 @api_login_required
 def create_automation():
@@ -133,13 +138,13 @@ def delete_automation(automation_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-    
+
+# Webhook Log Routes
 @bp.route('/automation/<automation_id>/logs')
 @api_login_required
 def get_automation_logs(automation_id):
     """Get webhook logs for a specific automation."""
     try:
-        # Verify user has access to this automation
         automation = get_user_automation(automation_id)
         if not automation:
             return jsonify({"error": "Automation not found"}), 404
@@ -153,7 +158,109 @@ def get_automation_logs(automation_id):
         print(f"Error fetching automation logs: {e}")
         return jsonify({"error": str(e)}), 500
 
-# Legacy route aliases for backward compatibility
+# Credential Management Routes
+@bp.route('/automation/<automation_id>/credentials', methods=['GET'])
+@api_login_required
+def get_credentials(automation_id):
+    """Get all credentials for a user."""
+    try:
+        automation = get_user_automation(automation_id)
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        credentials = ExchangeCredentials.query.filter_by(
+            user_id=session['user_id']
+        ).order_by(ExchangeCredentials.created_at.desc()).all()
+        
+        return jsonify({
+            "credentials": [{
+                "id": cred.id,
+                "name": cred.name,
+                "exchange": cred.exchange,
+                "last_used": cred.last_used.isoformat() if cred.last_used else None,
+                "created_at": cred.created_at.isoformat(),
+                "is_active": cred.is_active
+            } for cred in credentials]
+        })
+    except Exception as e:
+        print(f"Error fetching credentials: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/automation/<automation_id>/credentials', methods=['POST'])
+@api_login_required
+def create_credentials(automation_id):
+    """Create new API credentials."""
+    try:
+        automation = get_user_automation(automation_id)
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        data = request.get_json()
+        if not all(k in data for k in ['name', 'api_key', 'secret_key']):
+            return jsonify({"error": "Missing required fields"}), 400
+            
+        # Validate input
+        if not data['name'].strip():
+            return jsonify({"error": "Name cannot be empty"}), 400
+        if not data['api_key'].strip() or not data['secret_key'].strip():
+            return jsonify({"error": "API key and secret key cannot be empty"}), 400
+            
+        credentials = ExchangeCredentials(
+            user_id=session['user_id'],
+            name=data['name'].strip(),
+            exchange='coinbase',  # Hardcoded for now
+            is_active=True
+        )
+        
+        credentials.api_key = data['api_key'].strip()
+        credentials.secret_key = data['secret_key'].strip()
+        
+        db.session.add(credentials)
+        db.session.commit()
+        
+        return jsonify({
+            "id": credentials.id,
+            "name": credentials.name,
+            "exchange": credentials.exchange,
+            "created_at": credentials.created_at.isoformat(),
+            "is_active": credentials.is_active
+        })
+    except ValueError as e:
+        db.session.rollback()
+        print(f"Encryption error: {e}")
+        return jsonify({"error": "Configuration error: encryption key not set up correctly"}), 500
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error creating credentials: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/automation/<automation_id>/credentials/<int:credential_id>', methods=['DELETE'])
+@api_login_required
+def delete_credentials(automation_id, credential_id):
+    """Delete API credentials."""
+    try:
+        automation = get_user_automation(automation_id)
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        credentials = ExchangeCredentials.query.filter_by(
+            id=credential_id,
+            user_id=session['user_id']
+        ).first()
+        
+        if not credentials:
+            return jsonify({"error": "Credentials not found"}), 404
+            
+        db.session.delete(credentials)
+        db.session.commit()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting credentials: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# Legacy Routes
 @bp.route('/create-automation', methods=['POST'])
 @api_login_required
 def create_automation_legacy():

@@ -1,3 +1,4 @@
+# app/routes/admin.py
 from flask import Blueprint, jsonify, session, render_template, redirect, url_for, request
 from app.models.user import User
 from app.models.automation import Automation

@@ -1,3 +1,4 @@
+# app/routes/dashboard.py
 from flask import (
     Blueprint, render_template, jsonify,
     session, redirect, url_for, request

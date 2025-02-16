@@ -1,14 +1,11 @@
 .
-├── __pycache__
 ├── app
 │   ├── __init__.py
-│   ├── __pycache__
-│   │
 │   ├── app.py
 │   ├── models
 │   │   ├── __init__.py
-│   │   ├── __pycache__
 │   │   ├── automation.py
+│   │   ├── exchange_credentials.py
 │   │   ├── user.py
 │   │   └── webhook.py
 │   ├── routes
@@ -24,59 +21,66 @@
 │   │   └── webhook_processor.py
 │   ├── static
 │   │   ├── css
+│   │   │   ├── styles.css
 │   │   │   └── webhooks.css
 │   │   └── js
-│   │       ├── common.js
-│   │       ├── components
-│   │       │   └── WebhookLogs.jsx
-│   │       └── webhooks.js
-│   ├── templates
-│   │   ├── admin
-│   │   │   ├── automations.html
-│   │   │   ├── base.html
-│   │   │   ├── settings.html
-│   │   │   └── users.html
-│   │   ├── auth
-│   │   │   └── change_password.html
-│   │   ├── base.html
-│   │   ├── change_password.html
-│   │   ├── dashboard.html
-│   │   ├── login.html
-│   │   ├── partials
-│   │   │   ├── _automations_table.html
-│   │   │   └── _dashboard_modals.html
-│   │   ├── register.html
-│   │   ├── settings.html
-│   │   └── users.html
-│   └── tests
-│       ├── __init__.py
-│       ├── __pycache__
-│       │   ├── __init__.cpython-312.pyc
-│       │   ├── conftest.cpython-312-pytest-8.3.4.pyc
-│       │   ├── test_admin.cpython-312-pytest-8.3.4.pyc
-│       │   ├── test_auth.cpython-312-pytest-8.3.4.pyc
-│       │   ├── test_automation.cpython-312-pytest-8.3.4.pyc
-│       │   └── test_webhook.cpython-312-pytest-8.3.4.pyc
-│       ├── conftest.py
-│       ├── test_auth.py
-│       ├── test_automation.py
-│       └── test_webhook.py
+│   │       └── common.js
+│   └── templates
+│       ├── admin
+│       │   ├── automations.html
+│       │   ├── base.html
+│       │   ├── settings.html
+│       │   └── users.html
+│       ├── auth
+│       │   └── change_password.html
+│       ├── automation.html
+│       ├── base.html
+│       ├── change_password.html
+│       ├── dashboard.html
+│       ├── login.html
+│       ├── partials
+│       │   ├── _automations_table.html
+│       │   └── _dashboard_modals.html
+│       ├── register.html
+│       ├── settings.html
+│       └── users.html
 ├── app.py
-├── bin
 ├── config.py
-├── generate_jwt.py
 ├── include
+│   └── site
+│       └── python3.11
+│           └── greenlet
+│               └── greenlet.h
 ├── instance
 │   └── webhook.db
-├── lib
 ├── lib64 -> lib
 ├── migrations
+│   ├── README
+│   ├── alembic.ini
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions
+│       └── a53235d8e008_initial_migration.py
 ├── pytest.ini
 ├── pyvenv.cfg
 ├── requirements.txt
 ├── run.py
+├── scripts
+│   ├── __init__.py
+│   ├── create_admin.py
+│   ├── generate_encryption_key.py
+│   └── generate_jwt.py
+├── tests
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── test_auth.py
+│   ├── test_automation.py
+│   ├── test_scripts
+│   │   ├── test_encryption_key.py
+│   │   ├── test_jwt.py
+│   │   └── test_script_utils.py
+│   └── test_webhook.py
 ├── tree.txt
-├── venv
 └── webhook.log
 
-686 directories, 5386 files
+23 directories, 61 files

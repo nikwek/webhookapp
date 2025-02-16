@@ -1,3 +1,4 @@
+// app/static/js/common.js
 // Common utilities for webhook manager
 const WebhookManager = {
     toggleJson: function(event) {

@@ -1,3 +1,4 @@
+# app/__init__.py
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
@@ -13,6 +14,12 @@ migrate = Migrate()
 bcrypt = Bcrypt()
 login_manager = LoginManager()
 login_manager.login_view = 'auth.login'
+
+# Import models here
+from app.models.user import User
+from app.models.automation import Automation
+from app.models.webhook import WebhookLog
+from app.models.exchange_credentials import ExchangeCredentials
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -34,11 +41,6 @@ def create_app(config_class=Config):
     app.jinja_env.filters['from_json'] = from_json_filter
 
     with app.app_context():
-        # Import models (after db initialization)
-        from app.models.user import User
-        from app.models.automation import Automation
-        from app.models.webhook import WebhookLog
-
         # Register blueprints
         from app.routes import auth, dashboard, webhook, admin, automation
         app.register_blueprint(auth.bp)
@@ -46,21 +48,6 @@ def create_app(config_class=Config):
         app.register_blueprint(webhook.bp)
         app.register_blueprint(admin.bp)
         app.register_blueprint(automation.bp)
-
-        # Initialize database
-        db.create_all()
-        
-        # Create admin user if needed
-        admin_user = User.query.filter_by(username='admin').first()
-        if not admin_user:
-            admin_user = User(
-                username='admin',
-                is_admin=True,
-                require_password_change=True
-            )
-            admin_user.set_password('admin')
-            db.session.add(admin_user)
-            db.session.commit()
 
     return app
 

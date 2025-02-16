@@ -1,8 +1,47 @@
+# tests/conftest.py
 import pytest
 from app import create_app, db
 from app.models.user import User
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
+import tempfile
+from pathlib import Path
+
+@pytest.fixture
+def temp_dir():
+    """Create a temporary directory for test files."""
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        yield Path(tmpdirname)
+
+@pytest.fixture
+def mock_env_file(temp_dir):
+    """Create a temporary .env file with test contents."""
+    env_content = """
+TEST_KEY1=value1
+TEST_KEY2=value2
+# This is a comment
+TEST_KEY3=value3 with spaces
+"""
+    env_file = temp_dir / '.env'
+    env_file.write_text(env_content.strip())
+    return env_file
+
+@pytest.fixture
+def mock_project_root(monkeypatch, temp_dir):
+    """Mock the project root directory."""
+    def mock_get_project_root():
+        return temp_dir
+    
+    # Add project root to Python path if needed
+    import sys
+    from pathlib import Path
+    project_root = Path(__file__).parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.append(str(project_root))
+    
+    from scripts import ScriptUtils
+    monkeypatch.setattr(ScriptUtils, 'get_project_root', mock_get_project_root)
+    return temp_dir
 
 @pytest.fixture
 def app():

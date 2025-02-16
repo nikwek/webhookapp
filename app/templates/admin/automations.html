@@ -38,18 +38,18 @@
                 {% for automation in automations %}
                 <tr>
                     <td>{{ automation.name }}</td>
-                    <td>{{ automation.id }}</td>
+                    <td>{{ automation.automation_id }}</td>
                     <td>{{ automation.user.username }}</td>
                     <td>{{ automation.last_run.strftime('%Y-%m-%d %H:%M:%S') if automation.last_run else 'Never' }}</td>
                     <td>
                         <button class="btn btn-{{ 'success' if automation.is_active else 'warning' }} btn-sm" 
-                                onclick="confirmAction('toggle', {{ automation.id }})">
+                                onclick="confirmAction('toggle', '{{ automation.automation_id }}')">
                             {{ 'Active' if automation.is_active else 'Inactive' }}
                         </button>
-                        <button class="btn btn-warning btn-sm" onclick="confirmAction('purge', {{ automation.id }})">
+                        <button class="btn btn-warning btn-sm" onclick="confirmAction('purge', '{{ automation.automation_id }}')">
                             Purge Logs
                         </button>
-                        <button class="btn btn-danger btn-sm" onclick="confirmAction('delete', {{ automation.id }})">
+                        <button class="btn btn-danger btn-sm" onclick="confirmAction('delete', '{{ automation.automation_id }}')">
                             Delete
                         </button>
                     </td>
@@ -58,58 +58,38 @@
             </tbody>
         </table>
     </div>
-
-    <!-- Confirmation Modals -->
-    <div class="modal fade" id="confirmModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Confirm Action</h5>
-                    <button type="button" class="close" data-dismiss="modal">
-                        <span>&times;</span>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <p id="confirmMessage"></p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-danger" id="confirmButton">Confirm</button>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
 function confirmAction(action, automationId) {
     const messages = {
         toggle: "Are you sure you want to toggle the status of this automation?",
-        purge: "Are you sure you want to purge all logs for this automation?",
-        delete: "Are you sure you want to delete this automation? This action cannot be undone."
+        purge: "This will delete all logs for this automation. The automation will remain active. Continue?",
+        delete: "This will permanently delete the automation, its credentials, and all associated logs. Continue?"
     };
     
     if (confirm(messages[action])) {
-        if (action === 'toggle') {
-            const button = document.querySelector(`button[data-automation-id="${automationId}"]`);
-            const isActive = button.classList.contains('btn-success');
-            WebhookManager.toggleAutomationStatus(automationId, isActive, true)
-                .then(() => window.location.reload())
-                .catch(error => alert('Error: ' + error.message));
-        } else {
-            fetch(`/admin/api/automation/${automationId}/${action}`, { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        window.location.reload();
-                    } else {
-                        alert('Error: ' + (data.error || 'Unknown error'));
-                    }
-                })
-                .catch(error => alert('An error occurred'));
-        }
+        fetch(`/admin/api/automations/${automationId}/${action}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while processing your request');
+        });
     }
 }
 </script>

@@ -1,5 +1,16 @@
-from scripts import ScriptUtils
+#!/usr/bin/env python
+# scripts/create_admin.py
+import os
 import sys
+
+# Ensure the project root is in the Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))  # scripts directory
+project_root = os.path.dirname(current_dir)               # project root
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Now we can import from the scripts package
+from scripts import ScriptUtils
 
 def create_admin_user():
     """Create the admin user if it doesn't exist."""
@@ -22,6 +33,10 @@ def create_admin_user():
             db.session.add(admin_user)
             db.session.commit()
             print("Admin user created successfully")
+            print("Login with:")
+            print("  username: admin")
+            print("  password: admin")
+            print("You will be prompted to change your password on first login.")
         else:
             print("Admin user already exists")
 

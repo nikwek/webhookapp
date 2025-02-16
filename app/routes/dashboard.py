@@ -34,8 +34,11 @@ def dashboard():
 def get_logs():
     """Get webhook logs for the current user."""
     try:
-        logs = WebhookLog.query.join(Automation).filter(
-            Automation.user_id == current_user.id
+        logs = WebhookLog.query.outerjoin(Automation).filter(
+            db.or_(
+                Automation.user_id == current_user.id,
+                Automation.id.is_(None)
+            )
         ).order_by(WebhookLog.timestamp.desc()).limit(100).all()
         
         return jsonify([log.to_dict() for log in logs])

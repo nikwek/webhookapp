@@ -60,27 +60,35 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
 function confirmAction(action, userId) {
     const messages = {
-        reset: "Are you sure you want to reset all automation logs for this user?",
-        suspend: "Are you sure you want to toggle the suspension status for this user?",
-        delete: "Are you sure you want to delete this user? This action cannot be undone."
+        reset: "This will delete all automations and logs for this user. The account will remain active. Continue?",
+        suspend: "This will prevent the user from logging in to their account. Continue?",
+        delete: "This will permanently delete the user's account and all associated data. This action cannot be undone. Continue?"
     };
     
-    $('#confirmMessage').text(messages[action]);
-    $('#confirmButton').off('click').on('click', function() {
-        $.post(`/admin/api/user/${userId}/${action}`)
-            .done(function(response) {
-                if (response.success) {
-                    location.reload();
-                }
-            })
-            .fail(function(error) {
-                alert('An error occurred');
-            });
-    });
-    $('#confirmModal').modal('show');
+    if (confirm(messages[action])) {
+        fetch(`/admin/api/users/${userId}/${action}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while processing your request');
+        });
+    }
 }
 </script>
 {% endblock %}

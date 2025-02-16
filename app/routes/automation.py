@@ -162,14 +162,14 @@ def get_automation_logs(automation_id):
 @bp.route('/automation/<automation_id>/credentials', methods=['GET'])
 @api_login_required
 def get_credentials(automation_id):
-    """Get all credentials for a user."""
+    """Get credentials for a specific automation."""
     try:
         automation = get_user_automation(automation_id)
         if not automation:
             return jsonify({"error": "Automation not found"}), 404
             
         credentials = ExchangeCredentials.query.filter_by(
-            user_id=session['user_id']
+            automation_id=automation_id
         ).order_by(ExchangeCredentials.created_at.desc()).all()
         
         return jsonify({
@@ -189,7 +189,7 @@ def get_credentials(automation_id):
 @bp.route('/automation/<automation_id>/credentials', methods=['POST'])
 @api_login_required
 def create_credentials(automation_id):
-    """Create new API credentials."""
+    """Create new API credentials for a specific automation."""
     try:
         automation = get_user_automation(automation_id)
         if not automation:
@@ -205,8 +205,16 @@ def create_credentials(automation_id):
         if not data['api_key'].strip() or not data['secret_key'].strip():
             return jsonify({"error": "API key and secret key cannot be empty"}), 400
             
+        # Check if credentials already exist for this automation
+        existing_creds = ExchangeCredentials.query.filter_by(
+            automation_id=automation_id
+        ).first()
+        if existing_creds:
+            return jsonify({"error": "Credentials already exist for this automation"}), 400
+            
         credentials = ExchangeCredentials(
             user_id=session['user_id'],
+            automation_id=automation_id,
             name=data['name'].strip(),
             exchange='coinbase',  # Hardcoded for now
             is_active=True

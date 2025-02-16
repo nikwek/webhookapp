@@ -54,43 +54,11 @@
             <div id="automationDetails">
                     <!-- Exchange Credentials Section -->
                     <h5>Exchange API Credentials</h5>
-                    <div class="mb-4">
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle"></i> 
-                            Connect to Coinbase to enable trading automations.
+                    <div class="mb-4">                        
+                        <div id="credentialsContainer">
+                            <!-- Content will be dynamically managed by JavaScript -->
                         </div>
-                        
-                        <form id="apiCredentialsForm" class="mb-3">
-                            <div class="mb-3">
-                                <label for="credentialName" class="form-label">Credential Name</label>
-                                <input type="text" 
-                                    class="form-control" 
-                                    id="credentialName" 
-                                    required
-                                    placeholder="e.g., Coinbase Main Account">
-                            </div>
-                            <div class="mb-3">
-                                <label for="apiKey" class="form-label">API Key</label>
-                                <input type="text" 
-                                    class="form-control" 
-                                    id="apiKey" 
-                                    required
-                                    autocomplete="off">
-                            </div>
-                            <div class="mb-3">
-                                <label for="secretKey" class="form-label">Secret Key</label>
-                                <input type="password" 
-                                    class="form-control" 
-                                    id="secretKey" 
-                                    required
-                                    autocomplete="off">
-                            </div>
-                            <button type="submit" class="btn btn-primary">Save Credentials</button>
-                        </form>
-
-                        <div id="existingCredentials">
-                            <!-- Existing credentials will be loaded here -->
-                        </div>
+                    
                     </div>
                 <h5>Webhook URL</h5>
                 <div class="input-group mb-4">
@@ -291,110 +259,145 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     // Add API Credentials handling
-    const apiCredentialsForm = document.getElementById('apiCredentialsForm');
-    const existingCredentials = document.getElementById('existingCredentials');
+    const credentialsContainer = document.getElementById('credentialsContainer');
 
-    // Load existing credentials
+    // Create the credentials form HTML
+    function createCredentialsForm() {
+        return `
+            <form id="apiCredentialsForm" class="mb-3">
+                <div class="mb-3">
+                    <label for="credentialName" class="form-label">Credential Name</label>
+                    <input type="text" 
+                        class="form-control" 
+                        id="credentialName" 
+                        required
+                        placeholder="e.g., Coinbase Main Account">
+                </div>
+                <div class="mb-3">
+                    <label for="apiKey" class="form-label">API Key</label>
+                    <input type="text" 
+                        class="form-control" 
+                        id="apiKey" 
+                        required
+                        autocomplete="off">
+                </div>
+                <div class="mb-3">
+                    <label for="secretKey" class="form-label">Secret Key</label>
+                    <input type="password" 
+                        class="form-control" 
+                        id="secretKey" 
+                        required
+                        autocomplete="off">
+                </div>
+                <button type="submit" class="btn btn-primary">Save Credentials</button>
+            </form>
+        `;
+    }
+
+    // Create the saved credentials HTML
+    function createSavedCredentialsHTML(credential) {
+        return `
+            <div class="border rounded p-3 mb-2 d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>${credential.name}</strong>
+                    <br>
+                    <small class="text-muted">Last used: ${credential.last_used ? new Date(credential.last_used).toLocaleString() : 'Never'}</small>
+                </div>
+                <div>
+                    <button class="btn btn-sm btn-danger delete-credential" data-id="${credential.id}">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    // Load and render credentials
     async function loadCredentials() {
         try {
             const response = await fetch(`/automation/{{ automation.automation_id }}/credentials`);
             const data = await response.json();
             
             if (data.credentials && data.credentials.length > 0) {
-                const credentialsList = document.createElement('div');
-                credentialsList.className = 'mt-3';
-                
-                data.credentials.forEach(cred => {
-                    const credDiv = document.createElement('div');
-                    credDiv.className = 'border rounded p-3 mb-2 d-flex justify-content-between align-items-center';
-                    credDiv.innerHTML = `
-                        <div>
-                            <strong>${cred.name}</strong>
-                            <br>
-                            <small class="text-muted">Last used: ${cred.last_used ? new Date(cred.last_used).toLocaleString() : 'Never'}</small>
-                        </div>
-                        <div>
-                            <button class="btn btn-sm btn-danger delete-credential" data-id="${cred.id}">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    `;
-                    credentialsList.appendChild(credDiv);
-                });
-                
-                existingCredentials.innerHTML = '<h6 class="mt-4">Saved Credentials</h6>';
-                existingCredentials.appendChild(credentialsList);
+                // Show existing credentials
+                credentialsContainer.innerHTML = createSavedCredentialsHTML(data.credentials[0]);
             } else {
-                existingCredentials.innerHTML = '';
+                // Show the form to add credentials
+                credentialsContainer.innerHTML = createCredentialsForm();
+                setupFormHandler();
             }
         } catch (error) {
             console.error('Error loading credentials:', error);
+            credentialsContainer.innerHTML = `
+                <div class="alert alert-danger">
+                    Error loading credentials: ${error.message}
+                </div>
+            `;
         }
     }
 
-    // Handle form submission
-    if (apiCredentialsForm) {
-        apiCredentialsForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const submitButton = this.querySelector('button[type="submit"]');
-            submitButton.disabled = true;
-            
-            try {
-                const response = await fetch(`/automation/{{ automation.automation_id }}/credentials`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        name: document.getElementById('credentialName').value,
-                        api_key: document.getElementById('apiKey').value,
-                        secret_key: document.getElementById('secretKey').value,
-                    })
-                });
+    // Setup form submission handler
+    function setupFormHandler() {
+        const form = document.getElementById('apiCredentialsForm');
+        if (form) {
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const submitButton = this.querySelector('button[type="submit"]');
+                submitButton.disabled = true;
                 
-                const data = await response.json();
-                if (data.error) {
-                    throw new Error(data.error);
+                try {
+                    const response = await fetch(`/automation/{{ automation.automation_id }}/credentials`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            name: document.getElementById('credentialName').value,
+                            api_key: document.getElementById('apiKey').value,
+                            secret_key: document.getElementById('secretKey').value,
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    
+                    // Show success message and reload
+                    const alert = document.createElement('div');
+                    alert.className = 'alert alert-success alert-dismissible fade show mb-3';
+                    alert.innerHTML = `
+                        Credentials saved successfully
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    `;
+                    credentialsContainer.insertBefore(alert, credentialsContainer.firstChild);
+                    
+                    // Reload to show new credentials
+                    setTimeout(() => loadCredentials(), 1500);
+                    
+                } catch (error) {
+                    console.error('Error:', error);
+                    const alert = document.createElement('div');
+                    alert.className = 'alert alert-danger alert-dismissible fade show mb-3';
+                    alert.innerHTML = `
+                        Error saving credentials: ${error.message}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    `;
+                    credentialsContainer.insertBefore(alert, credentialsContainer.firstChild);
+                } finally {
+                    submitButton.disabled = false;
                 }
-                
-                // Clear form
-                apiCredentialsForm.reset();
-                
-                // Show success message
-                const alert = document.createElement('div');
-                alert.className = 'alert alert-success alert-dismissible fade show mt-3';
-                alert.innerHTML = `
-                    Credentials saved successfully
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                `;
-                apiCredentialsForm.appendChild(alert);
-                
-                // Reload credentials list
-                loadCredentials();
-                
-            } catch (error) {
-                console.error('Error:', error);
-                const alert = document.createElement('div');
-                alert.className = 'alert alert-danger alert-dismissible fade show mt-3';
-                alert.innerHTML = `
-                    Error saving credentials: ${error.message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                `;
-                apiCredentialsForm.appendChild(alert);
-            } finally {
-                submitButton.disabled = false;
-            }
-        });
+            });
+        }
     }
 
     // Handle credential deletion
-    existingCredentials.addEventListener('click', async function(e) {
+    credentialsContainer.addEventListener('click', async function(e) {
         if (e.target.closest('.delete-credential')) {
             const button = e.target.closest('.delete-credential');
             const credentialId = button.dataset.id;
             
-            if (confirm('Are you sure you want to delete these credentials?')) {
+            if (confirm('Are you sure you want to delete these credentials? This will disable trading for this automation.')) {
                 try {
                     const response = await fetch(`/automation/{{ automation.automation_id }}/credentials/${credentialId}`, {
                         method: 'DELETE'
@@ -403,8 +406,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     const data = await response.json();
                     if (data.error) throw new Error(data.error);
                     
-                    // Reload credentials list
-                    loadCredentials();
+                    // Show success message and reload
+                    const alert = document.createElement('div');
+                    alert.className = 'alert alert-success alert-dismissible fade show mb-3';
+                    alert.innerHTML = `
+                        Credentials deleted successfully
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    `;
+                    credentialsContainer.insertBefore(alert, credentialsContainer.firstChild);
+                    
+                    // Reload to show form
+                    setTimeout(() => loadCredentials(), 1500);
                     
                 } catch (error) {
                     console.error('Error:', error);
@@ -415,7 +427,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Load initial credentials
-    if (existingCredentials) {
+    if (credentialsContainer) {
         loadCredentials();
     }
 });
@@ -462,9 +474,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
             React.useEffect(() => {
                 fetchLogs();
-                // Set up auto-refresh every 30 seconds
-                const interval = setInterval(fetchLogs, 30000);
-                return () => clearInterval(interval);
             }, []);
 
             return (

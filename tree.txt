@@ -60,7 +60,8 @@
 │   ├── env.py
 │   ├── script.py.mako
 │   └── versions
-│       └── a53235d8e008_initial_migration.py
+│       ├── a53235d8e008_initial_migration.py
+│       └── ee7b0f7d887e_add_automation_id_to_exchange_.py
 ├── pytest.ini
 ├── pyvenv.cfg
 ├── requirements.txt
@@ -69,7 +70,8 @@
 │   ├── __init__.py
 │   ├── create_admin.py
 │   ├── generate_encryption_key.py
-│   └── generate_jwt.py
+│   ├── generate_jwt.py
+│   └── script_utils.py
 ├── tests
 │   ├── __init__.py
 │   ├── conftest.py
@@ -83,4 +85,4 @@
 ├── tree.txt
 └── webhook.log
 
-23 directories, 61 files
+23 directories, 63 files

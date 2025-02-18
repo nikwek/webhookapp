@@ -48,7 +48,22 @@ def view_automation(automation_id):
     automation = get_user_automation(automation_id)
     if not automation:
         return render_template('404.html'), 404
-    return render_template('automation.html', automation=automation)
+    
+    # Get available portfolios if OAuth is connected
+    portfolios = []
+    oauth_creds = get_oauth_credentials(current_user.id, 'coinbase')
+    if oauth_creds:
+        try:
+            coinbase = CoinbaseService(current_user.id)
+            portfolios = coinbase.list_portfolios()
+        except Exception as e:
+            current_app.logger.error(f"Error fetching portfolios: {str(e)}")
+    
+    return render_template(
+        'automation.html', 
+        automation=automation,
+        portfolios=portfolios
+    )
 
 # Automation API Routes
 @bp.route('/automation', methods=['POST'])
@@ -196,14 +211,12 @@ def create_credentials(automation_id):
             return jsonify({"error": "Automation not found"}), 404
             
         data = request.get_json()
-        if not all(k in data for k in ['name', 'api_key', 'secret_key']):
+        if not all(k in data for k in ['name', 'api_key', 'secret_key', 'portfolio_id', 'portfolio_name']):
             return jsonify({"error": "Missing required fields"}), 400
             
         # Validate input
         if not data['name'].strip():
             return jsonify({"error": "Name cannot be empty"}), 400
-        if not data['api_key'].strip() or not data['secret_key'].strip():
-            return jsonify({"error": "API key and secret key cannot be empty"}), 400
             
         # Check if credentials already exist for this automation
         existing_creds = ExchangeCredentials.query.filter_by(
@@ -213,11 +226,12 @@ def create_credentials(automation_id):
             return jsonify({"error": "Credentials already exist for this automation"}), 400
             
         credentials = ExchangeCredentials(
-            user_id=session['user_id'],
+            user_id=current_user.id,
             automation_id=automation_id,
             name=data['name'].strip(),
-            exchange='coinbase',  # Hardcoded for now
-            is_active=True
+            exchange='coinbase',
+            portfolio_id=data['portfolio_id'],
+            portfolio_name=data['portfolio_name']
         )
         
         credentials.api_key = data['api_key'].strip()
@@ -230,17 +244,15 @@ def create_credentials(automation_id):
             "id": credentials.id,
             "name": credentials.name,
             "exchange": credentials.exchange,
+            "portfolio_name": credentials.portfolio_name,
             "created_at": credentials.created_at.isoformat(),
             "is_active": credentials.is_active
         })
-    except ValueError as e:
-        db.session.rollback()
-        print(f"Encryption error: {e}")
-        return jsonify({"error": "Configuration error: encryption key not set up correctly"}), 500
     except Exception as e:
         db.session.rollback()
-        print(f"Error creating credentials: {e}")
+        current_app.logger.error(f"Error creating credentials: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
 
 @bp.route('/automation/<automation_id>/credentials/<int:credential_id>', methods=['DELETE'])
 @api_login_required

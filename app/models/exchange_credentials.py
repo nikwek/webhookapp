@@ -16,9 +16,13 @@ class ExchangeCredentials(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_used = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
+    portfolio_id = db.Column(db.String(100))  # New: Coinbase portfolio ID
+    portfolio_name = db.Column(db.String(100))  # New: Coinbase portfolio name
+    
     user = db.relationship('User', backref=db.backref('exchange_credentials', lazy=True))
     automation_id = db.Column(db.String(50), db.ForeignKey('automations.automation_id'), nullable=False)
     automation = db.relationship('Automation', backref=db.backref('credentials', lazy=True, uselist=False))
+
 
     @staticmethod
     def get_encryption_key():

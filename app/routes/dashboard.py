@@ -6,6 +6,8 @@ from flask import (
 from flask_login import login_required, current_user
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
+from app.services.oauth_service import get_oauth_credentials
+from app.services.coinbase_service import CoinbaseService
 from app import db
 
 bp = Blueprint('dashboard', __name__)
@@ -26,7 +28,30 @@ def dashboard():
     for automation in automations:
         automation.webhook_url = f"{base_url}/webhook?automation_id={automation.automation_id}"
 
-    return render_template('dashboard.html', automations=automations)
+    # Check Coinbase connection and get portfolios
+    oauth_connected = bool(get_oauth_credentials(user_id, 'coinbase'))
+    portfolios = []
+    
+    if oauth_connected:
+        try:
+            coinbase_service = CoinbaseService(user_id)
+            portfolios = coinbase_service.list_portfolios()
+        except Exception as e:
+            current_app.logger.error(f"Error fetching portfolios: {str(e)}")
+
+    return render_template(
+        'dashboard.html',
+        automations=automations,
+        oauth_connected=oauth_connected,
+        portfolios=portfolios
+    )
+
+@bp.route('/settings')
+@login_required
+def settings():
+    """Render the settings page."""
+    oauth_connected = bool(get_oauth_credentials(current_user.id, 'coinbase'))
+    return render_template('settings.html', oauth_connected=oauth_connected)
 
 
 @bp.route('/api/logs')
@@ -63,10 +88,3 @@ def clear_logs():
         print(f"Error clearing logs: {e}")
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-
-
-@bp.route('/settings')
-@login_required
-def settings():
-    """Render the settings page."""
-    return render_template('settings.html')

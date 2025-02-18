@@ -2,6 +2,7 @@
 from flask_login import UserMixin
 from app import db, bcrypt
 from datetime import datetime, timezone
+from sqlalchemy.orm import relationship
 
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
@@ -14,6 +15,9 @@ class User(UserMixin, db.Model):
     is_suspended = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_activity = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    # Add this line for the relationship
+    oauth_credentials = relationship("OAuthCredentials", back_populates="user")
 
     def set_password(self, password):
         self.password = bcrypt.generate_password_hash(password).decode('utf-8')

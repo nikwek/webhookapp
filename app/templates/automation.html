@@ -261,17 +261,36 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add API Credentials handling
     const credentialsContainer = document.getElementById('credentialsContainer');
 
-    // Create the credentials form HTML
+    // Credentials form HTML
     function createCredentialsForm() {
         return `
             <form id="apiCredentialsForm" class="mb-3">
+                <div class="mb-3">
+                    <label for="portfolioSelect" class="form-label">Select Portfolio</label>
+                    <select class="form-control" id="portfolioSelect" required>
+                        <option value="">Choose a portfolio...</option>
+                        {% for portfolio in portfolios %}
+                        <option value="{{ portfolio.id }}" 
+                                data-name="{{ portfolio.name }}"
+                                data-api-key="{{ portfolio.api_key }}"
+                                data-secret-key="{{ portfolio.secret_key }}">
+                            {{ portfolio.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">
+                        <a href="{{ url_for('dashboard.settings') }}">
+                            <i class="fas fa-plus-circle"></i> Create new portfolio in Coinbase
+                        </a>
+                    </div>
+                </div>
                 <div class="mb-3">
                     <label for="credentialName" class="form-label">Credential Name</label>
                     <input type="text" 
                         class="form-control" 
                         id="credentialName" 
                         required
-                        placeholder="e.g., Coinbase Main Account">
+                        placeholder="e.g., BTC Trading Portfolio">
                 </div>
                 <div class="mb-3">
                     <label for="apiKey" class="form-label">API Key</label>
@@ -279,7 +298,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         class="form-control" 
                         id="apiKey" 
                         required
-                        autocomplete="off">
+                        readonly>
                 </div>
                 <div class="mb-3">
                     <label for="secretKey" class="form-label">Secret Key</label>
@@ -287,9 +306,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         class="form-control" 
                         id="secretKey" 
                         required
-                        autocomplete="off">
+                        readonly>
                 </div>
-                <button type="submit" class="btn btn-primary">Save Credentials</button>
+                <button type="submit" class="btn btn-primary">Connect Portfolio</button>
             </form>
         `;
     }
@@ -546,6 +565,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             );
         };
+
+        document.getElementById('portfolioSelect')?.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            const nameInput = document.getElementById('credentialName');
+            const apiKeyInput = document.getElementById('apiKey');
+            const secretKeyInput = document.getElementById('secretKey');
+            
+            if (this.value) {
+                nameInput.value = selectedOption.dataset.name;
+                apiKeyInput.value = selectedOption.dataset.apiKey;
+                secretKeyInput.value = selectedOption.dataset.secretKey;
+            } else {
+                nameInput.value = '';
+                apiKeyInput.value = '';
+                secretKeyInput.value = '';
+            }
+        });
 
         // Initialize AutomationLogs component
         const container = document.getElementById('automation-logs');

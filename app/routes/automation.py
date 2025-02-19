@@ -1,11 +1,13 @@
 # app/routes/automation.py
 from flask import Blueprint, request, jsonify, session, send_from_directory, render_template, current_app
-from flask_login import current_user
+from flask_login import current_user, login_required
 from functools import wraps
 from app import db
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
 from app.models.exchange_credentials import ExchangeCredentials
+from app.services.oauth_service import get_oauth_credentials
+from app.services.coinbase_service import CoinbaseService
 from datetime import datetime, timezone
 import os
 

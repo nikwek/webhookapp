@@ -6,6 +6,7 @@
 │   │   ├── __init__.py
 │   │   ├── automation.py
 │   │   ├── exchange_credentials.py
+│   │   ├── oauth_credentials.py
 │   │   ├── user.py
 │   │   └── webhook.py
 │   ├── routes
@@ -14,10 +15,14 @@
 │   │   ├── auth.py
 │   │   ├── automation.py
 │   │   ├── dashboard.py
+│   │   ├── oauth.py
+│   │   ├── portfolio.py
 │   │   └── webhook.py
 │   ├── services
 │   │   ├── __init__.py
 │   │   ├── api_client.py
+│   │   ├── coinbase_service.py
+│   │   ├── oauth_service.py
 │   │   └── webhook_processor.py
 │   ├── static
 │   │   ├── css
@@ -54,14 +59,6 @@
 ├── instance
 │   └── webhook.db
 ├── lib64 -> lib
-├── migrations
-│   ├── README
-│   ├── alembic.ini
-│   ├── env.py
-│   ├── script.py.mako
-│   └── versions
-│       ├── a53235d8e008_initial_migration.py
-│       └── ee7b0f7d887e_add_automation_id_to_exchange_.py
 ├── pytest.ini
 ├── pyvenv.cfg
 ├── requirements.txt
@@ -85,4 +82,4 @@
 ├── tree.txt
 └── webhook.log
 
-23 directories, 63 files
+21 directories, 62 files

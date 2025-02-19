@@ -15,17 +15,18 @@ def init_oauth(app, db):
         name='coinbase',
         client_id=app.config['COINBASE_CLIENT_ID'],
         client_secret=app.config['COINBASE_CLIENT_SECRET'],
-        access_token_url='https://login.coinbase.com/oauth2/token',
-        access_token_params=None,
-        authorize_url='https://login.coinbase.com/oauth2/auth',
-        authorize_params=None,
+        access_token_url='https://oauth.coinbase.com/oauth/token',
+        access_token_params={'grant_type': 'authorization_code'},
+        authorize_url='https://www.coinbase.com/oauth/authorize',
+        authorize_params={'response_type': 'code'},
         api_base_url='https://api.coinbase.com/v2/',
         client_kwargs={
-            'scope': 'wallet:accounts:read wallet:buys:create wallet:sells:create',
-            'redirect_uri': redirect_uri  # Use the configured redirect URI
+            'scope': 'wallet:accounts:read,wallet:accounts:create,wallet:user:read',
+            'token_endpoint_auth_method': 'client_secret_post',
+            'token_placement': 'header',
+            'redirect_uri': redirect_uri
         }
     )
-
 
 def save_oauth_credentials(db, user_id, provider, token_response):
     """Save or update OAuth credentials for a user"""
@@ -71,7 +72,10 @@ def refresh_access_token(db, credentials):
         raise ValueError("No refresh token available")
 
     client = oauth.create_client('coinbase')
-    token_response = client.refresh_token(credentials.refresh_token)
+    token_response = client.refresh_token(
+        refresh_token=credentials.refresh_token,
+        grant_type='refresh_token'
+    )
     
     return save_oauth_credentials(
         db,

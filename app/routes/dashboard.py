@@ -1,7 +1,7 @@
 # app/routes/dashboard.py
 from flask import (
     Blueprint, render_template, jsonify,
-    session, redirect, url_for, request
+    session, redirect, url_for, request, current_app
 )
 from flask_login import login_required, current_user
 from app.models.automation import Automation

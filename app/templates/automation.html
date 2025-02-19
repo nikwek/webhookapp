@@ -266,49 +266,49 @@ document.addEventListener('DOMContentLoaded', function() {
         return `
             <form id="apiCredentialsForm" class="mb-3">
                 <div class="mb-3">
-                    <label for="portfolioSelect" class="form-label">Select Portfolio</label>
+                    <label for="portfolioSelect" class="form-label">Select Trading Account</label>
                     <select class="form-control" id="portfolioSelect" required>
-                        <option value="">Choose a portfolio...</option>
+                        <option value="">Choose a trading account...</option>
                         {% for portfolio in portfolios %}
                         <option value="{{ portfolio.id }}" 
                                 data-name="{{ portfolio.name }}"
-                                data-api-key="{{ portfolio.api_key }}"
-                                data-secret-key="{{ portfolio.secret_key }}">
-                            {{ portfolio.name }}
+                                data-balance="{{ portfolio.balance.amount }} {{ portfolio.balance.currency }}">
+                            {{ portfolio.name }} 
+                            ({{ portfolio.balance.amount }} {{ portfolio.balance.currency }})
+                            {% if portfolio.primary %}*Primary{% endif %}
                         </option>
                         {% endfor %}
                     </select>
                     <div class="form-text">
-                        <a href="{{ url_for('dashboard.settings') }}">
-                            <i class="fas fa-plus-circle"></i> Create new portfolio in Coinbase
-                        </a>
+                        {% if not portfolios %}
+                            No trading accounts found. 
+                            <a href="{{ url_for('dashboard.settings') }}">
+                                Connect your Coinbase account
+                            </a>
+                            to get started.
+                        {% endif %}
                     </div>
                 </div>
                 <div class="mb-3">
-                    <label for="credentialName" class="form-label">Credential Name</label>
+                    <label for="credentialName" class="form-label">Automation Label</label>
                     <input type="text" 
                         class="form-control" 
                         id="credentialName" 
                         required
-                        placeholder="e.g., BTC Trading Portfolio">
+                        placeholder="e.g., BTC Trading Strategy">
+                    <div class="form-text">
+                        A label to help you identify this automation's purpose
+                    </div>
                 </div>
-                <div class="mb-3">
-                    <label for="apiKey" class="form-label">API Key</label>
-                    <input type="text" 
-                        class="form-control" 
-                        id="apiKey" 
-                        required
-                        readonly>
+                <div id="apiKeySection" class="d-none">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        Generating API keys for the selected account...
+                    </div>
                 </div>
-                <div class="mb-3">
-                    <label for="secretKey" class="form-label">Secret Key</label>
-                    <input type="password" 
-                        class="form-control" 
-                        id="secretKey" 
-                        required
-                        readonly>
-                </div>
-                <button type="submit" class="btn btn-primary">Connect Portfolio</button>
+                <button type="submit" class="btn btn-primary">
+                    Connect Trading Account
+                </button>
             </form>
         `;
     }
@@ -362,22 +362,27 @@ document.addEventListener('DOMContentLoaded', function() {
             form.addEventListener('submit', async function(e) {
                 e.preventDefault();
                 const submitButton = this.querySelector('button[type="submit"]');
+                const portfolioSelect = document.getElementById('portfolioSelect');
                 submitButton.disabled = true;
                 
                 try {
-                    const response = await fetch(`/automation/{{ automation.automation_id }}/credentials`, {
+                    // First, get API credentials for the selected portfolio
+                    const portfolioId = portfolioSelect.value;
+                    const portfolioName = portfolioSelect.options[portfolioSelect.selectedIndex].dataset.name;
+                    
+                    const apiResponse = await fetch(`/automation/{{ automation.automation_id }}/credentials`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
                             name: document.getElementById('credentialName').value,
-                            api_key: document.getElementById('apiKey').value,
-                            secret_key: document.getElementById('secretKey').value,
+                            portfolio_id: portfolioId,
+                            portfolio_name: portfolioName
                         })
                     });
                     
-                    const data = await response.json();
+                    const data = await apiResponse.json();
                     if (data.error) {
                         throw new Error(data.error);
                     }
@@ -386,7 +391,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     const alert = document.createElement('div');
                     alert.className = 'alert alert-success alert-dismissible fade show mb-3';
                     alert.innerHTML = `
-                        Credentials saved successfully
+                        Trading account connected successfully
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     `;
                     credentialsContainer.insertBefore(alert, credentialsContainer.firstChild);
@@ -399,7 +404,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     const alert = document.createElement('div');
                     alert.className = 'alert alert-danger alert-dismissible fade show mb-3';
                     alert.innerHTML = `
-                        Error saving credentials: ${error.message}
+                        Error connecting trading account: ${error.message}
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     `;
                     credentialsContainer.insertBefore(alert, credentialsContainer.firstChild);
@@ -444,6 +449,20 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
+
+    const portfolioSelect = document.getElementById('portfolioSelect');
+    if (portfolioSelect) {  // Only add listener if element exists
+        portfolioSelect.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            const nameInput = document.getElementById('credentialName');
+            
+            if (this.value && nameInput) {
+                nameInput.value = `${selectedOption.dataset.name} Trading`;
+            } else if (nameInput) {
+                nameInput.value = '';
+            }
+        });
+    }
 
     // Load initial credentials
     if (credentialsContainer) {

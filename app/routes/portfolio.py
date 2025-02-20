@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for
+from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for, current_app
 from flask_login import login_required, current_user
 from app.services.coinbase_service import CoinbaseService
 from app.models.exchange_credentials import ExchangeCredentials
@@ -9,6 +9,7 @@ bp = Blueprint('portfolio', __name__, url_prefix='/portfolio')
 @bp.route('/')
 @login_required
 def index():
+    """Portfolio dashboard view"""
     try:
         coinbase = CoinbaseService(current_user.id)
         portfolios = coinbase.list_portfolios()
@@ -20,26 +21,40 @@ def index():
         flash(f'Failed to fetch portfolios: {str(e)}', 'error')
         return render_template('portfolio/index.html', portfolios=[])
 
-@bp.route('/create', methods=['POST'])
+@bp.route('/api/portfolios', methods=['GET'])
 @login_required
-def create_portfolio():
-    name = request.form.get('name')
-    if not name:
-        flash('Portfolio name is required', 'error')
-        return redirect(url_for('portfolio.index'))
-
+def list_portfolios():
+    """API endpoint to list portfolios"""
     try:
         coinbase = CoinbaseService(current_user.id)
-        portfolio = coinbase.create_portfolio(name)
-        flash(f'Portfolio "{name}" created successfully', 'success')
-        return redirect(url_for('portfolio.index'))
+        portfolios = coinbase.list_portfolios()
+        return jsonify({"portfolios": portfolios})
+    except ValueError as e:
+        return jsonify({"error": "Please connect your Coinbase account first."}), 401
     except Exception as e:
-        flash(f'Failed to create portfolio: {str(e)}', 'error')
-        return redirect(url_for('portfolio.index'))
+        current_app.logger.error(f"Error fetching portfolios: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
-@bp.route('/<portfolio_id>/credentials', methods=['POST'])
+@bp.route('/api/portfolios', methods=['POST'])
+@login_required
+def create_portfolio():
+    """API endpoint to create a portfolio"""
+    try:
+        data = request.get_json()
+        if not data or 'name' not in data:
+            return jsonify({"error": "Portfolio name is required"}), 400
+
+        coinbase = CoinbaseService(current_user.id)
+        portfolio = coinbase.create_portfolio(data['name'])
+        return jsonify({"portfolio": portfolio})
+    except Exception as e:
+        current_app.logger.error(f"Error creating portfolio: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/api/portfolios/<portfolio_id>/credentials', methods=['POST'])
 @login_required
 def get_credentials(portfolio_id):
+    """API endpoint to generate and save portfolio credentials"""
     try:
         coinbase = CoinbaseService(current_user.id)
         credentials = coinbase.get_portfolio_api_credentials(portfolio_id)
@@ -54,8 +69,10 @@ def get_credentials(portfolio_id):
         db.session.add(exchange_creds)
         db.session.commit()
         
-        flash('API credentials generated and saved successfully', 'success')
-        return redirect(url_for('automation.index'))
+        return jsonify({
+            "success": True,
+            "message": "API credentials generated and saved successfully"
+        })
     except Exception as e:
-        flash(f'Failed to generate API credentials: {str(e)}', 'error')
-        return redirect(url_for('portfolio.index'))
+        current_app.logger.error(f"Error generating credentials: {str(e)}")
+        return jsonify({"error": str(e)}), 500

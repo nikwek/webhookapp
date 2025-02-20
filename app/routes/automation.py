@@ -282,6 +282,53 @@ def delete_credentials(automation_id, credential_id):
         print(f"Error deleting credentials: {e}")
         return jsonify({"error": str(e)}), 500
 
+@bp.route('/automation/<automation_id>/portfolios', methods=['GET'])
+@api_login_required
+def get_portfolios(automation_id):
+    """Get available portfolios for the automation."""
+    try:
+        automation = get_user_automation(automation_id)
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+
+        oauth_creds = get_oauth_credentials(current_user.id, 'coinbase')
+        if not oauth_creds:
+            return jsonify({"error": "Coinbase not connected"}), 400
+
+        coinbase = CoinbaseService(current_user.id)
+        portfolios = coinbase.list_portfolios()
+        
+        return jsonify({"portfolios": portfolios})
+    except Exception as e:
+        current_app.logger.error(f"Error fetching portfolios: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/automation/<automation_id>/portfolios', methods=['POST'])
+@api_login_required
+def create_portfolio(automation_id):
+    """Create a new portfolio for the automation."""
+    try:
+        automation = get_user_automation(automation_id)
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+
+        data = request.get_json()
+        if not data or 'name' not in data:
+            return jsonify({"error": "Missing portfolio name"}), 400
+
+        oauth_creds = get_oauth_credentials(current_user.id, 'coinbase')
+        if not oauth_creds:
+            return jsonify({"error": "Coinbase not connected"}), 400
+
+        coinbase = CoinbaseService(current_user.id)
+        portfolio = coinbase.create_portfolio(data['name'])
+        
+        return jsonify({"portfolio": portfolio})
+    except Exception as e:
+        current_app.logger.error(f"Error creating portfolio: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
 # Legacy Routes
 @bp.route('/create-automation', methods=['POST'])
 @api_login_required

@@ -6,11 +6,12 @@ from app import db
 class CoinbaseService:
     def __init__(self, user_id):
         self.user_id = user_id
-        self.base_url = 'https://api.coinbase.com/v2'
+        self.base_url = 'https://api.coinbase.com/api/v3'
         self._credentials = None
 
     @property
     def credentials(self):
+        """Get and refresh OAuth credentials if needed"""
         if not self._credentials:
             self._credentials = get_oauth_credentials(self.user_id, 'coinbase')
             if self._credentials and self._credentials.is_expired():
@@ -18,80 +19,112 @@ class CoinbaseService:
         return self._credentials
 
     def _get_headers(self):
+        """Get headers for API requests"""
         if not self.credentials:
-            raise ValueError("No Coinbase credentials found")
+            raise ValueError("No credentials available")
         return {
             'Authorization': f'Bearer {self.credentials.access_token}',
             'Accept': 'application/json'
         }
 
-def list_portfolios(self):
-    """Fetch all portfolios for the user"""
-    try:
-        response = requests.get(
-            f'{self.base_url}/accounts',
-            headers=self._get_headers()
-        )
-        response.raise_for_status()
-        
-        # Debug output
-        print("Coinbase API Response:", response.status_code)
-        print("Response Headers:", response.headers)
-        print("Response Body:", response.text[:500])  # First 500 chars
-        
-        accounts = response.json().get('data', [])
-        
-        # Debug output
-        print("Parsed Accounts:", len(accounts))
-        if accounts:
-            print("First Account Sample:", accounts[0])
-        
-        portfolios = []
-        for account in accounts:
-            portfolios.append({
-                'id': account['id'],
-                'name': account['name'],
-                'balance': {
-                    'amount': account['balance']['amount'],
-                    'currency': account['balance']['currency']
-                },
-                'type': account['type'],
-                'primary': account.get('primary', False)
-            })
-        
-        print("Processed Portfolios:", len(portfolios))
-        return portfolios
-        
-    except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Error fetching Coinbase portfolios: {str(e)}")
-        return []  # Return empty list instead of raising
-
-    def get_portfolio_api_credentials(self, portfolio_id):
-        """Fetch API credentials for a specific portfolio"""
+    def list_portfolios(self):
+        """Fetch all portfolios and their balances for the user"""
         try:
-            response = requests.post(
-                f'{self.base_url}/accounts/{portfolio_id}/api_keys',
+            # First get the list of portfolios
+            response = requests.get(
+                f'{self.base_url}/brokerage/portfolios',
                 headers=self._get_headers()
             )
             response.raise_for_status()
-            return response.json().get('data', {})
-        except requests.exceptions.RequestException as e:
-            current_app.logger.error(f"Error creating API credentials: {str(e)}")
-            raise
+            
+            data = response.json()
+            portfolios = data.get('portfolios', [])
+            
+            processed_portfolios = []
+            for portfolio in portfolios:
+                if portfolio.get('deleted', False):
+                    continue
+                
+                try:
+                    # Get detailed breakdown for each portfolio
+                    breakdown_response = requests.get(
+                        f'{self.base_url}/brokerage/portfolios/{portfolio["uuid"]}',
+                        headers=self._get_headers()
+                    )
+                    breakdown_response.raise_for_status()
+                    breakdown_data = breakdown_response.json().get('breakdown', {})
+                    
+                    # Get portfolio balances
+                    portfolio_balances = breakdown_data.get('portfolio_balances', {})
+                    total_balance = portfolio_balances.get('total_balance', {})
+                    
+                    processed_portfolios.append({
+                        'id': portfolio['uuid'],
+                        'name': portfolio['name'],
+                        'type': portfolio['type'],
+                        'balance': {
+                            'amount': float(total_balance.get('value', '0')),
+                            'currency': total_balance.get('currency', 'USD')
+                        },
+                        'has_api_keys': True  # We have access through OAuth
+                    })
+                except Exception as e:
+                    current_app.logger.error(f"Error fetching breakdown for portfolio {portfolio['uuid']}: {str(e)}")
+                    processed_portfolios.append({
+                        'id': portfolio['uuid'],
+                        'name': portfolio['name'],
+                        'type': portfolio['type'],
+                        'balance': {
+                            'amount': 0,
+                            'currency': 'USD'
+                        },
+                        'has_api_keys': True
+                    })
+            
+            current_app.logger.debug(f"Processed Portfolios with balances: {processed_portfolios}")
+            return processed_portfolios
+            
+        except Exception as e:
+            current_app.logger.error(f"Error fetching portfolios: {str(e)}")
+            return []
 
     def create_portfolio(self, name):
         """Create a new portfolio"""
         try:
             response = requests.post(
-                f'{self.base_url}/accounts',
+                f'{self.base_url}/brokerage/portfolios',
                 headers=self._get_headers(),
-                json={
-                    'name': name,
-                    'type': 'trading'  # Set type to trading for new portfolios
-                }
+                json={'name': name}
             )
             response.raise_for_status()
-            return response.json().get('data', {})
+            
+            data = response.json()
+            portfolio = data.get('portfolio')
+            
+            if portfolio:
+                return {
+                    'id': portfolio['uuid'],
+                    'name': portfolio['name'],
+                    'type': portfolio['type']
+                }
+            return None
+            
         except requests.exceptions.RequestException as e:
             current_app.logger.error(f"Error creating portfolio: {str(e)}")
             raise
+
+    def get_portfolio_breakdown(self, portfolio_id):
+        """Get detailed breakdown of a portfolio"""
+        try:
+            response = requests.get(
+                f'{self.base_url}/brokerage/portfolios/{portfolio_id}',
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            return data.get('breakdown')
+            
+        except requests.exceptions.RequestException as e:
+            current_app.logger.error(f"Error fetching portfolio breakdown: {str(e)}")
+            return None

@@ -14,7 +14,17 @@ def exchange_authorize():
         client = oauth.create_client('coinbase')
         redirect_uri = current_app.config.get('OAUTH_REDIRECT_URI')
         current_app.logger.debug(f"Starting OAuth flow with redirect URI: {redirect_uri}")
-        return client.authorize_redirect(redirect_uri=redirect_uri)
+        
+        # Be explicit about the parameters we send
+        params = {
+            'response_type': 'code',
+            'scope': 'wallet:accounts:read wallet:trades:read wallet:trades:create'
+        }
+        
+        return client.authorize_redirect(
+            redirect_uri=redirect_uri,
+            **params
+        )
     except Exception as e:
         current_app.logger.error(f"OAuth authorize error: {str(e)}")
         flash('Failed to initiate Coinbase connection.', 'danger')

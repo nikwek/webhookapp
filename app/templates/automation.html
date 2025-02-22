@@ -257,214 +257,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 
-    // Portfolio Manager
-    const PortfolioManager = {
-        init() {
-            this.initializeForm();
-            this.setupPortfolioCreation();
-            this.loadPortfolios();
-        },
-
-        initializeForm() {
-            const form = document.getElementById('apiCredentialsForm');
-            if (form) {
-                form.addEventListener('submit', async (e) => {
-                    e.preventDefault();
-                    const submitButton = form.querySelector('button[type="submit"]');
-                    const portfolioSelect = document.getElementById('portfolioSelect');
-                    submitButton.disabled = true;
-                    
-                    try {
-                        const portfolioId = portfolioSelect.value;
-                        
-                        // First, get credentials for the selected portfolio
-                        const credResponse = await fetch(`/portfolio/api/portfolios/${portfolioId}/credentials`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        
-                        if (!credResponse.ok) {
-                            const data = await credResponse.json();
-                            throw new Error(data.error || 'Failed to get portfolio credentials');
-                        }
-
-                        // Show success message
-                        const alert = document.createElement('div');
-                        alert.className = 'alert alert-success alert-dismissible fade show mb-3';
-                        alert.innerHTML = `
-                            Portfolio connected successfully
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                        `;
-                        form.insertBefore(alert, form.firstChild);
-                        
-                        // Reload page after a short delay
-                        setTimeout(() => window.location.reload(), 1500);
-                        
-                    } catch (error) {
-                        console.error('Error:', error);
-                        const alert = document.createElement('div');
-                        alert.className = 'alert alert-danger alert-dismissible fade show mb-3';
-                        alert.innerHTML = `
-                            Error connecting portfolio: ${error.message}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                        `;
-                        form.insertBefore(alert, form.firstChild);
-                    } finally {
-                        submitButton.disabled = false;
-                    }
-                });
-            }
-        },
-
-        async loadPortfolios() {
-            try {
-                const response = await fetch('/portfolio/api/portfolios');
-                if (!response.ok) {
-                    const data = await response.json();
-                    throw new Error(data.error || 'Failed to fetch portfolios');
-                }
-                
-                const data = await response.json();
-                
-                const select = document.getElementById('portfolioSelect');
-                if (select) {
-                    // Clear existing options except the first one
-                    while (select.options.length > 1) {
-                        select.remove(1);
-                    }
-                    
-                    // Add portfolio options
-                    data.portfolios.forEach(portfolio => {
-                        const option = new Option(portfolio.name, portfolio.uuid);
-                        select.add(option);
-                    });
-                }
-            } catch (error) {
-                console.error('Error loading portfolios:', error);
-                const help = document.getElementById('portfolioHelp');
-                if (help) {
-                    help.innerHTML = `
-                        Error loading portfolios. 
-                        <a href="${window.location.origin}/connect/exchange/authorize">
-                            Connect your Coinbase account
-                        </a>
-                        to get started.
-                    `;
-                }
-            }
-        },
-
-        setupPortfolioCreation() {
-            const createBtn = document.getElementById('createPortfolioBtn');
-            const modalEl = document.getElementById('newPortfolioModal');
-            const submitBtn = document.getElementById('createPortfolioSubmit');
-            const form = document.getElementById('newPortfolioForm');
-            
-            if (!modalEl || !form) return;
-
-            const modal = new bootstrap.Modal(modalEl);
-            
-            if (createBtn) {
-                createBtn.addEventListener('click', () => modal.show());
-            }
-            
-            if (submitBtn) {
-                submitBtn.addEventListener('click', async () => {
-                    const nameInput = form.querySelector('#portfolioName');
-                    if (!nameInput.value.trim()) {
-                        alert('Please enter a portfolio name');
-                        return;
-                    }
-                    
-                    submitBtn.disabled = true;
-                    try {
-                        const response = await fetch('/portfolio/api/portfolios', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                name: nameInput.value.trim()
-                            })
-                        });
-                        
-                        if (!response.ok) {
-                            const data = await response.json();
-                            throw new Error(data.error || 'Failed to create portfolio');
-                        }
-                        
-                        const data = await response.json();
-                        
-                        // Add new portfolio to select and select it
-                        const select = document.getElementById('portfolioSelect');
-                        const option = new Option(data.portfolio.name, data.portfolio.uuid);
-                        select.add(option);
-                        select.value = data.portfolio.uuid;
-                        
-                        modal.hide();
-                        nameInput.value = '';
-                    } catch (error) {
-                        console.error('Error creating portfolio:', error);
-                        alert(`Error creating portfolio: ${error.message}`);
-                    } finally {
-                        submitBtn.disabled = false;
-                    }
-                });
-            }
-        }
-    };
-
-    // HTML template for the credentials form
-    function createCredentialsForm() {
-        return `
-            <form id="apiCredentialsForm" class="mb-3">
-                <div class="mb-3">
-                    <label for="portfolioSelect" class="form-label">Select or Create Portfolio</label>
-                    <div class="d-flex gap-2 mb-2">
-                        <select class="form-control" id="portfolioSelect" required>
-                            <option value="">Choose a portfolio...</option>
-                        </select>
-                        <button type="button" class="btn btn-secondary" id="createPortfolioBtn">
-                            <i class="fas fa-plus"></i> New
-                        </button>
-                    </div>
-                    <div class="form-text" id="portfolioHelp">
-                        Select an existing portfolio or create a new one for this automation
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary">
-                    Connect Portfolio
-                </button>
-            </form>
-
-            <!-- New Portfolio Modal -->
-            <div class="modal fade" id="newPortfolioModal" tabindex="-1">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">Create New Portfolio</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <form id="newPortfolioForm">
-                                <div class="mb-3">
-                                    <label for="portfolioName" class="form-label">Portfolio Name</label>
-                                    <input type="text" class="form-control" id="portfolioName" required>
-                                </div>
-                            </form>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="button" class="btn btn-primary" id="createPortfolioSubmit">Create</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
     // Credentials Manager
     const CredentialsManager = {
         init() {
@@ -473,23 +265,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 this.loadCredentials();
                 this.setupEventListeners();
             }
-        },
-
-        createSavedCredentialsHTML(credential) {
-            return `
-                <div class="border rounded p-3 mb-2 d-flex justify-content-between align-items-center">
-                    <div>
-                        <strong>${credential.name}</strong>
-                        <br>
-                        <small class="text-muted">Last used: ${credential.last_used ? new Date(credential.last_used).toLocaleString() : 'Never'}</small>
-                    </div>
-                    <div>
-                        <button class="btn btn-sm btn-danger delete-credential" data-id="${credential.id}">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
         },
 
         createCredentialsForm() {
@@ -540,27 +315,111 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
         },
 
-        async loadCredentials() {
+        setupPortfolioFunctionality() {
+            this.loadPortfolios();
+            this.setupPortfolioCreation();
+            this.setupFormHandler();
+        },
+
+        async loadPortfolios() {
             try {
-                const response = await fetch(`/automation/{{ automation.automation_id }}/credentials`);
+                const response = await fetch(`/automation/{{ automation.automation_id }}/portfolios`);
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Failed to fetch portfolios');
+                }
+                
                 const data = await response.json();
                 
-                if (data.credentials && data.credentials.length > 0) {
-                    // Show existing credentials
-                    this.container.innerHTML = this.createSavedCredentialsHTML(data.credentials[0]);
-                } else {
-                    // Show the form to add credentials
-                    this.container.innerHTML = this.createCredentialsForm();
-                    this.setupFormHandler();
-                    PortfolioManager.init();
+                const select = document.getElementById('portfolioSelect');
+                if (select) {
+                    // Clear existing options except the first one
+                    while (select.options.length > 1) {
+                        select.remove(1);
+                    }
+                    
+                    // Add portfolio options
+                    data.portfolios.forEach(portfolio => {
+                        const balance = parseFloat(portfolio.balance.amount).toFixed(2);
+                        const option = new Option(
+                            `${portfolio.name} (${balance} ${portfolio.balance.currency})`,
+                            portfolio.id
+                        );
+                        option.dataset.name = portfolio.name;
+                        select.add(option);
+                    });
                 }
             } catch (error) {
-                console.error('Error loading credentials:', error);
-                this.container.innerHTML = `
-                    <div class="alert alert-danger">
-                        Error loading credentials: ${error.message}
-                    </div>
-                `;
+                console.error('Error loading portfolios:', error);
+                const help = document.getElementById('portfolioHelp');
+                if (help) {
+                    help.innerHTML = `
+                        Error loading portfolios. 
+                        <a href="${window.location.origin}/connect/exchange/authorize">
+                            Connect your Coinbase account
+                        </a>
+                        to get started.
+                    `;
+                }
+            }
+        },
+
+        setupPortfolioCreation() {
+            const createBtn = document.getElementById('createPortfolioBtn');
+            const modalEl = document.getElementById('newPortfolioModal');
+            const submitBtn = document.getElementById('createPortfolioSubmit');
+            const form = document.getElementById('newPortfolioForm');
+            
+            if (!modalEl || !form) return;
+
+            const modal = new bootstrap.Modal(modalEl);
+            
+            if (createBtn) {
+                createBtn.addEventListener('click', () => modal.show());
+            }
+            
+            if (submitBtn) {
+                submitBtn.addEventListener('click', async () => {
+                    const nameInput = form.querySelector('#portfolioName');
+                    if (!nameInput.value.trim()) {
+                        alert('Please enter a portfolio name');
+                        return;
+                    }
+                    
+                    submitBtn.disabled = true;
+                    try {
+                        const response = await fetch(`/automation/{{ automation.automation_id }}/portfolios`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                name: nameInput.value.trim()
+                            })
+                        });
+                        
+                        if (!response.ok) {
+                            const data = await response.json();
+                            throw new Error(data.error || 'Failed to create portfolio');
+                        }
+                        
+                        const data = await response.json();
+                        
+                        const select = document.getElementById('portfolioSelect');
+                        const option = new Option(data.portfolio.name, data.portfolio.id);
+                        option.dataset.name = data.portfolio.name;
+                        select.add(option);
+                        select.value = data.portfolio.id;
+                        
+                        modal.hide();
+                        nameInput.value = '';
+                    } catch (error) {
+                        console.error('Error creating portfolio:', error);
+                        alert(`Error creating portfolio: ${error.message}`);
+                    } finally {
+                        submitBtn.disabled = false;
+                    }
+                });
             }
         },
 
@@ -569,37 +428,50 @@ document.addEventListener('DOMContentLoaded', function() {
             if (form) {
                 form.addEventListener('submit', async (e) => {
                     e.preventDefault();
+                    console.log('Form submission started');
+                    
                     const submitButton = form.querySelector('button[type="submit"]');
                     const portfolioSelect = document.getElementById('portfolioSelect');
+                    
+                    if (!portfolioSelect.value) {
+                        console.log('No portfolio selected');
+                        alert('Please select a portfolio');
+                        return;
+                    }
+                    
                     submitButton.disabled = true;
+                    console.log('Submit button disabled');
                     
                     try {
-                        const portfolioId = portfolioSelect.value;
-                        const portfolioName = portfolioSelect.options[portfolioSelect.selectedIndex].dataset.name;
+                        const selectedOption = portfolioSelect.options[portfolioSelect.selectedIndex];
+                        const portfolioId = selectedOption.value;
+                        const portfolioName = selectedOption.text;
                         
-                        const apiResponse = await fetch(`/portfolio/api/portfolios/${portfolioId}/credentials`, {
+                        console.log('Selected portfolio:', {
+                            id: portfolioId,
+                            name: portfolioName
+                        });
+
+                        const url = `/automation/{{ automation.automation_id }}/credentials`;
+                        const payload = {
+                            portfolio_id: portfolioId,
+                            name: `${portfolioName} Trading`
+                        };
+
+                        console.log('Making POST request to:', url);
+                        console.log('With payload:', payload);
+                        
+                        const response = await fetch(url, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json'
-                            }
+                            },
+                            body: JSON.stringify(payload)
                         });
                         
-                        if (!apiResponse.ok) {
-                            const data = await apiResponse.json();
-                            throw new Error(data.error || 'Failed to get portfolio credentials');
-                        }
-
-                        // Show success message
-                        const alert = document.createElement('div');
-                        alert.className = 'alert alert-success alert-dismissible fade show mb-3';
-                        alert.innerHTML = `
-                            Portfolio connected successfully
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                        `;
-                        form.insertBefore(alert, form.firstChild);
-                        
-                        // Reload page after a short delay
-                        setTimeout(() => window.location.reload(), 1500);
+                        console.log('Response status:', response.status);
+                        const data = await response.json();
+                        console.log('Response data:', data);
                         
                     } catch (error) {
                         console.error('Error:', error);
@@ -614,6 +486,53 @@ document.addEventListener('DOMContentLoaded', function() {
                         submitButton.disabled = false;
                     }
                 });
+            }
+        },
+
+        createSavedCredentialsHTML(credential) {
+            return `
+                <div class="border rounded p-3 mb-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${credential.name}</strong>
+                            <br>
+                            <small class="text-muted">Portfolio: ${credential.portfolio_name}</small>
+                            <br>
+                            <small class="text-muted">Connected: ${new Date(credential.created_at).toLocaleString()}</small>
+                            ${credential.last_used ? 
+                                `<br><small class="text-muted">Last used: ${new Date(credential.last_used).toLocaleString()}</small>` 
+                                : ''}
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-danger delete-credential" data-id="${credential.id}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        },
+
+        async loadCredentials() {
+            try {
+                const response = await fetch(`/automation/{{ automation.automation_id }}/credentials`);
+                const data = await response.json();
+                
+                if (data.credentials && data.credentials.length > 0) {
+                    // Show existing credentials
+                    this.container.innerHTML = this.createSavedCredentialsHTML(data.credentials[0]);
+                } else {
+                    // Show the form to add credentials
+                    this.container.innerHTML = this.createCredentialsForm();
+                    this.setupPortfolioFunctionality();
+                }
+            } catch (error) {
+                console.error('Error loading credentials:', error);
+                this.container.innerHTML = `
+                    <div class="alert alert-danger">
+                        Error loading credentials: ${error.message}
+                    </div>
+                `;
             }
         },
 
@@ -640,7 +559,18 @@ document.addEventListener('DOMContentLoaded', function() {
                             `;
                             this.container.insertBefore(alert, this.container.firstChild);
                             
-                            setTimeout(() => this.loadCredentials(), 1500);
+                            setTimeout(() => {
+                                const alert = document.createElement('div');
+                                alert.className = 'alert alert-success alert-dismissible fade show mb-3';
+                                alert.innerHTML = `
+                                    Portfolio "${portfolioName}" connected successfully
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                `;
+                                form.insertBefore(alert, form.firstChild);
+                                
+                                // Reload credentials section
+                                this.loadCredentials();
+                            }, 1500);
                             
                         } catch (error) {
                             console.error('Error:', error);

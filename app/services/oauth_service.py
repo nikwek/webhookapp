@@ -14,12 +14,11 @@ def init_oauth(app, db):
         client_id=app.config['COINBASE_CLIENT_ID'],
         client_secret=app.config['COINBASE_CLIENT_SECRET'],
         access_token_url='https://login.coinbase.com/oauth2/token',
-        access_token_params=None,
         authorize_url='https://login.coinbase.com/oauth2/auth',
-        authorize_params=None,
-        api_base_url='https://api.coinbase.com/v3/',
+        api_base_url='https://api.coinbase.com/api/v3/',
         client_kwargs={
-            'scope': 'wallet:accounts:read wallet:accounts:create wallet:user:read'
+            'scope': 'wallet:accounts:read wallet:trades:read wallet:trades:create',
+            'response_type': 'code'
         }
     )
 

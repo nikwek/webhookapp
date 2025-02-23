@@ -323,13 +323,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
         async loadPortfolios() {
             try {
+                console.log('Fetching portfolios...');
                 const response = await fetch(`/automation/{{ automation.automation_id }}/portfolios`);
+                console.log('Response:', response);
                 if (!response.ok) {
                     const data = await response.json();
                     throw new Error(data.error || 'Failed to fetch portfolios');
                 }
                 
                 const data = await response.json();
+                console.log('Portfolios data:', data);
                 
                 const select = document.getElementById('portfolioSelect');
                 if (select) {
@@ -338,16 +341,31 @@ document.addEventListener('DOMContentLoaded', function() {
                         select.remove(1);
                     }
                     
-                    // Add portfolio options
-                    data.portfolios.forEach(portfolio => {
-                        const balance = parseFloat(portfolio.balance.amount).toFixed(2);
-                        const option = new Option(
-                            `${portfolio.name} (${balance} ${portfolio.balance.currency})`,
-                            portfolio.id
-                        );
-                        option.dataset.name = portfolio.name;
-                        select.add(option);
-                    });
+                    // Add portfolio options, excluding Default portfolio
+                    const availablePortfolios = data.portfolios.filter(portfolio => portfolio.name !== 'Default');
+                    
+                    if (availablePortfolios.length === 0) {
+                        // Update help text if no non-Default portfolios are available
+                        const help = document.getElementById('portfolioHelp');
+                        if (help) {
+                            help.innerHTML = `
+                                No trading portfolios available. Please create a new portfolio - the Default portfolio cannot be used for automations.
+                                <br>
+                                <a href="#" id="createPortfolioBtn" class="text-primary">Create a new portfolio</a>
+                            `;
+                        }
+                    } else {
+                        // Add filtered portfolios to dropdown
+                        availablePortfolios.forEach(portfolio => {
+                            const balance = parseFloat(portfolio.balance.amount).toFixed(2);
+                            const option = new Option(
+                                `${portfolio.name} (${balance} ${portfolio.balance.currency})`,
+                                portfolio.id
+                            );
+                            option.dataset.name = portfolio.name;
+                            select.add(option);
+                        });
+                    }
                 }
             } catch (error) {
                 console.error('Error loading portfolios:', error);
@@ -472,6 +490,24 @@ document.addEventListener('DOMContentLoaded', function() {
                         console.log('Response status:', response.status);
                         const data = await response.json();
                         console.log('Response data:', data);
+
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Failed to connect portfolio');
+                        }
+
+                        // Show success message
+                        const alert = document.createElement('div');
+                        alert.className = 'alert alert-success alert-dismissible fade show mb-3';
+                        alert.innerHTML = `
+                            Portfolio connected successfully!
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        `;
+                        this.container.insertBefore(alert, this.container.firstChild);
+
+                        // Update the UI with the new credentials
+                        setTimeout(() => {
+                            this.container.innerHTML = this.createSavedCredentialsHTML(data.credentials);
+                        }, 1500);
                         
                     } catch (error) {
                         console.error('Error:', error);
@@ -559,18 +595,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             `;
                             this.container.insertBefore(alert, this.container.firstChild);
                             
-                            setTimeout(() => {
-                                const alert = document.createElement('div');
-                                alert.className = 'alert alert-success alert-dismissible fade show mb-3';
-                                alert.innerHTML = `
-                                    Portfolio "${portfolioName}" connected successfully
-                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                                `;
-                                form.insertBefore(alert, form.firstChild);
-                                
-                                // Reload credentials section
-                                this.loadCredentials();
-                            }, 1500);
+                            setTimeout(() => this.loadCredentials(), 1500);
                             
                         } catch (error) {
                             console.error('Error:', error);

@@ -67,4 +67,9 @@ def create_app(config_class=Config):
         from app.models.exchange_credentials import ExchangeCredentials
         from app.models.oauth_credentials import OAuthCredentials
 
+    # Initialize scheduler
+    with app.app_context():
+        from app.services.scheduler import init_scheduler
+        init_scheduler(app, db)
+
     return app

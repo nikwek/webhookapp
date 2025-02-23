@@ -1,6 +1,13 @@
 # scripts/generate_encryption_key.py
+import os
+import sys
 from cryptography.fernet import Fernet
-from . import ScriptUtils
+
+# Add the project root directory to Python path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
+from scripts import ScriptUtils
 
 def main():
     """Generate a new Fernet encryption key and store it securely."""

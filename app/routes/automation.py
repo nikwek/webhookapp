@@ -213,19 +213,33 @@ def connect_portfolio(automation_id):
     current_app.logger.debug(f"Request data: {request.get_json()}")
     
     try:
-        # Verify automation exists and belongs to user
-        automation = get_user_automation(automation_id)
-        current_app.logger.debug(f"Found automation: {automation}")
-        if not automation:
-            current_app.logger.error("Automation not found")
-            return jsonify({"error": "Automation not found"}), 404
-            
         # Get request data
         data = request.get_json()
         if not data.get('portfolio_id'):
             current_app.logger.error("Missing portfolio_id in request")
             return jsonify({"error": "Missing portfolio_id"}), 400
             
+        # Initialize Coinbase service
+        coinbase = CoinbaseService(current_user.id)
+        
+        # Get portfolio details to verify it exists
+        portfolio = coinbase.get_portfolio(data['portfolio_id'])
+        if not portfolio:
+            current_app.logger.error("Portfolio not found")
+            return jsonify({"error": "Portfolio not found"}), 404
+            
+        # Prevent connecting Default portfolio
+        if portfolio['name'] == 'Default':
+            current_app.logger.error("Attempted to connect Default portfolio")
+            return jsonify({"error": "Cannot connect Default portfolio to automations"}), 400
+
+        # Verify automation exists and belongs to user
+        automation = get_user_automation(automation_id)
+        current_app.logger.debug(f"Found automation: {automation}")
+        if not automation:
+            current_app.logger.error("Automation not found")
+            return jsonify({"error": "Automation not found"}), 404
+
         # Check if credentials already exist
         existing_creds = ExchangeCredentials.query.filter_by(
             automation_id=automation_id
@@ -235,58 +249,40 @@ def connect_portfolio(automation_id):
             current_app.logger.error("Credentials already exist")
             return jsonify({"error": "Credentials already exist for this automation"}), 400
             
-        try:
-            # Initialize Coinbase service
-            current_app.logger.debug(f"Initializing Coinbase service for user {current_user.id}")
-            coinbase = CoinbaseService(current_user.id)
-            
-            # Get portfolio details to verify it exists
-            current_app.logger.debug(f"Getting portfolio details for {data['portfolio_id']}")
-            portfolio = coinbase.get_portfolio(data['portfolio_id'])
-            current_app.logger.debug(f"Portfolio details: {portfolio}")
-            
-            if not portfolio:
-                current_app.logger.error("Portfolio not found")
-                return jsonify({"error": "Portfolio not found"}), 404
-            
-            # Create the exchange credentials
-            current_app.logger.debug("Creating exchange credentials")
-            credentials = ExchangeCredentials(
-                user_id=current_user.id,
-                automation_id=automation_id,
-                name=portfolio['name'],  # Use portfolio name from Coinbase
-                exchange='coinbase',
-                portfolio_id=portfolio['id'],
-                portfolio_name=portfolio['name'],
-                encrypted_api_key=b'',  # These will be populated when executing trades
-                encrypted_secret_key=b''
-            )
-            
-            current_app.logger.debug("Adding credentials to database")
-            db.session.add(credentials)
-            db.session.commit()
-            current_app.logger.debug("Credentials saved successfully")
-            
-            return jsonify({
-                "success": True,
-                "message": "Portfolio connected successfully",
-                "credentials": {
-                    "id": credentials.id,
-                    "name": credentials.name,
-                    "exchange": credentials.exchange,
-                    "portfolio_id": credentials.portfolio_id,
-                    "portfolio_name": credentials.portfolio_name,
-                    "created_at": credentials.created_at.isoformat()
-                }
-            })
-            
-        except Exception as e:
-            current_app.logger.error(f"Error connecting to Coinbase: {str(e)}")
-            db.session.rollback()
-            return jsonify({"error": "Failed to connect to Coinbase"}), 500
+        # Create the exchange credentials
+        current_app.logger.debug("Creating exchange credentials")
+        credentials = ExchangeCredentials(
+            user_id=current_user.id,
+            automation_id=automation_id,
+            name=portfolio['name'],  # Use portfolio name from Coinbase
+            exchange='coinbase',
+            portfolio_id=portfolio['id'],
+            portfolio_name=portfolio['name'],
+            encrypted_api_key=b'',  # These will be populated when executing trades
+            encrypted_secret_key=b''
+        )
+        
+        current_app.logger.debug("Adding credentials to database")
+        db.session.add(credentials)
+        db.session.commit()
+        current_app.logger.debug("Credentials saved successfully")
+        
+        return jsonify({
+            "success": True,
+            "message": "Portfolio connected successfully",
+            "credentials": {
+                "id": credentials.id,
+                "name": credentials.name,
+                "exchange": credentials.exchange,
+                "portfolio_id": credentials.portfolio_id,
+                "portfolio_name": credentials.portfolio_name,
+                "created_at": credentials.created_at.isoformat()
+            }
+        })
             
     except Exception as e:
         current_app.logger.error(f"Error creating credentials: {str(e)}")
+        db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
 

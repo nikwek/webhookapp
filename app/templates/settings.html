@@ -30,21 +30,34 @@
                 <h4>Coinbase Integration</h4>
             </div>
             <div class="card-body">
+                <div class="alert alert-{{ connection_status.css_class }} d-flex align-items-center mb-3">
+                    <i class="fas {{ connection_status.icon }} me-2"></i>
+                    <div>{{ connection_status.message }}</div>
+                </div>
+                
                 {% if oauth_connected %}
-                    <div class="alert alert-success d-flex align-items-center mb-3">
-                        <i class="fas fa-check-circle me-2"></i>
-                        <div>Connected to Coinbase</div>
-                    </div>
                     <p class="text-muted mb-3">
                         Your Coinbase account is connected. You can manage your portfolios and create trading automations.
+                        {% if connection_status.expires_at %}
+                            <br><small>Connection expires: {{ connection_status.expires_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</small>
+                        {% endif %}
                     </p>
-                    <form action="{{ url_for('oauth.exchange_disconnect') }}" method="POST" 
-                          onsubmit="return confirm('Are you sure you want to disconnect your Coinbase account? This will disable any automations using Coinbase portfolios.');">
-                        <button type="submit" class="btn btn-outline-danger">
-                            <i class="fas fa-unlink me-2"></i>Disconnect Coinbase
-                        </button>
-                    </form>
-                {% else %}
+                    <div class="d-flex gap-2">
+                        <form action="{{ url_for('oauth.exchange_disconnect') }}" method="POST" 
+                              onsubmit="return confirm('Are you sure you want to disconnect your Coinbase account? This will disable any automations using Coinbase portfolios.');">
+                            <button type="submit" class="btn btn-outline-danger">
+                                <i class="fas fa-unlink me-2"></i>Disconnect Coinbase
+                            </button>
+                        </form>
+                        {% if not connection_status.is_connected or connection_status.status == 'expired' %}
+                            <a href="{{ url_for('oauth.exchange_authorize') }}" class="btn btn-warning">
+                                <i class="fas fa-sync me-2"></i>Reconnect
+                            </a>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                {% if not oauth_connected %}
                     <p class="text-muted mb-3">
                         Connect your Coinbase account to enable portfolio management and trading automations.
                     </p>

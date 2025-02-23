@@ -7,11 +7,16 @@
 <div class="container mt-4">
     <div class="row">
         <div class="col-md-12">
-            {% if not oauth_connected %}
-                <div class="alert alert-info mb-4">
-                    <i class="fas fa-info-circle me-2"></i>Connect your Coinbase account in 
-                    <a href="{{ url_for('dashboard.settings') }}" class="alert-link">settings</a> 
-                    to manage portfolios and create automations.
+            {% if not oauth_status.is_connected %}
+                <div class="alert alert-{{ oauth_status.css_class }} mb-4">
+                    <div class="d-flex align-items-center">
+                        <i class="fas {{ oauth_status.icon }} me-2"></i>
+                        <div>
+                            {{ oauth_status.message }}
+                            <a href="{{ url_for('dashboard.settings') }}" class="alert-link ms-1">Go to settings</a>
+                            to {% if oauth_status.status == 'disconnected' %}connect{% else %}reconnect{% endif %} your Coinbase account.
+                        </div>
+                    </div>
                 </div>
             {% else %}
                 <!-- Portfolios Section -->

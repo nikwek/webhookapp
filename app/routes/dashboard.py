@@ -28,11 +28,13 @@ def dashboard():
     for automation in automations:
         automation.webhook_url = f"{base_url}/webhook?automation_id={automation.automation_id}"
 
-    # Check Coinbase connection and get portfolios
-    oauth_connected = bool(get_oauth_credentials(user_id, 'coinbase'))
-    portfolios = []
+    # Get detailed OAuth connection status
+    from app.services.oauth_service import get_connection_status
+    connection_status = get_connection_status(user_id)
     
-    if oauth_connected:
+    # Only try to fetch portfolios if OAuth is properly connected
+    portfolios = []
+    if connection_status['is_connected']:
         try:
             coinbase_service = CoinbaseService(user_id)
             portfolios = coinbase_service.list_portfolios()
@@ -42,16 +44,25 @@ def dashboard():
     return render_template(
         'dashboard.html',
         automations=automations,
-        oauth_connected=oauth_connected,
+        oauth_status=connection_status,
         portfolios=portfolios
     )
+
 
 @bp.route('/settings')
 @login_required
 def settings():
     """Render the settings page."""
-    oauth_connected = bool(get_oauth_credentials(current_user.id, 'coinbase'))
-    return render_template('settings.html', oauth_connected=oauth_connected)
+    from app.services.oauth_service import get_connection_status
+    
+    # Get detailed connection status
+    connection_status = get_connection_status(current_user.id)
+    
+    return render_template(
+        'settings.html',
+        oauth_connected=connection_status['is_connected'],
+        connection_status=connection_status
+    )
 
 
 @bp.route('/api/logs')

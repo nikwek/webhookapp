@@ -16,8 +16,7 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_activity = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
-    # Add this line for the relationship
-    oauth_credentials = relationship("OAuthCredentials", back_populates="user")
+    exchange_credentials = relationship("ExchangeCredentials", back_populates="user")
 
     def set_password(self, password):
         self.password = bcrypt.generate_password_hash(password).decode('utf-8')

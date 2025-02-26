@@ -1,71 +1,129 @@
 <!-- app/templates/settings.html -->
 {% extends "base.html" %}
 
-{% block title %}Settings - Webhook Manager{% endblock %}
-
 {% block content %}
-<div class="row justify-content-center">
-    <!-- Password Change Card -->
-    <div class="col-md-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h4>Change Password</h4>
-            </div>
-            <div class="card-body">
-                <form method="POST">
-                    <div class="mb-3">
-                        <label for="password" class="form-label">New Password</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                    </div>
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">Update Password</button>
-                    </div>
-                </form>
-            </div>
+<div class="container mt-4">
+    <h1>Account Settings</h1>
+    
+    <!-- Password Management Section -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Password Management</h5>
         </div>
-
-        <!-- Coinbase Integration Card -->
-        <div class="card">
-            <div class="card-header">
-                <h4>Coinbase Integration</h4>
-            </div>
-            <div class="card-body">
-                <div class="alert alert-{{ connection_status.css_class }} d-flex align-items-center mb-3">
-                    <i class="fas {{ connection_status.icon }} me-2"></i>
-                    <div>{{ connection_status.message }}</div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('auth.change_password') }}">
+                <div class="form-group mb-3">
+                    <label for="current_password">Current Password</label>
+                    <input type="password" class="form-control" id="current_password" name="current_password" required>
                 </div>
                 
-                {% if oauth_connected %}
-                    <p class="text-muted mb-3">
-                        Your Coinbase account is connected. You can manage your portfolios and create trading automations.
-                        {% if connection_status.expires_at %}
-                            <br><small>Connection expires: {{ connection_status.expires_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</small>
-                        {% endif %}
-                    </p>
-                    <div class="d-flex gap-2">
-                        <form action="{{ url_for('oauth.exchange_disconnect') }}" method="POST" 
-                              onsubmit="return confirm('Are you sure you want to disconnect your Coinbase account? This will disable any automations using Coinbase portfolios.');">
-                            <button type="submit" class="btn btn-outline-danger">
-                                <i class="fas fa-unlink me-2"></i>Disconnect Coinbase
-                            </button>
-                        </form>
-                        {% if not connection_status.is_connected or connection_status.status == 'expired' %}
-                            <a href="{{ url_for('oauth.exchange_authorize') }}" class="btn btn-warning">
-                                <i class="fas fa-sync me-2"></i>Reconnect
-                            </a>
-                        {% endif %}
-                    </div>
-                {% endif %}
+                <div class="form-group mb-3">
+                    <label for="new_password">New Password</label>
+                    <input type="password" class="form-control" id="new_password" name="new_password" required>
+                </div>
+                
+                <div class="form-group mb-3">
+                    <label for="confirm_password">Confirm New Password</label>
+                    <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-key"></i> Change Password
+                </button>
+            </form>
+        </div>
+    </div>
 
-                {% if not oauth_connected %}
-                    <p class="text-muted mb-3">
-                        Connect your Coinbase account to enable portfolio management and trading automations.
-                    </p>
-                    <a href="{{ url_for('oauth.exchange_authorize') }}" class="btn btn-primary">
-                        <i class="fas fa-link me-2"></i>Connect Coinbase
-                    </a>
+    <!-- Coinbase API Connection Section -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Coinbase API Connection</h5>
+        </div>
+        <div class="card-body">
+            {% if account_credentials %}
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i> 
+                    You have connected your Coinbase account successfully!
+                    <br>
+                    <small>Connected on: {{ account_credentials.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</small>
+                </div>
+                
+                <h6>Available Portfolios</h6>
+                {% if portfolios %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for portfolio in portfolios %}
+                                <tr>
+                                    <td>{{ portfolio.name }}</td>
+                                    <td>{{ portfolio.type }}</td>
+                                    <td>
+                                        {% if portfolio.balance %}
+                                            ${{ "%.2f"|format(portfolio.balance.amount|float) }} {{ portfolio.balance.currency }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">No portfolios found in your account.</div>
                 {% endif %}
-            </div>
+                
+                <form method="POST" action="{{ url_for('settings.disconnect_coinbase') }}" 
+                      onsubmit="return confirm('Are you sure you want to disconnect your Coinbase account?');">
+                    <button type="submit" class="btn btn-danger mt-3">
+                        <i class="fas fa-unlink"></i> Disconnect Coinbase
+                    </button>
+                </form>
+            {% else %}
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    You need to connect your Coinbase account to use automated trading features.
+                </div>
+                
+                <div class="mb-4">
+                    <h6>How to Connect Your Coinbase Account:</h6>
+                    <ol>
+                        <li>Log in to your <a href="https://www.coinbase.com/settings/api" target="_blank">Coinbase Advanced Trade account</a></li>
+                        <li>Go to API Settings</li>
+                        <li>Create a new API key with <strong>View permission only</strong></li>
+                        <li>Enter the API Key and Secret below</li>
+                    </ol>
+                </div>
+                
+                <form method="POST" action="{{ url_for('settings.connect_coinbase') }}">
+                    <div class="form-group mb-3">
+                        <label for="credential_name">Credential Name</label>
+                        <input type="text" class="form-control" id="credential_name" name="credential_name" 
+                               value="My Coinbase Account" required>
+                    </div>
+                    
+                    <div class="form-group mb-3">
+                        <label for="api_key">API Key</label>
+                        <input type="text" class="form-control" id="api_key" name="api_key" required>
+                    </div>
+                    
+                    <div class="form-group mb-3">
+                        <label for="api_secret">API Secret</label>
+                        <input type="password" class="form-control" id="api_secret" name="api_secret" required>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-link"></i> Connect Coinbase
+                    </button>
+                </form>
+            {% endif %}
         </div>
     </div>
 </div>

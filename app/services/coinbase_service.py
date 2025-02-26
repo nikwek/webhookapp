@@ -1,179 +1,130 @@
+# app/services/coinbase_service.py
 from flask import current_app
-import requests
-import json
-from app.services.oauth_service import get_oauth_credentials, refresh_access_token
-from app import db
+from coinbase.rest import RESTClient
+import logging
+
+logger = logging.getLogger(__name__)
 
 class CoinbaseService:
-    def __init__(self, user_id):
-        self.user_id = user_id
-        self.base_url = 'https://api.coinbase.com/api/v3'
-        self._credentials = None
-
-    @property
-    def credentials(self):
-        """Get and refresh OAuth credentials if needed"""
-        if not self._credentials:
-            self._credentials = get_oauth_credentials(self.user_id, 'coinbase')
-            if self._credentials and self._credentials.is_expired():
-                self._credentials = refresh_access_token(db, self._credentials)
-        return self._credentials
-
-    def _get_headers(self):
-        """Get headers for API requests"""
-        if not self.credentials:
-            raise ValueError("No credentials available")
-        return {
-            'Authorization': f'Bearer {self.credentials.access_token}',
-            'Accept': 'application/json'
-        }
-
-    def list_portfolios(self):
-        """Fetch all portfolios and their balances for the user"""
+    @staticmethod
+    def get_client_from_credentials(credentials):
+        """Create a Coinbase client from ExchangeCredentials"""
         try:
-            # First get the list of portfolios
-            response = requests.get(
-                f'{self.base_url}/brokerage/portfolios',
-                headers=self._get_headers()
+            client = RESTClient(
+                api_key=credentials.api_key,
+                api_secret=credentials.secret_key
             )
-            response.raise_for_status()
-            
-            data = response.json()
-            portfolios = data.get('portfolios', [])
-            
-            processed_portfolios = []
-            for portfolio in portfolios:
-                if portfolio.get('deleted', False):
-                    continue
-                
-                try:
-                    # Get detailed breakdown for each portfolio
-                    breakdown_response = requests.get(
-                        f'{self.base_url}/brokerage/portfolios/{portfolio["uuid"]}',
-                        headers=self._get_headers()
-                    )
-                    breakdown_response.raise_for_status()
-                    breakdown_data = breakdown_response.json().get('breakdown', {})
-                    
-                    # Get portfolio balances
-                    portfolio_balances = breakdown_data.get('portfolio_balances', {})
-                    total_balance = portfolio_balances.get('total_balance', {})
-                    
-                    processed_portfolios.append({
-                        'id': portfolio['uuid'],
-                        'name': portfolio['name'],
-                        'type': portfolio['type'],
-                        'balance': {
-                            'amount': float(total_balance.get('value', '0')),
-                            'currency': total_balance.get('currency', 'USD')
-                        },
-                        'has_api_keys': True  # We have access through OAuth
-                    })
-                except Exception as e:
-                    current_app.logger.error(f"Error fetching breakdown for portfolio {portfolio['uuid']}: {str(e)}")
-                    processed_portfolios.append({
-                        'id': portfolio['uuid'],
-                        'name': portfolio['name'],
-                        'type': portfolio['type'],
-                        'balance': {
-                            'amount': 0,
-                            'currency': 'USD'
-                        },
-                        'has_api_keys': True
-                    })
-            
-            current_app.logger.debug(f"Processed Portfolios with balances: {processed_portfolios}")
-            return processed_portfolios
-            
+            return client
         except Exception as e:
-            current_app.logger.error(f"Error fetching portfolios: {str(e)}")
+            logger.error(f"Error creating Coinbase client: {str(e)}")
+            return None
+    
+    @staticmethod
+    def list_portfolios(credentials):
+        """List all portfolios for a user"""
+        client = CoinbaseService.get_client_from_credentials(credentials)
+        if not client:
+            return []
+            
+        try:
+            response = client.list_portfolios()
+            
+            # Filter out deleted portfolios
+            portfolios = [p for p in response.get('portfolios', []) 
+                        if not p.get('deleted', False)]
+            
+            return portfolios
+        except Exception as e:
+            logger.error(f"Error listing portfolios: {str(e)}")
             return []
 
-    def create_portfolio(self, name):
-            """Create a new portfolio"""
-            try:
-                headers = {
-                    'Authorization': f'Bearer {self.credentials.access_token}',
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                }
-                
-                url = f'{self.base_url}/brokerage/portfolios'
-                payload = json.dumps({'name': name})
-                
-                current_app.logger.debug(f"Creating portfolio at URL: {url}")
-                current_app.logger.debug(f"Headers: {headers}")
-                current_app.logger.debug(f"Request payload: {payload}")
-                
-                response = requests.post(
-                    url,
-                    headers=headers,
-                    data=payload  # Using data instead of json parameter
-                )
-                
-                if not response.ok:
-                    current_app.logger.error(f"Error response: {response.status_code} - {response.text}")
-                
-                response.raise_for_status()
-                
-                data = response.json()
-                portfolio = data.get('portfolio')
-                
-                if portfolio:
-                    return {
-                        'id': portfolio['uuid'],
-                        'name': portfolio['name'],
-                        'type': portfolio['type']
-                    }
-                return None
-                
-            except requests.exceptions.RequestException as e:
-                current_app.logger.error(f"Error creating portfolio: {str(e)}")
-                raise
-
-    def get_portfolio(self, portfolio_id):
-        """Get portfolio details"""
-        current_app.logger.debug(f"Getting portfolio details for {portfolio_id}")
+    @staticmethod
+    def get_portfolio(credentials, portfolio_id):
+        """Get details for a specific portfolio"""
+        client = CoinbaseService.get_client_from_credentials(credentials)
+        if not client:
+            return None
+            
         try:
-            current_app.logger.debug("Making request to get portfolio breakdown")
-            response = requests.get(
-                f'{self.base_url}/brokerage/portfolios/{portfolio_id}',
-                headers=self._get_headers()
-            )
-            current_app.logger.debug(f"Breakdown response status: {response.status_code}")
-            response.raise_for_status()
+            response = client.get_portfolio(portfolio_id)
+            return response.get('portfolio')
+        except Exception as e:
+            logger.error(f"Error getting portfolio: {str(e)}")
+            return None
+
+    @staticmethod
+    def create_portfolio(credentials, name):
+        """Create a new portfolio"""
+        client = CoinbaseService.get_client_from_credentials(credentials)
+        if not client:
+            return None
             
-            data = response.json()
-            current_app.logger.debug(f"Breakdown response data: {data}")
-            breakdown_data = data.get('breakdown', {})
+        try:
+            response = client.create_portfolio(name=name)
+            return response.get('portfolio')
+        except Exception as e:
+            logger.error(f"Error creating portfolio: {str(e)}")
+            return None
+
+    @staticmethod
+    def get_trading_pairs(credentials):
+        """Get all available trading pairs"""
+        client = CoinbaseService.get_client_from_credentials(credentials)
+        if not client:
+            return []
             
-            # Get portfolio balances
-            portfolio_balances = breakdown_data.get('portfolio_balances', {})
-            total_balance = portfolio_balances.get('total_balance', {})
+        try:
+            response = client.list_products()
             
-            # Get portfolio metadata from a separate request
-            portfolio_response = requests.get(
-                f'{self.base_url}/brokerage/portfolios',
-                headers=self._get_headers()
-            )
-            portfolio_response.raise_for_status()
-            portfolios_data = portfolio_response.json().get('portfolios', [])
-            portfolio = next((p for p in portfolios_data if p.get('uuid') == portfolio_id), None)
+            # Filter only active products
+            active_products = [
+                product for product in response.get('products', []) 
+                if product.get('status') == 'online' and 
+                not product.get('trading_disabled') and
+                not product.get('is_disabled')
+            ]
             
-            if portfolio:
-                return {
-                    'id': portfolio_id,
-                    'name': portfolio.get('name'),
-                    'type': portfolio.get('type'),
-                    'balance': {
-                        'amount': float(total_balance.get('value', '0')),
-                        'currency': total_balance.get('currency', 'USD')
+            return active_products
+        except Exception as e:
+            logger.error(f"Error fetching trading pairs: {str(e)}")
+            return []
+    
+    @staticmethod
+    def create_market_order(credentials, product_id, side, size, size_in_quote=True):
+        """Create a market order"""
+        client = CoinbaseService.get_client_from_credentials(credentials)
+        if not client:
+            return None
+            
+        try:
+            # Format the order configuration based on size type
+            order_config = {}
+            if size_in_quote:
+                order_config = {
+                    'market_market_ioc': {
+                        'quote_size': str(size)
                     }
                 }
-            return None
+            else:
+                order_config = {
+                    'market_market_ioc': {
+                        'base_size': str(size)
+                    }
+                }
             
-        except requests.exceptions.RequestException as e:
-            current_app.logger.error(f"Error fetching portfolio: {str(e)}")
+            # Generate a client order ID
+            import uuid
+            client_order_id = str(uuid.uuid4())
+            
+            # Create the order
+            response = client.create_order(
+                client_order_id=client_order_id,
+                product_id=product_id,
+                side=side.upper(),
+                order_configuration=order_config
+            )
+            
+            return response
+        except Exception as e:
+            logger.error(f"Error creating market order: {str(e)}")
             return None
-
-

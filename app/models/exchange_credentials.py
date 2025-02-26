@@ -16,14 +16,15 @@ class ExchangeCredentials(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_used = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
-    portfolio_id = db.Column(db.String(100))  # New: Coinbase portfolio ID
-    portfolio_name = db.Column(db.String(100))  # New: Coinbase portfolio name
+    portfolio_id = db.Column(db.String(100), nullable=True)  # Can be null for account-level credentials
+    portfolio_name = db.Column(db.String(100), nullable=True)
+    purpose = db.Column(db.String(20), default='trading')  # 'read_only' or 'trading'
     
-    user = db.relationship('User', backref=db.backref('exchange_credentials', lazy=True))
-    automation_id = db.Column(db.String(50), db.ForeignKey('automations.automation_id'), nullable=False)
+    user = db.relationship('User', back_populates='exchange_credentials', lazy=True)
+    automation_id = db.Column(db.String(50), db.ForeignKey('automations.automation_id'), nullable=True)  # Can be null for account-level credentials
     automation = db.relationship('Automation', backref=db.backref('credentials', lazy=True, uselist=False))
 
-
+    # Encryption methods remain the same
     @staticmethod
     def get_encryption_key():
         key = os.environ.get('ENCRYPTION_KEY')
@@ -54,3 +55,14 @@ class ExchangeCredentials(db.Model):
     @secret_key.setter
     def secret_key(self, value):
         self.encrypted_secret_key = self.encrypt_value(value)
+
+    # Add to app/models/exchange_credentials.py
+    @classmethod
+    def get_account_credentials(cls, user_id):
+        """Get account-level credentials for a user"""
+        return cls.query.filter_by(
+            user_id=user_id,
+            purpose='read_only',
+            automation_id=None,
+            is_active=True
+        ).first()

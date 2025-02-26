@@ -6,8 +6,8 @@ from flask import (
 from flask_login import login_required, current_user
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
-from app.services.oauth_service import get_oauth_credentials
 from app.services.coinbase_service import CoinbaseService
+from app.models.exchange_credentials import ExchangeCredentials
 from app import db
 
 bp = Blueprint('dashboard', __name__)
@@ -27,25 +27,24 @@ def dashboard():
     base_url = request.url_root.rstrip('/')
     for automation in automations:
         automation.webhook_url = f"{base_url}/webhook?automation_id={automation.automation_id}"
+        
+        # Get credentials for each automation
+        credentials = ExchangeCredentials.query.filter_by(
+            automation_id=automation.automation_id,
+            user_id=current_user.id,
+            exchange='coinbase'
+        ).first()
+        
+        automation.has_credentials = bool(credentials)
+        automation.portfolio_name = credentials.portfolio_name if credentials else None
 
-    # Get detailed OAuth connection status
-    from app.services.oauth_service import get_connection_status
-    connection_status = get_connection_status(user_id)
-    
-    # Only try to fetch portfolios if OAuth is properly connected
-    portfolios = []
-    if connection_status['is_connected']:
-        try:
-            coinbase_service = CoinbaseService(user_id)
-            portfolios = coinbase_service.list_portfolios()
-        except Exception as e:
-            current_app.logger.error(f"Error fetching portfolios: {str(e)}")
+    # Check if account is connected
+    account_connected = bool(ExchangeCredentials.get_account_credentials(current_user.id))
 
     return render_template(
         'dashboard.html',
         automations=automations,
-        oauth_status=connection_status,
-        portfolios=portfolios
+        account_connected=account_connected
     )
 
 
@@ -53,15 +52,21 @@ def dashboard():
 @login_required
 def settings():
     """Render the settings page."""
-    from app.services.oauth_service import get_connection_status
+    # Get account-level credentials
+    account_credentials = ExchangeCredentials.get_account_credentials(current_user.id)
     
-    # Get detailed connection status
-    connection_status = get_connection_status(current_user.id)
+    # Get portfolios if credentials exist
+    portfolios = []
+    if account_credentials:
+        try:
+            portfolios = CoinbaseService.list_portfolios(account_credentials)
+        except Exception as e:
+            current_app.logger.error(f"Error fetching portfolios: {str(e)}")
     
     return render_template(
         'settings.html',
-        oauth_connected=connection_status['is_connected'],
-        connection_status=connection_status
+        account_credentials=account_credentials,
+        portfolios=portfolios
     )
 
 

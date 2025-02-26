@@ -12,16 +12,17 @@ import os
 
 bp = Blueprint('webhook', __name__)
 
+# app/routes/webhook.py
 @bp.route('/webhook', methods=['POST'])
 def webhook():
     automation_id = request.args.get('automation_id')
-    print(f"Received webhook for automation_id: {automation_id}")
+    logger.debug(f"Received webhook for automation_id: {automation_id}")
     
     if not automation_id:
         return jsonify({'error': 'Missing automation_id parameter'}), 400
 
     automation = Automation.query.filter_by(automation_id=automation_id).first()
-    print(f"Found automation: {automation}")
+    logger.debug(f"Found automation: {automation}")
     
     if not automation:
         return jsonify({'error': 'Automation not found'}), 404
@@ -31,7 +32,7 @@ def webhook():
 
     # Store the webhook payload
     payload = request.get_json(force=True)
-    print(f"Webhook payload: {payload}")
+    logger.debug(f"Webhook payload: {payload}")
     
     log = WebhookLog(
         automation_id=automation_id,
@@ -45,11 +46,24 @@ def webhook():
     
     try:
         db.session.commit()
-        print("Successfully stored webhook")
-        # Emit event for real-time updates (if using websockets)
-        return jsonify({'success': True})
+        logger.debug("Successfully stored webhook")
+        
+        # Process the webhook to extract trading parameters
+        from app.services.webhook_processor import WebhookProcessor
+        from app.services.trading_service import TradingService
+        
+        processed_data, status_code = WebhookProcessor.process_webhook(automation_id, payload)
+        
+        if status_code != 200:
+            return jsonify(processed_data), status_code
+            
+        # Execute the trade
+        result, status_code = TradingService.execute_trade(processed_data)
+        
+        return jsonify(result), status_code
+        
     except Exception as e:
-        print(f"Error storing webhook: {e}")
+        logger.error(f"Error handling webhook: {str(e)}")
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 

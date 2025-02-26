@@ -1,11 +1,7 @@
 # app/app.py
-from app.services.oauth_service import init_oauth
 
 def create_app(test_config=None):
     app = Flask(__name__)
-
-    # Initializations
-    init_oauth(app)
 
     # Register blueprints
     from app.routes import auth, dashboard, webhook, admin, automation

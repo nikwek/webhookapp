@@ -6,7 +6,6 @@ from app import db
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
 from app.models.exchange_credentials import ExchangeCredentials
-from app.services.oauth_service import get_oauth_credentials
 from app.services.coinbase_service import CoinbaseService
 from datetime import datetime, timezone
 import os
@@ -44,6 +43,7 @@ def serve_component(filename):
 def new_automation():
     return render_template('automation.html', automation=None)
 
+# Modify the view_automation function
 @bp.route('/automation/<automation_id>', methods=['GET'])
 @api_login_required
 def view_automation(automation_id):
@@ -51,19 +51,24 @@ def view_automation(automation_id):
     if not automation:
         return render_template('404.html'), 404
     
-    # Get available portfolios if OAuth is connected
+    # Get credentials if they exist
+    credentials = ExchangeCredentials.query.filter_by(
+        automation_id=automation_id,
+        user_id=current_user.id,
+        exchange='coinbase'
+    ).first()
+    
     portfolios = []
-    oauth_creds = get_oauth_credentials(current_user.id, 'coinbase')
-    if oauth_creds:
+    if credentials:
         try:
-            coinbase = CoinbaseService(current_user.id)
-            portfolios = coinbase.list_portfolios()
+            portfolios = CoinbaseService.list_portfolios(credentials)
         except Exception as e:
             current_app.logger.error(f"Error fetching portfolios: {str(e)}")
     
     return render_template(
         'automation.html', 
         automation=automation,
+        credentials=credentials,
         portfolios=portfolios
     )
 
@@ -219,11 +224,13 @@ def connect_portfolio(automation_id):
             current_app.logger.error("Missing portfolio_id in request")
             return jsonify({"error": "Missing portfolio_id"}), 400
             
-        # Initialize Coinbase service
-        coinbase = CoinbaseService(current_user.id)
-        
+        # Use account credentials
+        account_creds = ExchangeCredentials.get_account_credentials(current_user.id)
+        if not account_creds:
+            return jsonify({"error": "Coinbase not connected"}), 401
+            
         # Get portfolio details to verify it exists
-        portfolio = coinbase.get_portfolio(data['portfolio_id'])
+        portfolio = CoinbaseService.get_portfolio(account_creds, data['portfolio_id'])
         if not portfolio:
             current_app.logger.error("Portfolio not found")
             return jsonify({"error": "Portfolio not found"}), 404
@@ -322,12 +329,11 @@ def get_portfolios(automation_id):
         if not automation:
             return jsonify({"error": "Automation not found"}), 404
 
-        oauth_creds = get_oauth_credentials(current_user.id, 'coinbase')
-        if not oauth_creds:
+        account_creds = ExchangeCredentials.get_account_credentials(current_user.id)
+        if not account_creds:
             return jsonify({"error": "Coinbase not connected"}), 401
 
-        coinbase = CoinbaseService(current_user.id)
-        portfolios = coinbase.list_portfolios()
+        portfolios = CoinbaseService.list_portfolios(account_creds)
         
         return jsonify({"portfolios": portfolios})
     except Exception as e:
@@ -347,44 +353,14 @@ def create_portfolio(automation_id):
         if not data or 'name' not in data:
             return jsonify({"error": "Missing portfolio name"}), 400
 
-        oauth_creds = get_oauth_credentials(current_user.id, 'coinbase')
-        if not oauth_creds:
+        account_creds = ExchangeCredentials.get_account_credentials(current_user.id)
+        if not account_creds:
             return jsonify({"error": "Coinbase not connected"}), 401
 
-        coinbase = CoinbaseService(current_user.id)
-        portfolio = coinbase.create_portfolio(data['name'])
+        portfolio = CoinbaseService.create_portfolio(account_creds, data['name'])
         
         return jsonify({"portfolio": portfolio})
     except Exception as e:
         current_app.logger.error(f"Error creating portfolio: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# Legacy Routes
-@bp.route('/create-automation', methods=['POST'])
-@api_login_required
-def create_automation_legacy():
-    return create_automation()
-
-@bp.route('/update_automation_name', methods=['POST'])
-@api_login_required
-def update_automation_name():
-    data = request.get_json()
-    return update_automation(data['automation_id'])
-
-@bp.route('/deactivate-automation/<automation_id>', methods=['POST'])
-@api_login_required
-def deactivate_automation(automation_id):
-    request.get_json = lambda: {"is_active": False}
-    return update_automation_status(automation_id)
-
-@bp.route('/activate-automation/<automation_id>', methods=['POST'])
-@api_login_required
-def activate_automation(automation_id):
-    request.get_json = lambda: {"is_active": True}
-    return update_automation_status(automation_id)
-
-@bp.route('/delete_automation', methods=['POST'])
-@api_login_required
-def delete_automation_legacy():
-    data = request.get_json()
-    return delete_automation(data['automation_id'])

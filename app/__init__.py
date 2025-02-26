@@ -5,7 +5,7 @@ from flask_migrate import Migrate
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
 from config import Config
-from app.services.oauth_service import init_oauth
+
 import os
 
 # Initialize extensions
@@ -43,21 +43,19 @@ def create_app(config_class=Config):
     migrate.init_app(app, db)
     bcrypt.init_app(app)
     login_manager.init_app(app)
-    init_oauth(app, db)
 
     # Register Jinja2 filters
     app.jinja_env.filters['from_json'] = from_json_filter
 
     # Register blueprints
-    from app.routes import auth, dashboard, webhook, admin, automation, oauth, portfolio
+    from app.routes import auth, dashboard, automation, webhook, api_keys
     
     app.register_blueprint(auth.bp)
     app.register_blueprint(dashboard.bp)
     app.register_blueprint(webhook.bp)
-    app.register_blueprint(admin.bp)
+    # app.register_blueprint(admin.bp)
     app.register_blueprint(automation.bp)
-    app.register_blueprint(oauth.bp)
-    app.register_blueprint(portfolio.bp)
+    # app.register_blueprint(portfolio.bp)
 
     with app.app_context():
         # Import models
@@ -65,11 +63,5 @@ def create_app(config_class=Config):
         from app.models.automation import Automation
         from app.models.webhook import WebhookLog
         from app.models.exchange_credentials import ExchangeCredentials
-        from app.models.oauth_credentials import OAuthCredentials
-
-    # Initialize scheduler
-    with app.app_context():
-        from app.services.scheduler import init_scheduler
-        init_scheduler(app, db)
 
     return app

@@ -176,4 +176,34 @@ class CoinbaseService:
             current_app.logger.error(f"Error fetching portfolio: {str(e)}")
             return None
 
-
+    def get_trading_pairs(self):
+        """
+        Fetch all available trading pairs from Coinbase
+        
+        Returns:
+            list: List of trading pair objects
+        """
+        try:
+            response = requests.get(
+                f'{self.base_url}/brokerage/products',
+                headers=self._get_headers()
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Filter only active products
+            active_products = [
+                product for product in data.get('products', []) 
+                if product.get('status') == 'online' and 
+                not product.get('trading_disabled') and
+                not product.get('is_disabled')
+            ]
+            
+            # Sort by product_id
+            active_products.sort(key=lambda x: x.get('product_id', ''))
+            
+            return active_products
+        except Exception as e:
+            current_app.logger.error(f"Error fetching Coinbase trading pairs: {str(e)}")
+            return []

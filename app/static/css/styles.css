@@ -10,4 +10,31 @@
     opacity: 1 !important;
 }
 
-/* Add more common utilities and base styles here as needed */
+/* Automation trading pairs */
+.trading-pair-container {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.trading-pair-suggestions {
+    position: absolute;
+    z-index: 1000;
+    width: 100%;
+    max-height: 300px;
+    overflow-y: auto;
+    background-color: white;
+    border: 1px solid #ccc;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    display: none;
+}
+
+.suggestion-item {
+    padding: 10px;
+    cursor: pointer;
+}
+
+.suggestion-item:hover {
+    background-color: #f8f9fa;
+}

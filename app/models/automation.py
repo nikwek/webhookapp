@@ -15,6 +15,7 @@ class Automation(db.Model):
     last_run = db.Column(db.DateTime, default=None)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     template = db.Column(db.JSON, default={})
+    trading_pair = db.Column(db.String(20), nullable=True)
 
     # Add the relationship
     user = db.relationship('User', backref=db.backref('automations', lazy=True))

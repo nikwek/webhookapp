@@ -15,6 +15,8 @@ class Config:
     COINBASE_CLIENT_ID = os.environ.get('COINBASE_CLIENT_ID')
     COINBASE_CLIENT_SECRET = os.environ.get('COINBASE_CLIENT_SECRET')
     OAUTH_REDIRECT_URI = os.environ.get('OAUTH_REDIRECT_URI')
+    COINBASE_API_KEY = os.environ.get('COINBASE_API_KEY')
+    COINBASE_API_SECRET = os.environ.get('COINBASE_API_SECRET')
 
     # Email notifications (optional - set these if you want email notifications)
     ENABLE_EMAIL_NOTIFICATIONS = os.environ.get('ENABLE_EMAIL_NOTIFICATIONS', 'False').lower() == 'true'

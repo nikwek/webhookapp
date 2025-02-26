@@ -22,7 +22,9 @@
 │   │   ├── __init__.py
 │   │   ├── api_client.py
 │   │   ├── coinbase_service.py
+│   │   ├── notification_service.py
 │   │   ├── oauth_service.py
+│   │   ├── scheduler.py
 │   │   └── webhook_processor.py
 │   ├── static
 │   │   ├── css
@@ -30,25 +32,27 @@
 │   │   │   └── webhooks.css
 │   │   └── js
 │   │       └── common.js
-│   └── templates
-│       ├── admin
-│       │   ├── automations.html
-│       │   ├── base.html
-│       │   ├── settings.html
-│       │   └── users.html
-│       ├── auth
-│       │   └── change_password.html
-│       ├── automation.html
-│       ├── base.html
-│       ├── change_password.html
-│       ├── dashboard.html
-│       ├── login.html
-│       ├── partials
-│       │   ├── _automations_table.html
-│       │   └── _dashboard_modals.html
-│       ├── register.html
-│       ├── settings.html
-│       └── users.html
+│   ├── templates
+│   │   ├── admin
+│   │   │   ├── automations.html
+│   │   │   ├── base.html
+│   │   │   ├── settings.html
+│   │   │   └── users.html
+│   │   ├── auth
+│   │   │   └── change_password.html
+│   │   ├── automation.html
+│   │   ├── base.html
+│   │   ├── change_password.html
+│   │   ├── dashboard.html
+│   │   ├── login.html
+│   │   ├── partials
+│   │   │   ├── _automations_table.html
+│   │   │   └── _dashboard_modals.html
+│   │   ├── register.html
+│   │   ├── settings.html
+│   │   └── users.html
+│   └── utils
+│       └── encryption.py
 ├── app.py
 ├── config.py
 ├── include
@@ -82,4 +86,4 @@
 ├── tree.txt
 └── webhook.log
 
-21 directories, 62 files
+22 directories, 65 files

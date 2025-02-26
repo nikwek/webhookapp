@@ -359,6 +359,85 @@ def create_portfolio(automation_id):
         current_app.logger.error(f"Error creating portfolio: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@bp.route('/automation/<automation_id>/trading-pair', methods=['GET'])
+@login_required
+def get_trading_pair(automation_id):
+    """Get the trading pair for an automation."""
+    try:
+        automation = get_user_automation(automation_id)
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        # Get trading pair details if it exists
+        if automation.trading_pair:
+            # Try to get display name from Coinbase
+            display_name = automation.trading_pair
+            try:
+                coinbase = CoinbaseService(current_user.id)
+                trading_pairs = coinbase.get_trading_pairs()
+                for pair in trading_pairs:
+                    if pair.get('product_id') == automation.trading_pair:
+                        display_name = pair.get('display_name', automation.trading_pair)
+                        break
+            except Exception as e:
+                current_app.logger.error(f"Error fetching trading pair details: {str(e)}")
+            
+            return jsonify({
+                "trading_pair": automation.trading_pair,
+                "display_name": display_name
+            })
+        else:
+            return jsonify({"trading_pair": None}), 404
+            
+    except Exception as e:
+        current_app.logger.error(f"Error getting trading pair: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/automation/<automation_id>/trading-pair', methods=['POST'])
+@login_required
+def set_trading_pair(automation_id):
+    """Set the trading pair for an automation."""
+    try:
+        automation = get_user_automation(automation_id)
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        data = request.get_json()
+        if not data or 'trading_pair' not in data:
+            return jsonify({"error": "Trading pair is required"}), 400
+            
+        # Check if the automation has a connected portfolio
+        has_credentials = ExchangeCredentials.query.filter_by(
+            automation_id=automation_id
+        ).first() is not None
+        
+        if not has_credentials:
+            return jsonify({"error": "Please connect a portfolio first"}), 400
+            
+        # Validate trading pair exists on Coinbase
+        trading_pair = data['trading_pair']
+        coinbase = CoinbaseService(current_user.id)
+        trading_pairs = coinbase.get_trading_pairs()
+        valid_pair = any(pair.get('product_id') == trading_pair for pair in trading_pairs)
+        
+        if not valid_pair:
+            return jsonify({"error": "Invalid trading pair"}), 400
+            
+        # Update the automation
+        automation.trading_pair = trading_pair
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Trading pair updated successfully",
+            "trading_pair": trading_pair
+        })
+            
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error setting trading pair: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 # Legacy Routes
 @bp.route('/create-automation', methods=['POST'])
 @api_login_required

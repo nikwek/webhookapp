@@ -59,6 +59,29 @@
                         <!-- Content will be dynamically managed by JavaScript -->
                     </div>
                 </div>
+                <!-- Trading Pair Selection Section - Will be shown after portfolio is connected -->
+                <div id="tradingPairSection" style="display: none;" data-automation-id="{{ automation.automation_id }}">
+                    <h5 class="mt-4">Trading Pair</h5>
+                    <div class="mb-4">
+                        <form id="tradingPairForm">
+                            <div class="mb-3">
+                                <label for="trading-pair-input" class="form-label">Select Trading Pair</label>
+                                <div class="trading-pair-container">
+                                    <input type="text" class="form-control" id="trading-pair-input" 
+                                        placeholder="Enter trading pair (e.g., BTC-USD)" required>
+                                    <input type="hidden" id="trading-pair" name="trading_pair">
+                                    <div id="trading-pair-suggestions" class="trading-pair-suggestions"></div>
+                                </div>
+                                <div class="form-text">
+                                    This is the cryptocurrency pair you want to trade (e.g., BTC-USD for Bitcoin/US Dollar)
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                Save Trading Pair
+                            </button>
+                        </form>
+                    </div>
+                </div>
                 <h5>Webhook URL</h5>
                 <div class="input-group mb-4">
                     <input type="text" 
@@ -68,19 +91,26 @@
                     <button class="btn btn-outline-secondary copy-url" type="button">Copy</button>
                 </div>
 
-                <h5>Template</h5>
+                <h5>Webhook Template</h5>
                 <div class="position-relative bg-light rounded mb-4">
                     <pre class="p-3 mb-0"><code class="language-json">{% raw %}{
-    "action": "{{strategy.order.action}}",
-    "ticker": "{{ticker}}",
-    "order_size": "100%",
-    "position_size": "{{strategy.position_size}}",
-    "schema": "2",
-    "timestamp": "{{time}}"
+"action": "{{strategy.order.action}}",
+"order_size": "100%",
+"timestamp": "{{time}}"
 }{% endraw %}</code></pre>
                     <button class="btn btn-sm btn-secondary position-absolute top-0 end-0 m-2 copy-template">
                         Copy
                     </button>
+                </div>
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle"></i> Setting up TradingView Alerts</h6>
+                    <ol class="mb-0">
+                        <li>In TradingView, create a new alert for your strategy</li>
+                        <li>Select "Webhook URL" as the alert action</li>
+                        <li>Copy and paste the Webhook URL above into the URL field</li>
+                        <li>Copy and paste the template JSON above into the "Message" field</li>
+                        <li>Click "Create" to save your alert</li>
+                    </ol>
                 </div>
             </div>
             {% endif %}
@@ -614,6 +644,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 {% if automation %}
+<script src="{{ url_for('static', filename='js/trading_pairs.js') }}"></script>
 <script type="text/babel">
     const AutomationLogs = () => {
         const [logs, setLogs] = React.useState([]);

@@ -18,7 +18,7 @@ def init_oauth(app, db):
         authorize_url='https://login.coinbase.com/oauth2/auth',
         api_base_url='https://api.coinbase.com/api/v3/',
         client_kwargs={
-            'scope': 'wallet:accounts:read wallet:trades:read wallet:trades:create offline_access',
+            'scope': 'wallet:accounts:read wallet:trades:read wallet:trades:create wallet:user:read offline_access',
             'response_type': 'code'
         }
     )
@@ -143,7 +143,7 @@ def check_oauth_status(user_id, provider='coinbase'):
         'expires_at': credentials.expires_at
     }
 
-# Add this to app/services/oauth_service.py
+
 def get_connection_status(user_id, provider='coinbase'):
     """Get detailed OAuth connection status for UI display"""
     credentials = get_oauth_credentials(user_id, provider)

@@ -31,7 +31,8 @@
 │   │   │   ├── styles.css
 │   │   │   └── webhooks.css
 │   │   └── js
-│   │       └── common.js
+│   │       ├── common.js
+│   │       └── trading_pairs.js
 │   ├── templates
 │   │   ├── admin
 │   │   │   ├── automations.html
@@ -86,4 +87,4 @@
 ├── tree.txt
 └── webhook.log
 
-22 directories, 65 files
+22 directories, 66 files

@@ -2,7 +2,6 @@
 import secrets
 from app import db
 from datetime import datetime, timezone
-from app.models.user import User
 
 class Automation(db.Model):
     __tablename__ = 'automations'
@@ -11,13 +10,16 @@ class Automation(db.Model):
     automation_id = db.Column(db.String(32), unique=True, nullable=False)
     name = db.Column(db.String(100), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    portfolio_id = db.Column(db.Integer, db.ForeignKey('portfolios.id'), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
     last_run = db.Column(db.DateTime, default=None)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     template = db.Column(db.JSON, default={})
 
-    # Add the relationship
+    # Add the relationships
     user = db.relationship('User', backref=db.backref('automations', lazy=True))
+    # Define the relationship to Portfolio without circular backref
+    portfolio = db.relationship('Portfolio', backref=db.backref('automations', lazy=True))
 
     @staticmethod
     def generate_automation_id():

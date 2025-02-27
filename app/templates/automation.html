@@ -39,6 +39,7 @@
         </div>
         <div class="card-body">
             {% if not automation %}
+            <!-- Create New Automation Form -->
             <form id="createAutomationForm">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="mb-3">
@@ -52,6 +53,131 @@
             </form>
             {% else %}
             <div id="automationDetails">
+                <!-- Connected Portfolio Section -->
+                {% if portfolio %}
+                <!-- Portfolio is already connected -->
+                <div class="card mb-4">
+                    <div class="card-header bg-success bg-opacity-10">
+                        <h5 class="mb-0">Connected Portfolio</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <p class="mb-1"><strong>Portfolio:</strong> {{ portfolio.name }}</p>
+                                <p class="mb-0"><strong>Exchange:</strong> {{ portfolio.exchange|capitalize }}</p>
+                            </div>
+                            <form method="POST" action="{{ url_for('automation.disconnect_portfolio', automation_id=automation.automation_id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" 
+                                        onclick="return confirm('Are you sure you want to disconnect this portfolio?');">
+                                    Disconnect Portfolio
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <!-- No portfolio connected yet -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Connect a Portfolio</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Step 1: Portfolio Selection Section -->
+                        <div id="portfolio-selection-section" {% if show_api_form %}class="d-none"{% endif %}>
+                            <p class="text-muted mb-3">
+                                Connect your Coinbase portfolio to this automation to execute trades.
+                            </p>
+                            
+                            {% if portfolios %}
+                            <form id="select-portfolio-form" method="POST" action="{{ url_for('automation.select_portfolio', automation_id=automation.automation_id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <div class="mb-3">
+                                    <label for="portfolio_id" class="form-label">Select a portfolio:</label>
+                                    <select class="form-select" id="portfolio_id" name="portfolio_id" required>
+                                        <option value="">-- Select a portfolio --</option>
+                                        {% for portfolio in portfolios %}
+                                            <option value="{{ portfolio.id }}">{{ portfolio.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <a href="https://www.coinbase.com/portfolio" target="_blank" class="btn btn-outline-secondary">
+                                        <i class="fas fa-plus-circle me-1"></i> Create New Portfolio on Coinbase
+                                    </a>
+                                    <div>
+                                        <button type="button" id="refreshPortfoliosBtn" class="btn btn-outline-primary me-2">
+                                            <i class="fas fa-sync-alt me-1"></i> Refresh List
+                                        </button>
+                                        <button type="submit" class="btn btn-primary">Next</button>
+                                    </div>
+                                </div>
+                            </form>
+                            {% else %}
+                            <div class="alert alert-warning">
+                                <h6>No portfolios found</h6>
+                                <p>We couldn't find any portfolios associated with your Coinbase account. This could be because:</p>
+                                <ul>
+                                    <li>You haven't set up your default Coinbase API credentials yet</li>
+                                    <li>Your API credentials don't have permission to view portfolios</li>
+                                    <li>You don't have any portfolios set up on Coinbase</li>
+                                </ul>
+                                <div class="mt-3">
+                                    <a href="{{ url_for('dashboard.settings') }}" class="btn btn-primary me-2">Setup API Credentials</a>
+                                    <a href="https://www.coinbase.com/portfolio" target="_blank" class="btn btn-outline-primary">
+                                        Create Portfolio on Coinbase
+                                    </a>
+                                    <button type="button" id="refreshPortfoliosBtn" class="btn btn-outline-secondary ms-2">
+                                        <i class="fas fa-sync-alt me-1"></i> Refresh List
+                                    </button>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Step 2: API Key Form Section -->
+                        <div id="api-key-form-section" {% if not show_api_form %}class="d-none"{% endif %}>
+                            <h5 class="mb-3">Connect API Keys for {{ selected_portfolio.name }}</h5>
+                            
+                            <div class="alert alert-info mb-4">
+                                <h6 class="fw-bold">How to get your API Keys:</h6>
+                                <ol>
+                                    <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a></li>
+                                    <li>Click "New API Key"</li>
+                                    <li>Give the API key a nickname (e.g., "{{ automation.name }}")</li>
+                                    <li>Under Portfolio, select "{{ selected_portfolio.name }}"</li>
+                                    <li>Check the ✅ View (read-only), and the ✅ Trade (execute trades on your behalf) boxes</li>
+                                    <li>Set an IP whitelist if desired (optional)</li>
+                                    <li>Click "Create API Key" and you'll see your API Key and API Secret</li>
+                                    <li>Copy and paste both values below (you won't be able to see the API Secret again)</li>
+                                </ol>
+                            </div>
+                            
+                            <form method="POST" action="{{ url_for('automation.save_api_keys', automation_id=automation.automation_id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="portfolio_id" value="{{ selected_portfolio.id }}">
+                                <input type="hidden" name="portfolio_name" value="{{ selected_portfolio.name }}">
+                                
+                                <div class="mb-3">
+                                    <label for="api_key" class="form-label">API Key:</label>
+                                    <input type="text" class="form-control" id="api_key" name="api_key" required>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="api_secret" class="form-label">API Secret:</label>
+                                    <input type="password" class="form-control" id="api_secret" name="api_secret" required>
+                                </div>
+                                
+                                <div class="d-flex justify-content-between">
+                                    <button type="button" id="backToPortfolioSelection" class="btn btn-secondary">Back</button>
+                                    <button type="submit" class="btn btn-success">Save and Connect</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
                 <h5>Webhook URL</h5>
                 <div class="input-group mb-4">
                     <input type="text" 
@@ -107,6 +233,27 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     });
+
+    // Portfolio connection handling
+    const portfolioSelectionSection = document.getElementById('portfolio-selection-section');
+    const apiKeyFormSection = document.getElementById('api-key-form-section');
+    const backToPortfolioSelectionBtn = document.getElementById('backToPortfolioSelection');
+    const refreshPortfoliosBtn = document.getElementById('refreshPortfoliosBtn');
+    
+    // Back button handler
+    if (backToPortfolioSelectionBtn) {
+        backToPortfolioSelectionBtn.addEventListener('click', function() {
+            apiKeyFormSection.classList.add('d-none');
+            portfolioSelectionSection.classList.remove('d-none');
+        });
+    }
+    
+    // Refresh portfolios button
+    if (refreshPortfoliosBtn) {
+        refreshPortfoliosBtn.addEventListener('click', function() {
+            window.location.reload();
+        });
+    }
 
     // CSRF token for fetch requests
     const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');

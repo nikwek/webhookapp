@@ -40,6 +40,7 @@
         <div class="card-body">
             {% if not automation %}
             <form id="createAutomationForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="mb-3">
                     <label for="automationName" class="form-label">Automation Name</label>
                     <input type="text" class="form-control" id="automationName" required>

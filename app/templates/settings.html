@@ -3,24 +3,123 @@
 {% block title %}Settings - Webhook Manager{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h4>Change Password</h4>
+<div class="container mt-4">
+    <h2>Settings</h2>
+    
+    <div class="row">
+        <!-- Coinbase API Keys Section -->
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">Coinbase API Keys</h4>
+                    <span class="badge {% if has_coinbase_keys %}bg-success{% else %}bg-danger{% endif %}">
+                        {% if has_coinbase_keys %}Connected{% else %}Not Connected{% endif %}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <h5>How to get your API Keys:</h5>
+                        <ol>
+                            <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a></li>
+                            <li>Click "New API Key"</li>
+                            <li>Give the API key a nickname (e.g., "Amazing Automation")</li>
+                            <li>Set <strong>Portfolio</strong> to "Default"</li>
+                            <li>Check the View (read-only) box and nothing else</li>
+                            <li>Set an IP whitelist if desired (optional)</li>
+                            <li>Click "Create API Key" and you'll see your API Key and API Secret</li>
+                            <li>Copy and paste both values below (you won't be able to see the API Secret again)</li>
+                        </ol>
+                    </div>
+                    
+                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
+                        {{ form.csrf_token }}
+                        
+                        <div class="mb-3">
+                            {{ form.api_key.label(class="form-label") }}
+                            {{ form.api_key(class="form-control") }}
+                            {% if form.api_key.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.api_key.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.api_secret.label(class="form-label") }}
+                            {{ form.api_secret(class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
+                            {% if form.api_secret.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.api_secret.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="d-flex gap-2">
+                            {{ form.submit(class="btn btn-primary") }}
+                            
+                            {% if has_coinbase_keys %}
+                            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteApiKeysModal">
+                                Delete API Keys
+                            </button>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
             </div>
-            <div class="card-body">
-                <form method="POST">
-                    <div class="mb-3">
-                        <label for="password" class="form-label">New Password</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                    </div>
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">Update Password</button>
-                    </div>
+        </div>
+        
+        <!-- Password Change Section -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Change Password</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('auth.change_password') }}">
+                        <input type="hidden" name="csrf_token" value="{{ form.csrf_token.current_token }}">
+                        <div class="mb-3">
+                            <label for="new_password" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="new_password" name="new_password" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirm_password" class="form-label">Confirm Password</label>
+                            <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Update Password</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if has_coinbase_keys %}
+<!-- Delete API Keys Modal -->
+<div class="modal fade" id="deleteApiKeysModal" tabindex="-1" aria-labelledby="deleteApiKeysModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteApiKeysModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to delete your Coinbase API keys? This action cannot be undone.
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form method="POST" action="{{ url_for('dashboard.delete_coinbase_api_keys') }}">
+                    <input type="hidden" name="csrf_token" value="{{ form.csrf_token.current_token }}">
+                    <button type="submit" class="btn btn-danger">Delete API Keys</button>
                 </form>
             </div>
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}

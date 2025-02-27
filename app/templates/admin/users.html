@@ -10,6 +10,7 @@
     <div class="row mb-3">
         <div class="col-md-6">
             <form class="form-inline" method="get">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="input-group w-100">
                     <input type="text" class="form-control" name="search" placeholder="Search users..." 
                            value="{{ request.args.get('search', '') }}">

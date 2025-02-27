@@ -4,7 +4,9 @@ from flask_migrate import Migrate
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
 from config import Config
+from flask_wtf.csrf import CSRFProtect
 import os
+import logging
 
 
 # Initialize extensions
@@ -13,10 +15,16 @@ migrate = Migrate()
 bcrypt = Bcrypt()
 login_manager = LoginManager()
 login_manager.login_view = 'auth.login'
+csrf = CSRFProtect()
 
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+
+    # Configure logging
+    if not app.debug:
+        # Set the logging level to INFO
+        logging.basicConfig(level=logging.INFO)
 
     # Ensure instance folder exists
     try:
@@ -29,6 +37,7 @@ def create_app(config_class=Config):
     migrate.init_app(app, db)
     bcrypt.init_app(app)
     login_manager.init_app(app)
+    csrf.init_app(app)
 
     # Register Jinja2 filters
     app.jinja_env.filters['from_json'] = from_json_filter
@@ -38,14 +47,16 @@ def create_app(config_class=Config):
         from app.models.user import User
         from app.models.automation import Automation
         from app.models.webhook import WebhookLog
+        from app.models.exchange_credentials import ExchangeCredentials
 
         # Register blueprints
-        from app.routes import auth, dashboard, webhook, admin, automation
+        from app.routes import auth, dashboard, webhook, admin, automation, coinbase
         app.register_blueprint(auth.bp)
         app.register_blueprint(dashboard.bp)
         app.register_blueprint(webhook.bp)
         app.register_blueprint(admin.bp)
         app.register_blueprint(automation.bp)
+        app.register_blueprint(coinbase.bp)
 
         # Initialize database
         db.create_all()

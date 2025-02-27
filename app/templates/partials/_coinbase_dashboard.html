@@ -1,0 +1,117 @@
+{# app/templates/partials/_coinbase_dashboard.html #}
+
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h4 class="mb-0">Coinbase Portfolios</h4>
+        <button id="refreshCoinbaseData" class="btn btn-sm btn-secondary">
+            <i class="fas fa-sync"></i>
+        </button>
+    </div>
+    <div class="card-body" id="coinbaseAccountInfo">
+        {% if not has_coinbase_keys %}
+            <div class="alert alert-warning">
+                <p>You haven't connected your Coinbase account yet.</p>
+                <a href="{{ url_for('dashboard.settings') }}" class="btn btn-primary">Connect Coinbase</a>
+            </div>
+        {% else %}
+            <div id="coinbaseDataLoading" class="text-center py-4">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading portfolio information...</p>
+            </div>
+            <div id="coinbaseData" class="d-none">
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <h5>Available Portfolios</h5>
+                        <div class="table-responsive">
+                            <table class="table table-sm" id="coinbasePortfoliosTable">
+                                <thead>
+                                    <tr>
+                                        <th>Portfolio Name</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Portfolios will be loaded here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="coinbaseError" class="alert alert-danger d-none">
+                <p>Error loading Coinbase portfolio information.</p>
+                <p id="coinbaseErrorMessage"></p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    {% if has_coinbase_keys %}
+    // Load Coinbase portfolio data
+    loadCoinbaseData();
+    
+    // Set up refresh button
+    document.getElementById('refreshCoinbaseData').addEventListener('click', function() {
+        loadCoinbaseData();
+    });
+    {% endif %}
+});
+
+function loadCoinbaseData() {
+    // Show loading state
+    document.getElementById('coinbaseDataLoading').classList.remove('d-none');
+    document.getElementById('coinbaseData').classList.add('d-none');
+    document.getElementById('coinbaseError').classList.add('d-none');
+    
+    // Fetch portfolio information from API
+    fetch('/api/coinbase/portfolios')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to fetch portfolio information');
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Hide loading state
+            document.getElementById('coinbaseDataLoading').classList.add('d-none');
+            
+            if (data.has_credentials && data.portfolios) {
+                // Show data container
+                document.getElementById('coinbaseData').classList.remove('d-none');
+                
+                // Populate portfolios table
+                const portfoliosTable = document.getElementById('coinbasePortfoliosTable').getElementsByTagName('tbody')[0];
+                portfoliosTable.innerHTML = '';
+
+                const portfolios = data.portfolios;
+                portfolios.forEach(portfolioName => {
+                    const row = portfoliosTable.insertRow();
+                    const cellName = row.insertCell(0);
+                    cellName.textContent = portfolioName;
+                });
+
+                // If no portfolios found, show a message
+                if (portfoliosTable.rows.length === 0) {
+                    const row = portfoliosTable.insertRow();
+                    const cell = row.insertCell(0);
+                    cell.textContent = 'No trading portfolios found. Please create a new portfolio for your trading strategy.';
+                    cell.classList.add('text-center');
+                }
+            } else {
+                // Show error
+                document.getElementById('coinbaseError').classList.remove('d-none');
+                document.getElementById('coinbaseErrorMessage').textContent = 'No portfolio information available';
+            }
+        })
+        .catch(error => {
+            // Hide loading state and show error
+            document.getElementById('coinbaseDataLoading').classList.add('d-none');
+            document.getElementById('coinbaseError').classList.remove('d-none');
+            document.getElementById('coinbaseErrorMessage').textContent = error.message;
+            console.error('Error loading Coinbase data:', error);
+        });
+}
+</script>

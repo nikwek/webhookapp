@@ -13,6 +13,7 @@
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('admin.settings') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="form-group">
                         <label for="new_password">New Password</label>
                         <input type="password" class="form-control" id="new_password" name="new_password" required>

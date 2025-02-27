@@ -108,6 +108,9 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // CSRF token for fetch requests
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
     // Create Automation Form
     const createForm = document.getElementById('createAutomationForm');
     if (createForm) {
@@ -127,11 +130,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             try {
-                const response = await fetch('/automation', {
+                const response = await WebhookManager.fetchWithCSRF('/automation', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
                     body: JSON.stringify({ name: name })
                 });
                 
@@ -159,11 +159,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (confirm('Are you sure you want to delete this automation? This action cannot be undone.')) {
                 const automationId = '{{ automation.automation_id if automation }}';
                 try {
-                    const response = await fetch(`/automation/${automationId}`, {
-                        method: 'DELETE',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        }
+                    const response = await WebhookManager.fetchWithCSRF(`/automation/${automationId}`, {
+                        method: 'DELETE'
                     });
                     
                     const data = await response.json();
@@ -211,11 +208,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             try {
-                const response = await fetch(`/automation/${automationId}`, {
+                const response = await WebhookManager.fetchWithCSRF(`/automation/${automationId}`, {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
                     body: JSON.stringify({ name: newName })
                 });
                 

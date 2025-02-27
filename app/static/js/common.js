@@ -1,5 +1,18 @@
 // Common utilities for webhook manager
 const WebhookManager = {
+    // CSRF token fetch wrapper
+    fetchWithCSRF: function(url, options = {}) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        return fetch(url, {
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+                ...options.headers
+            }
+        });
+    },
+
     toggleJson: function(event) {
         const container = event.target.closest('.payload-container');
         const compact = container.querySelector('.json-compact');
@@ -22,7 +35,8 @@ const WebhookManager = {
         if (button) {
             button.disabled = true;
         }
-
+    
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         const endpoint = isAdmin ? 
             `/admin/api/automation/${automationId}/${isActive ? 'deactivate' : 'activate'}` :
             `/automation/${automationId}/status`;
@@ -31,7 +45,8 @@ const WebhookManager = {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Accept': 'application/json',
+                'X-CSRFToken': csrfToken
             },
             body: JSON.stringify({ is_active: !isActive })
         })

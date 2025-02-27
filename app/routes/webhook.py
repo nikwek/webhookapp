@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify, Response, stream_with_context, se
 from flask_login import login_required
 from app.models.webhook import WebhookLog
 from app.models.automation import Automation
-from app import db
+from app import db, csrf
 from datetime import datetime, timezone
 import json
 import time
@@ -13,6 +13,7 @@ import os
 bp = Blueprint('webhook', __name__)
 
 @bp.route('/webhook', methods=['POST'])
+@csrf.exempt 
 def webhook():
     automation_id = request.args.get('automation_id')
     print(f"Received webhook for automation_id: {automation_id}")

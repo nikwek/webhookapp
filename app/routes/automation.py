@@ -153,32 +153,3 @@ def get_automation_logs(automation_id):
         print(f"Error fetching automation logs: {e}")
         return jsonify({"error": str(e)}), 500
 
-# Legacy route aliases for backward compatibility
-@bp.route('/create-automation', methods=['POST'])
-@api_login_required
-def create_automation_legacy():
-    return create_automation()
-
-@bp.route('/update_automation_name', methods=['POST'])
-@api_login_required
-def update_automation_name():
-    data = request.get_json()
-    return update_automation(data['automation_id'])
-
-@bp.route('/deactivate-automation/<automation_id>', methods=['POST'])
-@api_login_required
-def deactivate_automation(automation_id):
-    request.get_json = lambda: {"is_active": False}
-    return update_automation_status(automation_id)
-
-@bp.route('/activate-automation/<automation_id>', methods=['POST'])
-@api_login_required
-def activate_automation(automation_id):
-    request.get_json = lambda: {"is_active": True}
-    return update_automation_status(automation_id)
-
-@bp.route('/delete_automation', methods=['POST'])
-@api_login_required
-def delete_automation_legacy():
-    data = request.get_json()
-    return delete_automation(data['automation_id'])

@@ -102,9 +102,9 @@
                                     </select>
                                 </div>
                                 <div class="d-flex justify-content-between align-items-center">
-                                    <a href="https://www.coinbase.com/portfolio" target="_blank" class="btn btn-outline-secondary">
-                                        <i class="fas fa-plus-circle me-1"></i> Create New Portfolio on Coinbase
-                                    </a>
+                                    <button type="button" id="createPortfolioBtn" class="btn btn-outline-secondary">
+                                        <i class="fas fa-plus-circle me-1"></i> Create New Portfolio
+                                    </button>
                                     <div>
                                         <button type="button" id="refreshPortfoliosBtn" class="btn btn-outline-primary me-2">
                                             <i class="fas fa-sync-alt me-1"></i> Refresh List
@@ -133,6 +133,31 @@
                                 </div>
                             </div>
                             {% endif %}
+                        </div>
+
+                        <!-- Portfolio Creation Modal -->
+                        <div class="modal fade" id="createPortfolioModal" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Create New Portfolio</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form id="createPortfolioForm">
+                                            <div class="mb-3">
+                                                <label for="portfolioName" class="form-label">Portfolio Name</label>
+                                                <input type="text" class="form-control" id="portfolioName" required>
+                                                <div class="form-text">Choose a name for your trading portfolio</div>
+                                            </div>
+                                        </form>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="submit" form="createPortfolioForm" class="btn btn-primary">Create</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         
                         <!-- Step 2: API Key Form Section -->
@@ -216,6 +241,8 @@
 {{ super() }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const automationId = '{{ automation.automation_id if automation }}';
+
     // Initialize copy buttons
     document.querySelectorAll('.copy-url, .copy-template').forEach(button => {
         button.addEventListener('click', function() {
@@ -304,7 +331,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async function() {
             if (confirm('Are you sure you want to delete this automation? This action cannot be undone.')) {
-                const automationId = '{{ automation.automation_id if automation }}';
                 try {
                     const response = await WebhookManager.fetchWithCSRF(`/automation/${automationId}`, {
                         method: 'DELETE'
@@ -328,7 +354,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const input = document.getElementById('automationTitleInput');
         const editBtn = document.getElementById('editTitleBtn');
         const saveBtn = document.getElementById('saveTitleBtn');
-        const automationId = '{{ automation.automation_id if automation }}';
 
         function enableEditing() {
             title.classList.add('d-none');
@@ -389,10 +414,366 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!titleContainer.contains(e.target) && !input.classList.contains('d-none')) {
                 disableEditing();
             }
-        });
+        }); 
     }
+    // Portfolio creation handling
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM fully loaded - setting up portfolio creation handlers');
+        
+        const automationId = '{{ automation.automation_id if automation else "" }}';
+        console.log('Automation ID:', automationId);
+        
+        if (!automationId) {
+            console.log('No automation ID found, skipping portfolio setup');
+            return; // Only run on automation detail page
+        }
+
+        const createPortfolioBtn = document.getElementById('createPortfolioBtn');
+        console.log('Create Portfolio button found:', !!createPortfolioBtn);
+        
+        const portfolioSelectionSection = document.getElementById('portfolio-selection-section');
+        console.log('Portfolio selection section found:', !!portfolioSelectionSection);
+        
+        // Only initialize if we're on a page with an automation and portfolio section
+        if (!createPortfolioBtn || !portfolioSelectionSection) {
+            console.log('Missing required elements, skipping portfolio setup');
+            return;
+        }
+        
+        // Now we know we have the necessary elements
+        console.log('Found all required elements, proceeding with setup');
+        
+        const createPortfolioModal = document.getElementById('createPortfolioModal');
+        console.log('Create Portfolio modal found:', !!createPortfolioModal);
+        
+        let portfolioModal;
+        try {
+            portfolioModal = new bootstrap.Modal(createPortfolioModal);
+            console.log('Bootstrap modal initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize Bootstrap modal:', error);
+        }
+        
+        const createPortfolioForm = document.getElementById('createPortfolioForm');
+        console.log('Create Portfolio form found:', !!createPortfolioForm);
+
+        // Function to create and show an info alert with clickable links
+        function showInstructionsAlert(message, containerId) {
+            console.log('Showing instructions alert in container:', containerId);
+            // Clear any existing alerts
+            const existingAlerts = document.querySelectorAll('.portfolio-instructions-alert');
+            existingAlerts.forEach(alert => alert.remove());
+            
+            // Create alert container
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-info portfolio-instructions-alert mb-3';
+            alertDiv.role = 'alert';
+            
+            // Create a title
+            const title = document.createElement('h5');
+            title.className = 'alert-heading';
+            title.textContent = 'Portfolio Setup Instructions';
+            alertDiv.appendChild(title);
+            
+            // Convert the message text to HTML with clickable links
+            const messageText = message
+                .replace('https://www.coinbase.com/advanced-portfolio', '<a href="https://www.coinbase.com/advanced-portfolio" target="_blank">https://www.coinbase.com/advanced-portfolio</a>')
+                .replace('https://www.coinbase.com/settings/api', '<a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a>');
+            
+            // Convert numbered list format to HTML
+            const lines = messageText.split('\n');
+            const messageHtml = document.createElement('div');
+            
+            if (lines.length > 1) {
+                const ol = document.createElement('ol');
+                lines.forEach(line => {
+                    if (line.trim()) {
+                        const match = line.match(/^\d+\.\s+(.*)/);
+                        if (match) {
+                            const li = document.createElement('li');
+                            li.innerHTML = match[1]; // Use innerHTML to render the anchor tags
+                            ol.appendChild(li);
+                        } else {
+                            const p = document.createElement('p');
+                            p.innerHTML = line;
+                            messageHtml.appendChild(p);
+                        }
+                    }
+                });
+                messageHtml.appendChild(ol);
+            } else {
+                messageHtml.innerHTML = messageText;
+            }
+            
+            alertDiv.appendChild(messageHtml);
+            
+            // Add a refresh button
+            const refreshButton = document.createElement('button');
+            refreshButton.className = 'btn btn-outline-primary mt-2';
+            refreshButton.innerHTML = '<i class="fas fa-sync-alt me-1"></i> Refresh List After Setup';
+            refreshButton.onclick = function() {
+                window.location.reload();
+            };
+            alertDiv.appendChild(refreshButton);
+            
+            // Get the container and insert the alert at the beginning
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.insertBefore(alertDiv, container.firstChild);
+                console.log('Alert added to container successfully');
+            } else {
+                console.error('Container not found:', containerId);
+            }
+        }
+
+        // Check for trading credentials on page load
+        async function checkTradingCredentials() {
+            console.log('Starting trading credentials check...');
+            
+            try {
+                console.log(`Calling API: /automation/${automationId}/check-trading-credentials`);
+                const response = await WebhookManager.fetchWithCSRF(`/automation/${automationId}/check-trading-credentials`);
+                console.log('API response received:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`API returned ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Trading credentials check response:', data);
+
+                if (data.needs_manual_setup) {
+                    console.log('No trading credentials found, hiding button and showing instructions');
+                    // Hide the "Create New Portfolio" button
+                    createPortfolioBtn.style.display = 'none';
+                    // Show instructions alert
+                    showInstructionsAlert(data.message, 'portfolio-selection-section');
+                } else if (data.success) {
+                    console.log('Trading credentials found, showing button');
+                    // Ensure button is visible
+                    createPortfolioBtn.style.display = 'inline-block';
+                    // Setup button click handler
+                    setupCreatePortfolioButton();
+                } else {
+                    console.error('Unexpected response format:', data);
+                }
+            } catch (error) {
+                console.error('Error checking trading credentials:', error);
+            }
+        }
+
+        // Set up event handler for the Create Portfolio button
+        function setupCreatePortfolioButton() {
+            console.log('Setting up click handler for Create Portfolio button');
+            
+            createPortfolioBtn.addEventListener('click', function(e) {
+                console.log('Create Portfolio button clicked');
+                e.preventDefault();
+                
+                if (portfolioModal) {
+                    console.log('Showing portfolio creation modal');
+                    portfolioModal.show();
+                } else {
+                    console.error('Cannot show modal - not initialized');
+                }
+            });
+            
+            console.log('Click handler attached successfully');
+        }
+
+        // Run the credentials check on page load
+        console.log('Running credentials check on page load');
+        checkTradingCredentials();
+
+        // Handle the form submission
+        if (createPortfolioForm) {
+            console.log('Setting up form submission handler');
+            
+            createPortfolioForm.addEventListener('submit', async function(e) {
+                console.log('Portfolio creation form submitted');
+                e.preventDefault();
+                
+                const portfolioName = document.getElementById('portfolioName').value.trim();
+                console.log('Portfolio name:', portfolioName);
+                
+                if (!portfolioName) {
+                    alert('Please enter a portfolio name');
+                    return;
+                }
+
+                try {
+                    console.log(`Submitting portfolio creation: ${portfolioName}`);
+                    const createResponse = await WebhookManager.fetchWithCSRF(
+                        `/automation/${automationId}/create-portfolio`,
+                        {
+                            method: 'POST',
+                            body: JSON.stringify({ name: portfolioName })
+                        }
+                    );
+
+                    console.log('Response status:', createResponse.status);
+                    const createData = await createResponse.json();
+                    console.log('Create portfolio response:', createData);
+
+                    if (createData.error) throw new Error(createData.error);
+
+                    // If manual setup is needed (shouldn't happen since we check first)
+                    if (createData.needs_manual_setup) {
+                        console.log('Manual setup needed (unexpected at this point)');
+                        portfolioModal.hide();
+                        showInstructionsAlert(createData.message, 'portfolio-selection-section');
+                        return;
+                    }
+
+                    // Handle successful portfolio creation
+                    console.log('Portfolio created successfully, updating UI');
+                    portfolioModal.hide();
+                    
+                    if (createData.success) {
+                        const select = document.getElementById('portfolio_id');
+                        const option = new Option(createData.portfolio.name, createData.portfolio.id);
+                        select.add(option);
+                        select.value = createData.portfolio.id;
+                        console.log('Added new portfolio to select:', createData.portfolio);
+                        
+                        // Simple success notification
+                        alert(`Portfolio "${createData.portfolio.name}" created successfully! You can now select it and click "Next" to continue.`);
+                    }
+                } catch (error) {
+                    console.error('Error in portfolio creation:', error);
+                    alert('Error creating portfolio: ' + error.message);
+                }
+            });
+            
+            console.log('Form submission handler set up successfully');
+        } else {
+            console.warn('Portfolio creation form not found');
+        }
+        
+        console.log('Portfolio creation setup complete');
+    });
 });
+{% if automation %}
+// Self-contained portfolio creation handling
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, setting up portfolio handlers');
+    
+    const automationId = '{{ automation.automation_id }}'; 
+    console.log('Automation ID:', automationId);
+    
+    // Find required elements
+    const createPortfolioBtn = document.getElementById('createPortfolioBtn');
+    console.log('Create Portfolio button:', createPortfolioBtn ? 'found' : 'not found');
+    
+    // If the button doesn't exist, we're done
+    if (!createPortfolioBtn) {
+        console.log('Create Portfolio button not found, exiting setup');
+        return;
+    }
+    
+    // Create bootstrap modal if possible
+    const createPortfolioModal = document.getElementById('createPortfolioModal');
+    console.log('Modal element:', createPortfolioModal ? 'found' : 'not found');
+    
+    let portfolioModal;
+    if (createPortfolioModal && typeof bootstrap !== 'undefined') {
+        portfolioModal = new bootstrap.Modal(createPortfolioModal);
+        console.log('Bootstrap modal initialized');
+    } else {
+        console.log('Bootstrap not available or modal element not found');
+    }
+    
+    // Function to show instruction alert
+    function showInstructions(message) {
+        console.log('Showing instructions alert');
+        
+        // Remove any existing alerts
+        const existingAlerts = document.querySelectorAll('.portfolio-instructions-alert');
+        existingAlerts.forEach(alert => alert.remove());
+        
+        // Create new alert
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-info portfolio-instructions-alert mb-3';
+        alertDiv.innerHTML = `
+            <h5 class="alert-heading">Portfolio Setup Instructions</h5>
+            <ol>
+                <li>Go to <a href="https://www.coinbase.com/advanced-portfolio" target="_blank">https://www.coinbase.com/advanced-portfolio</a></li>
+                <li>Click "New Portfolio" and create your portfolio</li>
+                <li>Return here, refresh the list, and select your new portfolio</li>
+            </ol>
+            <button class="btn btn-outline-primary mt-2 refresh-btn">
+                <i class="fas fa-sync-alt me-1"></i> Refresh List After Setup
+            </button>
+        `;
+        
+        // Add refresh button handler
+        const refreshBtn = alertDiv.querySelector('.refresh-btn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', function() {
+                window.location.reload();
+            });
+        }
+        
+        // Insert the alert before the form
+        const container = document.querySelector('#portfolio-selection-section');
+        if (container) {
+            container.insertBefore(alertDiv, container.firstChild);
+            console.log('Alert added to container');
+        }
+    }
+    
+    // Function to check trading credentials
+    async function checkTradingCredentials() {
+        console.log('Checking trading credentials');
+        
+        try {
+            const url = `/automation/${automationId}/check-trading-credentials`;
+            console.log('Fetching URL:', url);
+            
+            // Use the WebhookManager if available, otherwise use fetch
+            const fetchFunction = (typeof WebhookManager !== 'undefined') ? 
+                WebhookManager.fetchWithCSRF : 
+                function(url) { return fetch(url); };
+            
+            const response = await fetchFunction(url);
+            console.log('Response status:', response.status);
+            
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            console.log('Credential check response:', data);
+            
+            if (data.needs_manual_setup) {
+                console.log('No trading credentials found');
+                createPortfolioBtn.style.display = 'none';
+                showInstructions(data.message);
+            } else {
+                console.log('Trading credentials found');
+                createPortfolioBtn.style.display = 'inline-block';
+                
+                // Add click handler for create button
+                createPortfolioBtn.addEventListener('click', function(e) {
+                    console.log('Create Portfolio button clicked');
+                    e.preventDefault();
+                    if (portfolioModal) {
+                        portfolioModal.show();
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Error checking trading credentials:', error);
+        }
+    }
+    
+    // Start the check
+    console.log('Starting credential check');
+    checkTradingCredentials();
+});
+{% endif %}
 </script>
+
 
 {% if automation %}
     <script type="text/babel">

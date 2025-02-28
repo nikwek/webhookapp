@@ -103,7 +103,6 @@ def get_coinbase_portfolios(user_id):
         
         # Process each portfolio
         for p in portfolios_list:
-            logger.info(f"Processing portfolio item: {p}")
             
             # Check if p is a dict or an object
             if isinstance(p, dict):
@@ -118,14 +117,10 @@ def get_coinbase_portfolios(user_id):
             
             # Skip deleted portfolios and Default portfolio
             if deleted or portfolio_name == 'Default':
-                logger.info(f"Skipping portfolio {portfolio_name} (deleted={deleted})")
                 continue
                 
             if not portfolio_id or not portfolio_name:
-                logger.warning(f"Missing portfolio ID or name in portfolio object")
                 continue
-                
-            logger.info(f"Processing portfolio: {portfolio_name} ({portfolio_id})")
                 
             # Check if portfolio exists in database
             db_portfolio = Portfolio.query.filter_by(
@@ -135,7 +130,6 @@ def get_coinbase_portfolios(user_id):
             
             if not db_portfolio:
                 # Create new portfolio
-                logger.info(f"Creating new portfolio record for {portfolio_name}")
                 db_portfolio = Portfolio(
                     portfolio_id=portfolio_id,
                     name=portfolio_name,
@@ -143,7 +137,6 @@ def get_coinbase_portfolios(user_id):
                 )
                 db.session.add(db_portfolio)
                 db.session.commit()
-                logger.info(f"Created portfolio with ID: {db_portfolio.id}")
             else:
                 logger.info(f"Found existing portfolio record with ID: {db_portfolio.id}")
             
@@ -214,6 +207,146 @@ def view_automation(automation_id):
         selected_portfolio=selected_portfolio,
         show_api_form=show_api_form
     )
+
+@bp.route('/automation/<automation_id>/create-portfolio', methods=['POST'])
+@api_login_required
+def create_portfolio(automation_id):
+    try:
+        logger.info(f"Starting portfolio creation for automation {automation_id}")
+        data = request.get_json()
+        portfolio_name = data.get('name')
+        
+        logger.info(f"Portfolio name from request: {portfolio_name}")
+        
+        if not portfolio_name:
+            logger.error("Missing portfolio name in request")
+            return jsonify({"error": "Portfolio name is required"}), 400
+            
+        # Try to find existing trading credentials (non-default)
+        logger.info(f"Searching for trading credentials for user {current_user.id}")
+        trading_creds = ExchangeCredentials.query.filter(
+            ExchangeCredentials.user_id == current_user.id,
+            ExchangeCredentials.exchange == 'coinbase',
+            ExchangeCredentials.portfolio_name != 'default',
+            ExchangeCredentials.is_default.is_(False)
+        ).first()
+        
+        # Log more detailed information about what we found
+        if trading_creds:
+            logger.info(f"Found trading credentials: id={trading_creds.id}, portfolio={trading_creds.portfolio_name}")
+        else:
+            default_creds = ExchangeCredentials.query.filter(
+                ExchangeCredentials.user_id == current_user.id,
+                ExchangeCredentials.exchange == 'coinbase',
+                ExchangeCredentials.portfolio_name == 'default'
+            ).first()
+            
+            if default_creds:
+                logger.info(f"User only has default credentials: id={default_creds.id}")
+            else:
+                logger.info("User has no credentials at all")
+        
+        if not trading_creds:
+            logger.info("No trading credentials found, will require manual setup")
+            # No trading credentials available, guide user through manual creation
+            # Return a structured response that will be shown in an alert rather than a modal
+            return jsonify({
+                "success": False,
+                "needs_manual_setup": True,
+                "message": "First Time Portfolio Setup:\n" +
+                          "1. Go to https://www.coinbase.com/advanced-portfolio\n" +
+                          "2. Click 'New Portfolio' and create your portfolio\n" +
+                          "3. Go to https://www.coinbase.com/settings/api\n" +
+                          "4. Create API keys with View and Trade permissions\n" +
+                          "5. Return here, refresh the list, and select your new portfolio"
+            }), 200
+            
+        # If we have trading credentials, attempt to create portfolio
+        logger.info(f"Using trading credentials for {trading_creds.portfolio_name} to create portfolio")
+        client = RESTClient(api_key=trading_creds.api_key, 
+                          api_secret=trading_creds.decrypt_secret())
+        
+        logger.info(f"Calling Coinbase API to create portfolio: {portfolio_name}")
+        response = client.create_portfolio(name=portfolio_name)
+        logger.info(f"Create portfolio API response: {response}")
+        
+        # Handle the response correctly based on its structure
+        portfolio_uuid = None
+        
+        # If response is a dictionary with a 'portfolio' key
+        if isinstance(response, dict) and 'portfolio' in response:
+            logger.info("Response is a dictionary with 'portfolio' key")
+            portfolio_uuid = response['portfolio'].get('uuid')
+            
+        # If response is an object with a 'portfolio' attribute
+        elif hasattr(response, 'portfolio'):
+            logger.info("Response is an object with 'portfolio' attribute")
+            portfolio_data = response.portfolio
+            
+            # Check if portfolio is a dict or object
+            if isinstance(portfolio_data, dict):
+                portfolio_uuid = portfolio_data.get('uuid')
+            elif hasattr(portfolio_data, 'uuid'):
+                portfolio_uuid = portfolio_data.uuid
+                
+        # Last resort - try to check if 'uuid' is directly in the response
+        elif hasattr(response, 'uuid'):
+            logger.info("Response has 'uuid' attribute directly")
+            portfolio_uuid = response.uuid
+            
+        # Convert to dict as last resort
+        else:
+            try:
+                response_dict = vars(response)
+                logger.info(f"Converted response to dict: {response_dict}")
+                
+                if 'portfolio' in response_dict:
+                    portfolio_data = response_dict['portfolio']
+                    
+                    if isinstance(portfolio_data, dict):
+                        portfolio_uuid = portfolio_data.get('uuid')
+                    elif hasattr(portfolio_data, 'uuid'):
+                        portfolio_uuid = portfolio_data.uuid
+            except:
+                # Final attempt - try to access attributes directly
+                try:
+                    all_attrs = {attr: getattr(response, attr) for attr in dir(response) 
+                               if not attr.startswith('_') and not callable(getattr(response, attr))}
+                    logger.info(f"Response attributes: {all_attrs}")
+                except Exception as e:
+                    logger.error(f"Failed to inspect response attributes: {str(e)}")
+        
+        if not portfolio_uuid:
+            logger.error("Failed to extract UUID from response")
+            return jsonify({"error": "Could not extract portfolio UUID from response"}), 500
+            
+        logger.info(f"Successfully extracted portfolio UUID: {portfolio_uuid}")
+        
+        # Create portfolio record in database
+        portfolio = Portfolio(
+            portfolio_id=portfolio_uuid,
+            name=portfolio_name,
+            user_id=current_user.id,
+            exchange='coinbase'
+        )
+        db.session.add(portfolio)
+        db.session.commit()
+        logger.info(f"Created portfolio record in database with ID: {portfolio.id}")
+        
+        return jsonify({
+            "success": True,
+            "portfolio": {
+                "id": portfolio.id,
+                "name": portfolio.name,
+                "portfolio_id": portfolio.portfolio_id
+            }
+        })
+            
+    except Exception as e:
+        logger.error(f"Error creating portfolio: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
 
 @bp.route('/automation/<automation_id>/select-portfolio', methods=['POST'])
 @api_login_required
@@ -581,3 +714,61 @@ def set_default_credentials():
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)})
+
+@bp.route('/automation/<automation_id>/check-trading-credentials')
+@api_login_required
+def check_trading_credentials(automation_id):
+    """Check if user has trading credentials before showing portfolio creation modal"""
+    try:
+        logger.info(f"Checking trading credentials for user {current_user.id}")
+        
+        # Try to find existing trading credentials that match ALL of these conditions:
+        # 1. Not named 'default'
+        # 2. is_default flag is False
+        # 3. Has the necessary permissions for trading (implied by the above)
+        trading_creds = ExchangeCredentials.query.filter(
+            ExchangeCredentials.user_id == current_user.id,
+            ExchangeCredentials.exchange == 'coinbase',
+            ExchangeCredentials.portfolio_name != 'default',
+            ExchangeCredentials.is_default.is_(False)
+        ).first()
+        
+        # Log what we found for debugging
+        if trading_creds:
+            logger.info(f"Found trading credentials: id={trading_creds.id}, portfolio_name={trading_creds.portfolio_name}")
+        else:
+            # Check if user only has default credentials
+            default_creds = ExchangeCredentials.query.filter(
+                ExchangeCredentials.user_id == current_user.id,
+                ExchangeCredentials.exchange == 'coinbase',
+                ExchangeCredentials.portfolio_name == 'default'
+            ).first()
+            
+            if default_creds:
+                logger.info("User only has default credentials, needs to create trading credentials")
+            else:
+                logger.info("User has no credentials at all")
+        
+        # If no trading credentials, guide user through setup
+        if not trading_creds:
+            logger.info("No trading credentials found, returning manual setup instructions")
+            return jsonify({
+                "success": False,
+                "needs_manual_setup": True,
+                "message": "First Time Portfolio Setup:\n" +
+                          "1. Go to https://www.coinbase.com/advanced-portfolio\n" +
+                          "2. Click 'New Portfolio' and create your portfolio\n" +
+                          "3. Go to https://www.coinbase.com/settings/api\n" +
+                          "4. Create API keys with View and Trade permissions\n" +
+                          "5. Return here, refresh the list, and select your new portfolio"
+            }), 200
+
+        logger.info("Trading credentials found, user can create portfolio")
+        return jsonify({
+            "success": True,
+            "has_trading_credentials": True
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error checking trading credentials: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500

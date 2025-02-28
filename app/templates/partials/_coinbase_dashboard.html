@@ -23,12 +23,12 @@
             <div id="coinbaseData" class="d-none">
                 <div class="row">
                     <div class="col-md-12 mb-3">
-                        <h5>Available Portfolios</h5>
                         <div class="table-responsive">
                             <table class="table table-sm" id="coinbasePortfoliosTable">
                                 <thead>
                                     <tr>
-                                        <th>Portfolio Name</th>
+                                        <th>Portfolio</th>
+                                        <th>Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -87,10 +87,19 @@ function loadCoinbaseData() {
                 portfoliosTable.innerHTML = '';
 
                 const portfolios = data.portfolios;
-                portfolios.forEach(portfolioName => {
+                portfolios.forEach(portfolio => {
                     const row = portfoliosTable.insertRow();
+                    
+                    // Portfolio name cell
                     const cellName = row.insertCell(0);
-                    cellName.textContent = portfolioName;
+                    cellName.textContent = portfolio.name;
+                    
+                    // Connection status cell
+                    const cellStatus = row.insertCell(1);
+                    const badge = document.createElement('span');
+                    badge.className = `badge ${portfolio.is_connected ? 'bg-success' : 'bg-secondary'}`;
+                    badge.textContent = portfolio.is_connected ? 'Connected' : 'Not Connected';
+                    cellStatus.appendChild(badge);
                 });
 
                 // If no portfolios found, show a message

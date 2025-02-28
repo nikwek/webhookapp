@@ -20,3 +20,10 @@ class Portfolio(db.Model):
         self.name = name
         self.user_id = user_id
         self.exchange = exchange
+
+    def is_connected(self):
+        """Check if portfolio has any active automation connections"""
+        return bool(ExchangeCredentials.query.filter_by(
+            portfolio_id=self.id,
+            exchange='coinbase'
+        ).first())

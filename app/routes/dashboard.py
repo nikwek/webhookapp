@@ -6,6 +6,7 @@ from flask_login import login_required, current_user
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
 from app.models.exchange_credentials import ExchangeCredentials
+from app.models.portfolio import Portfolio 
 from app.forms import CoinbaseAPIKeyForm
 from app import db
 import coinbase.rest
@@ -53,6 +54,37 @@ def get_logs():
     except Exception as e:
         print(f"Error getting logs: {str(e)}")
         return jsonify({"error": str(e)}), 500
+    
+@bp.route('/api/coinbase/portfolios')
+@login_required
+def get_coinbase_portfolios():
+    try:
+        # Get portfolios from database
+        db_portfolios = Portfolio.query.filter_by(
+            user_id=current_user.id
+        ).all()
+        
+        # Create portfolio data with connection status
+        portfolio_data = [{
+            'id': p.id,
+            'name': p.name,
+            'portfolio_id': p.portfolio_id,
+            'exchange': p.exchange,
+            'is_connected': bool(ExchangeCredentials.query.filter_by(
+                portfolio_id=p.id,
+                exchange='coinbase'
+            ).first())
+        } for p in db_portfolios]
+        
+        return jsonify({
+            'has_credentials': True,
+            'portfolios': portfolio_data
+        })
+    except Exception as e:
+        return jsonify({
+            'has_credentials': False,
+            'error': str(e)
+        })
 
 
 @bp.route('/clear-logs', methods=['POST'])
@@ -118,7 +150,8 @@ def settings():
                     exchange='coinbase',
                     portfolio_name='default',
                     api_key=api_key,
-                    api_secret=api_secret
+                    api_secret=api_secret,
+                    is_default=True
                 )
                 db.session.add(coinbase_creds)
             

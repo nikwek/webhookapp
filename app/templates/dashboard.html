@@ -4,14 +4,17 @@
 
 {% block content %}
 <div class="container mt-4">
-
+    {% if not has_coinbase_keys %}
     <div class="row mb-4">
         <div class="col-md-12">
-            <!-- Include Coinbase account information component -->
-            {% include 'partials/_coinbase_dashboard.html' %}
+            <div class="alert alert-warning">
+                <h5><i class="fas fa-exclamation-triangle me-2"></i> Coinbase API Keys Required</h5>
+                <p>So that we can query your Coinbase portfolios, you need to set up your read-only API keys first.</p>
+                <a href="{{ url_for('dashboard.settings') }}" class="btn btn-primary">Set Up API Keys</a>
+            </div>
         </div>
     </div>
-
+    {% endif %}
     <div class="row">
         <div class="col-md-12">
             <div class="automations-container mb-4">
@@ -22,6 +25,13 @@
                     </div>
                     <div class="card-body p-0">
                         <table class="table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Automation Name</th>
+                                    <th>Connected Portfolio</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
                             <tbody>
                                 {% if automations %}
                                     {% for automation in automations %}
@@ -29,14 +39,21 @@
                                         data-automation-id="{{ automation.automation_id }}">
                                         <td>
                                             <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
-                                               class="text-decoration-none ps-3"
-                                               style="color: #2c3e50; font-weight: 500; font-size: 1.1em;">
+                                            class="text-decoration-none ps-3"
+                                            style="color: #2c3e50; font-weight: 500; font-size: 1.1em;">
                                                 {{ automation.name }}
                                             </a>
                                         </td>
+                                        <td style="font-size: 1.1em;">
+                                            {% if automation.portfolio_name %}
+                                                <span style="color: #2c3e50; font-weight: 500;">{{ automation.portfolio_name }}</span>
+                                            {% else %}
+                                                <span class="text-muted fst-italic small">Not Connected</span>
+                                            {% endif %}
+                                        </td>
                                         <td class="text-end">
                                             <a href="{{ url_for('automation.view_automation', automation_id=automation.automation_id) }}" 
-                                               class="btn btn-sm btn-secondary">
+                                            class="btn btn-sm btn-secondary">
                                                 Edit
                                             </a>
                                             <button class="btn btn-sm status-button {% if automation.is_active %}btn-success{% else %}btn-danger{% endif %}" 
@@ -49,7 +66,7 @@
                                     {% endfor %}
                                 {% else %}
                                     <tr>
-                                        <td colspan="2" class="text-center py-4">
+                                        <td colspan="3" class="text-center py-4">
                                             No automations found. Create one to get started!
                                         </td>
                                     </tr>

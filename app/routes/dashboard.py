@@ -22,12 +22,26 @@ def dashboard():
         return redirect(url_for('admin.users'))
 
     user_id = current_user.id
-    automations = Automation.query.filter_by(user_id=user_id).all()
-
-    # Generate webhook URLs for each automation
-    base_url = request.url_root.rstrip('/')
-    for automation in automations:
-        automation.webhook_url = f"{base_url}/webhook?automation_id={automation.automation_id}"
+    
+    # Get automations with portfolio details using a join
+    automations_query = (
+        Automation.query
+        .outerjoin(Portfolio, Automation.portfolio_id == Portfolio.id)
+        .filter(Automation.user_id == user_id)
+        .add_columns(Portfolio.name.label('portfolio_name'))
+        .all()
+    )
+    
+    # Process the results into a format suitable for the template
+    automations = []
+    for result in automations_query:
+        automation = result[0]  # The Automation object
+        # Generate webhook URL for each automation
+        automation.webhook_url = f"{request.url_root.rstrip('/')}/webhook?automation_id={automation.automation_id}"
+        
+        # Add the portfolio name to the automation object
+        automation.portfolio_name = result[1]  # The Portfolio.name value
+        automations.append(automation)
 
     # Check if user has Coinbase API keys
     has_coinbase_keys = ExchangeCredentials.query.filter_by(

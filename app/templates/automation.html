@@ -220,7 +220,7 @@
                             <div class="trading-pair-select mb-3" id="trading-pair-select">
                                 <input type="text" class="form-control" id="trading-pair-input" 
                                     placeholder="Start typing (e.g. BTC-USD, ETH-USDT)" 
-                                    value="{{ automation.trading_pair }}" autocomplete="off">
+                                    value="{{ automation.trading_pair or '' }}" autocomplete="off">
                                 <input type="hidden" id="trading_pair" name="trading_pair" value="{{ automation.trading_pair }}">
                                 <div class="trading-pair-results" id="trading-pair-results"></div>
                             </div>
@@ -385,12 +385,23 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        if (!window.tradingPairs || !Array.isArray(window.tradingPairs)) {
+            console.error('Trading pairs not available:', window.tradingPairs);
+            return;
+        }
+
         const term = searchTerm.toUpperCase();
-        const filteredPairs = window.tradingPairs.filter(pair => 
-            pair.product_id.toUpperCase().includes(term) ||
-            pair.base_currency.toUpperCase().includes(term) ||
-            pair.quote_currency.toUpperCase().includes(term)
-        ).slice(0, 10); // Limit to 10 results
+        const filteredPairs = window.tradingPairs
+            .filter(pair => {
+                if (!pair || !pair.product_id) {
+                    console.error('Invalid pair object:', pair);
+                    return false;
+                }
+                return pair.product_id.toUpperCase().includes(term) ||
+                    (pair.base_currency && pair.base_currency.toUpperCase().includes(term)) ||
+                    (pair.quote_currency && pair.quote_currency.toUpperCase().includes(term));
+            })
+            .slice(0, 10); // Limit to 10 results
         
         // Display results
         resultsElement.innerHTML = '';

@@ -1,29 +1,35 @@
 # app/models/automation.py
-import secrets
+import uuid
+from datetime import datetime
 from app import db
-from datetime import datetime, timezone
+import json
 
 class Automation(db.Model):
     __tablename__ = 'automations'
     
     id = db.Column(db.Integer, primary_key=True)
-    automation_id = db.Column(db.String(32), unique=True, nullable=False)
+    automation_id = db.Column(db.String(40), unique=True, index=True)
+    user_id = db.Column(db.Integer)
     name = db.Column(db.String(100), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    portfolio_id = db.Column(db.Integer, db.ForeignKey('portfolios.id'), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
-    last_run = db.Column(db.DateTime, default=None)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    template = db.Column(db.JSON, default={})
-
-    # Add the relationships
-    user = db.relationship('User', backref=db.backref('automations', lazy=True))
-    # Define the relationship to Portfolio without circular backref
-    portfolio = db.relationship('Portfolio', backref=db.backref('automations', lazy=True))
-
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_run = db.Column(db.DateTime, nullable=True)
+    portfolio_id = db.Column(db.Integer, nullable=True)
+    # Add trading pair field
+    trading_pair = db.Column(db.String(20), nullable=True)
+    _template = db.Column(db.Text, default='{}')
+    
     @staticmethod
     def generate_automation_id():
-        while True:
-            automation_id = secrets.token_urlsafe(6)[:8]
-            if not Automation.query.filter_by(automation_id=automation_id).first():
-                return automation_id
+        return str(uuid.uuid4())
+    
+    @property
+    def template(self):
+        if self._template:
+            return json.loads(self._template)
+        return {}
+    
+    @template.setter
+    def template(self, template):
+        self._template = json.dumps(template)

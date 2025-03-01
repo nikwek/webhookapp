@@ -2,6 +2,11 @@
 
 {% block title %}{% if automation %}{{ automation.name }}{% else %}New Automation{% endif %} - Webhook Manager{% endblock %}
 
+{% block styles %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/trading-pair-selector.css') }}">
+{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -53,7 +58,7 @@
             </form>
             {% else %}
             <div id="automationDetails">
-                <!-- Connected Portfolio Section -->
+                <!-- Portfolio Section -->
                 {% if portfolio %}
                 <!-- Portfolio is already connected -->
                 <div class="card mb-4">
@@ -76,6 +81,7 @@
                         </div>
                     </div>
                 </div>
+                
                 {% else %}
                 <!-- No portfolio connected yet -->
                 <div class="card mb-4">
@@ -200,21 +206,50 @@
                             </form>
                         </div>
                     </div>
+
                 </div>
                 {% endif %}
-
-                <h5>Webhook URL</h5>
-                <div class="input-group mb-4">
-                    <input type="text" 
-                           class="form-control font-monospace" 
-                           value="{{ request.url_root }}webhook?automation_id={{ automation.automation_id }}" 
-                           readonly>
-                    <button class="btn btn-outline-secondary copy-url" type="button">Copy</button>
+                <div class="card mb-4">    
+                <!-- Trading Pair Section -->
+                <div class="card mb-4">    
+                    <div class="card-header">
+                        <h5 class="mb-0">Trading Pair</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="trading-pair-selection">
+                            <div class="trading-pair-select mb-3" id="trading-pair-select">
+                                <input type="text" class="form-control" id="trading-pair-input" 
+                                    placeholder="Start typing (e.g. BTC-USD, ETH-USDT)" 
+                                    value="{{ automation.trading_pair }}" autocomplete="off">
+                                <input type="hidden" id="trading_pair" name="trading_pair" value="{{ automation.trading_pair }}">
+                                <div class="trading-pair-results" id="trading-pair-results"></div>
+                            </div>
+                            <small class="form-text text-muted">
+                                Select the trading pair for this automation. This determines which assets will be traded.
+                            </small>
+                        </div>
+                    </div>
+                </div>
                 </div>
 
-                <h5>Template</h5>
-                <div class="position-relative bg-light rounded mb-4">
-                    <pre class="p-3 mb-0"><code class="language-json">{% raw %}{
+                <div class="card mb-4">    
+                    <!-- TradingView Setup Section -->
+                    <div class="card-header">
+                        <h5 class="mb-0">TradingView Alert Setup</h5>
+                    </div>
+                    <div class="card-body">
+                        <h5>Webhook URL</h5>
+                        <div class="input-group mb-4">
+                            <input type="text" 
+                                class="form-control font-monospace" 
+                                value="{{ request.url_root }}webhook?automation_id={{ automation.automation_id }}" 
+                                readonly>
+                            <button class="btn btn-outline-secondary copy-url" type="button">Copy</button>
+                        </div>
+                
+                        <h5>Template</h5>
+                        <div class="position-relative bg-light rounded mb-4">
+                            <pre class="p-3 mb-0"><code class="language-json">{% raw %}{
     "action": "{{strategy.order.action}}",
     "ticker": "{{ticker}}",
     "order_size": "100%",
@@ -222,11 +257,12 @@
     "schema": "2",
     "timestamp": "{{time}}"
 }{% endraw %}</code></pre>
-                    <button class="btn btn-sm btn-secondary position-absolute top-0 end-0 m-2 copy-template">
-                        Copy
-                    </button>
+                            <button class="btn btn-sm btn-secondary position-absolute top-0 end-0 m-2 copy-template">
+                                Copy
+                            </button>
+                        </div>
+                    </div>
                 </div>
-            </div>
             {% endif %}
         </div>
     </div>
@@ -242,6 +278,182 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const automationId = '{{ automation.automation_id if automation }}';
+
+        // Global variable to store trading pairs data
+        window.tradingPairs = [];
+    
+    // Get elements for the trading pair editor in the portfolio selection form
+    const tradingPairSelect = document.getElementById('trading-pair-select');
+    const tradingPairInput = document.getElementById('trading-pair-input');
+    const tradingPairResults = document.getElementById('trading-pair-results');
+    const tradingPairHidden = document.getElementById('trading_pair');
+    
+    // For connected portfolio - modal for changing trading pair
+    const changeTradingPairBtn = document.getElementById('changeTradingPairBtn');
+    const addTradingPairBtn = document.getElementById('addTradingPairBtn');
+    const tradingPairModal = document.getElementById('tradingPairModal');
+    const modalTradingPairInput = document.getElementById('modal-trading-pair-input');
+    const modalTradingPairHidden = document.getElementById('modal-trading_pair');
+    const modalTradingPairResults = document.getElementById('modal-trading-pair-results');
+    const saveTradingPairBtn = document.getElementById('saveTradingPairBtn');
+    
+    let tradingPairModalInstance = null;
+    
+    // Initialize the modal if it exists
+    if (tradingPairModal && typeof bootstrap !== 'undefined') {
+        tradingPairModalInstance = new bootstrap.Modal(tradingPairModal);
+        
+        // Set up buttons to open the modal
+        if (changeTradingPairBtn) {
+            changeTradingPairBtn.addEventListener('click', function() {
+                tradingPairModalInstance.show();
+            });
+        }
+        
+        if (addTradingPairBtn) {
+            addTradingPairBtn.addEventListener('click', function() {
+                tradingPairModalInstance.show();
+            });
+        }
+        
+        // Set up save button
+        if (saveTradingPairBtn) {
+            saveTradingPairBtn.addEventListener('click', async function() {
+                await saveTradingPair(modalTradingPairHidden.value);
+                tradingPairModalInstance.hide();
+            });
+        }
+    }
+    
+    // Fetch trading pairs from API
+    async function fetchTradingPairs() {
+        try {
+            console.log('Fetching trading pairs...');
+            const response = await fetch('/api/coinbase/trading-pairs');
+            const data = await response.json();
+            
+            if (data.success) {
+                console.log(`Retrieved ${data.trading_pairs.length} trading pairs`);
+                window.tradingPairs = data.trading_pairs;
+                return data.trading_pairs;
+            } else {
+                console.error('Failed to fetch trading pairs:', data.message);
+                return [];
+            }
+        } catch (error) {
+            console.error('Error fetching trading pairs:', error);
+            return [];
+        }
+    }
+    
+    // Save trading pair via API
+    async function saveTradingPair(tradingPair) {
+        if (!tradingPair) {
+            alert('Please select a trading pair');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/automation/${automationId}/trading-pair`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                },
+                body: JSON.stringify({ trading_pair: tradingPair })
+            });
+            
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            // Reload page to reflect changes
+            window.location.reload();
+            
+        } catch (error) {
+            console.error('Error saving trading pair:', error);
+            alert(`Error saving trading pair: ${error.message}`);
+        }
+    }
+    
+    // Filter trading pairs based on search
+    function filterTradingPairs(searchTerm, resultsElement) {
+        if (!searchTerm) {
+            resultsElement.innerHTML = '';
+            resultsElement.style.display = 'none';
+            return;
+        }
+        
+        const term = searchTerm.toUpperCase();
+        const filteredPairs = window.tradingPairs.filter(pair => 
+            pair.product_id.toUpperCase().includes(term) ||
+            pair.base_currency.toUpperCase().includes(term) ||
+            pair.quote_currency.toUpperCase().includes(term)
+        ).slice(0, 10); // Limit to 10 results
+        
+        // Display results
+        resultsElement.innerHTML = '';
+        resultsElement.style.display = filteredPairs.length ? 'block' : 'none';
+        
+        filteredPairs.forEach(pair => {
+            const item = document.createElement('div');
+            item.className = 'dropdown-item';
+            item.textContent = pair.product_id;
+            item.addEventListener('click', () => {
+                const input = resultsElement.id === 'trading-pair-results' ? 
+                    tradingPairInput : modalTradingPairInput;
+                const hidden = resultsElement.id === 'trading-pair-results' ? 
+                    tradingPairHidden : modalTradingPairHidden;
+                
+                input.value = pair.product_id;
+                hidden.value = pair.product_id;
+                resultsElement.style.display = 'none';
+            });
+            resultsElement.appendChild(item);
+        });
+    }
+    
+    // Set up event listeners for the main form
+    if (tradingPairInput && tradingPairResults) {
+        tradingPairInput.addEventListener('input', function() {
+            filterTradingPairs(this.value, tradingPairResults);
+        });
+        
+        tradingPairInput.addEventListener('focus', function() {
+            if (this.value) {
+                filterTradingPairs(this.value, tradingPairResults);
+            }
+        });
+        
+        document.addEventListener('click', function(e) {
+            if (!tradingPairSelect.contains(e.target)) {
+                tradingPairResults.style.display = 'none';
+            }
+        });
+    }
+    
+    // Set up event listeners for the modal
+    if (modalTradingPairInput && modalTradingPairResults) {
+        modalTradingPairInput.addEventListener('input', function() {
+            filterTradingPairs(this.value, modalTradingPairResults);
+        });
+        
+        modalTradingPairInput.addEventListener('focus', function() {
+            if (this.value) {
+                filterTradingPairs(this.value, modalTradingPairResults);
+            }
+        });
+        
+        document.addEventListener('click', function(e) {
+            if (!document.getElementById('modal-trading-pair-select').contains(e.target)) {
+                modalTradingPairResults.style.display = 'none';
+            }
+        });
+    }
+    
+    // Load trading pairs on page load
+    fetchTradingPairs();
 
     // Initialize copy buttons
     document.querySelectorAll('.copy-url, .copy-template').forEach(button => {

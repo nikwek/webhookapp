@@ -16,6 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 bp = Blueprint('automation', __name__)
 
+
 def api_login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -25,12 +26,14 @@ def api_login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+
 def get_user_automation(automation_id):
     """Helper function to get an automation for the current user"""
     return Automation.query.filter_by(
         automation_id=automation_id,
         user_id=session['user_id']
     ).first()
+
 
 def get_coinbase_portfolios(user_id):
     """Helper function to get portfolios directly from Coinbase using the SDK"""
@@ -455,7 +458,9 @@ def create_automation():
         automation = Automation(
             automation_id=Automation.generate_automation_id(),
             name=data.get('name'),
-            user_id=session['user_id']
+            user_id=session['user_id'],
+            # Add trading pair if provided
+            trading_pair=data.get('trading_pair')
         )
         db.session.add(automation)
         
@@ -474,7 +479,8 @@ def create_automation():
         return jsonify({
             "automation_id": automation.automation_id,
             "webhook_url": f"{request.url_root}webhook?automation_id={automation.automation_id}",
-            "template": template
+            "template": template,
+            "trading_pair": automation.trading_pair
         })
     except Exception as e:
         logger.error(f"Error creating automation: {e}")
@@ -492,11 +498,24 @@ def update_automation(automation_id):
         data = request.get_json()
         if 'name' in data:
             automation.name = data['name']
+        
+        # Add handling for trading_pair updates
+        if 'trading_pair' in data:
+            automation.trading_pair = data['trading_pair']
+            logger.info(f"Updated trading pair to {data['trading_pair']} for automation {automation_id}")
             
         db.session.commit()
-        return jsonify({"success": True})
+        return jsonify({
+            "success": True,
+            "automation": {
+                "id": automation.id,
+                "name": automation.name,
+                "trading_pair": automation.trading_pair
+            }
+        })
     except Exception as e:
         db.session.rollback()
+        logger.error(f"Error updating automation: {e}")
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/automation/<automation_id>/status', methods=['PUT'])
@@ -771,4 +790,45 @@ def check_trading_credentials(automation_id):
 
     except Exception as e:
         logger.error(f"Error checking trading credentials: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/automation/<automation_id>/trading-pair', methods=['POST'])
+@api_login_required
+def set_trading_pair(automation_id):
+    try:
+        automation = get_user_automation(automation_id)
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        data = request.get_json()
+        if not data or 'trading_pair' not in data:
+            return jsonify({"error": "Missing required field: trading_pair"}), 400
+            
+        trading_pair = data['trading_pair']
+        
+        # Validate trading pair format (optional) - simple validation
+        if not isinstance(trading_pair, str) or '-' not in trading_pair:
+            return jsonify({
+                "error": "Invalid trading pair format. Expected format: BTC-USD"
+            }), 400
+            
+        # Update the automation with the trading pair
+        automation.trading_pair = trading_pair
+        db.session.commit()
+        
+        logger.info(f"Set trading pair to {trading_pair} for automation {automation_id}")
+        
+        return jsonify({
+            "success": True,
+            "message": f"Trading pair updated to {trading_pair}",
+            "automation": {
+                "id": automation.id,
+                "name": automation.name,
+                "trading_pair": automation.trading_pair
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error setting trading pair: {e}")
         return jsonify({"error": str(e)}), 500

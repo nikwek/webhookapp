@@ -90,6 +90,89 @@ class CoinbaseService:
             logger.error(f"Error getting portfolio info: {e}")
             return None
 
+@staticmethod
+def get_trading_pairs(user_id):
+    """
+    Get all available trading pairs from Coinbase
+    
+    Args:
+        user_id (int): User ID
+        
+    Returns:
+        list: List of trading pairs (product_id values)
+    """
+    client = CoinbaseService.get_client(user_id)
+    if not client:
+        logger.error(f"Could not get Coinbase client for user {user_id}")
+        return []
+        
+    try:
+        logger.info(f"Fetching trading pairs for user {user_id}")
+        response = client.get_products()
+        
+        # Initialize trading_pairs list
+        trading_pairs = []
+        
+        # Get products from the response
+        products = None
+        if isinstance(response, dict) and 'products' in response:
+            # Direct dictionary format
+            products = response['products']
+            logger.info(f"Found {len(products)} products in response dictionary")
+        elif hasattr(response, 'products'):
+            # Object with products attribute
+            products = response.products
+            logger.info(f"Found {len(products)} products using .products attribute")
+        else:
+            # Try to convert response to dict if it's a custom object
+            try:
+                response_dict = vars(response)
+                if 'products' in response_dict:
+                    products = response_dict['products']
+                    logger.info(f"Found {len(products)} products using vars(response)")
+            except Exception as e:
+                logger.error(f"Could not extract products from response: {e}")
+                return []
+        
+        # If no products found, return empty list
+        if not products:
+            logger.warning("No products found in response")
+            return []
+            
+        # Process each product to extract trading pair info
+        for product in products:
+            # Extract data based on the format you provided
+            if isinstance(product, dict):
+                # Use direct dictionary access
+                product_id = product.get('product_id')
+                base_currency = product.get('base_currency')
+                quote_currency = product.get('quote_currency')
+                status = product.get('status')
+            else:
+                # Try object attribute access
+                product_id = getattr(product, 'product_id', None)
+                base_currency = getattr(product, 'base_currency', None)
+                quote_currency = getattr(product, 'quote_currency', None)
+                status = getattr(product, 'status', None)
+            
+            # Only include online products with valid data
+            if product_id and status == 'online':
+                trading_pairs.append({
+                    'product_id': product_id,
+                    'base_currency': base_currency,
+                    'quote_currency': quote_currency,
+                    'display_name': f"{base_currency}-{quote_currency}"
+                })
+        
+        # Sort by product_id for easier searching
+        trading_pairs.sort(key=lambda x: x['product_id'])
+        logger.info(f"Returning {len(trading_pairs)} trading pairs")
+        
+        return trading_pairs
+    except Exception as e:
+        logger.error(f"Error getting trading pairs: {str(e)}", exc_info=True)
+        return []
+
     @staticmethod
     def get_market_data(user_id, product_id='BTC-USD'):
         client = CoinbaseService.get_client(user_id)

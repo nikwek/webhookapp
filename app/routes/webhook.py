@@ -3,12 +3,15 @@ from flask import Blueprint, request, jsonify, Response, stream_with_context, se
 from flask_login import login_required
 from app.models.webhook import WebhookLog
 from app.models.automation import Automation
+from app.services.webhook_processor import WebhookProcessor
 from app import db, csrf
 from datetime import datetime, timezone
 import json
 import time
 import os
+import logging
 
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('webhook', __name__)
 
@@ -16,13 +19,13 @@ bp = Blueprint('webhook', __name__)
 @csrf.exempt 
 def webhook():
     automation_id = request.args.get('automation_id')
-    print(f"Received webhook for automation_id: {automation_id}")
+    logger.info(f"Received webhook for automation_id: {automation_id}")
     
     if not automation_id:
         return jsonify({'error': 'Missing automation_id parameter'}), 400
 
     automation = Automation.query.filter_by(automation_id=automation_id).first()
-    print(f"Found automation: {automation}")
+    logger.info(f"Found automation: {automation}")
     
     if not automation:
         return jsonify({'error': 'Automation not found'}), 404
@@ -30,29 +33,27 @@ def webhook():
     if not automation.is_active:
         return jsonify({'error': 'Automation is not active'}), 403
 
-    # Store the webhook payload
-    payload = request.get_json(force=True)
-    print(f"Webhook payload: {payload}")
+    # Parse the webhook payload
+    try:
+        payload = request.get_json(force=True)
+        logger.info(f"Webhook payload: {payload}")
+    except Exception as e:
+        logger.error(f"Failed to parse JSON payload: {e}")
+        return jsonify({'error': 'Invalid JSON payload'}), 400
     
-    log = WebhookLog(
-        automation_id=automation_id,
-        payload=payload,
-        timestamp=datetime.now(timezone.utc)
-    )
-    db.session.add(log)
+    # Process the webhook using the WebhookProcessor
+    processor = WebhookProcessor()
+    result = processor.process_webhook(automation_id, payload)
     
     # Update last_run timestamp
     automation.last_run = datetime.now(timezone.utc)
-    
     try:
         db.session.commit()
-        print("Successfully stored webhook")
-        # Emit event for real-time updates (if using websockets)
-        return jsonify({'success': True})
     except Exception as e:
-        print(f"Error storing webhook: {e}")
+        logger.error(f"Error updating last_run timestamp: {e}")
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+    
+    return jsonify(result)
 
 @bp.route('/webhook-stream')
 @login_required

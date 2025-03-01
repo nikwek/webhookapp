@@ -1,0 +1,38 @@
+/* app/static/css/trading-pair-selector.css */
+.trading-pair-select {
+    position: relative;
+}
+
+.trading-pair-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+    background-color: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 0.25rem;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+    display: none;
+}
+
+.trading-pair-results .dropdown-item {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    border-bottom: 1px solid #f8f9fa;
+}
+
+.trading-pair-results .dropdown-item:hover {
+    background-color: #f8f9fa;
+}
+
+.trading-pair-results .dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.trading-pair-label {
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}

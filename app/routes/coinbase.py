@@ -1,9 +1,12 @@
 # app/routes/coinbase.py
 
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, jsonify, current_app, session
 from flask_login import login_required, current_user
 from app.services.coinbase_service import CoinbaseService
 from app.models.exchange_credentials import ExchangeCredentials
+import logging
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('coinbase', __name__, url_prefix='/api/coinbase')
 
@@ -98,4 +101,44 @@ def get_portfolios():
     return jsonify({
         'has_credentials': True,
         'portfolios': portfolios
+    })
+
+@bp.route('/trading-pairs')
+@login_required
+def get_trading_pairs():
+    """Get all available trading pairs from Coinbase"""
+    logger.info("Trading pairs endpoint called")
+    
+    # Check if user has Coinbase API keys
+    credentials = ExchangeCredentials.query.filter_by(
+        user_id=current_user.id,
+        exchange='coinbase',
+        portfolio_name='default'
+    ).first()
+    
+    if not credentials:
+        logger.warning(f"No API credentials found for user {current_user.id}")
+        return jsonify({
+            'success': False,
+            'message': 'API credentials not found',
+            'trading_pairs': []
+        }), 400
+    
+    # Get trading pairs
+    user_id = session.get('user_id', current_user.id)
+    trading_pairs = CoinbaseService.get_trading_pairs(user_id)
+    
+    if not trading_pairs:
+        logger.warning(f"No trading pairs found for user {user_id}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to retrieve trading pairs',
+            'trading_pairs': []
+        }), 500
+    
+    logger.info(f"Successfully retrieved {len(trading_pairs)} trading pairs")
+    return jsonify({
+        'success': True,
+        'message': 'Trading pairs retrieved successfully',
+        'trading_pairs': trading_pairs
     })

@@ -118,9 +118,14 @@ def get_coinbase_portfolios(user_id):
                 portfolio_name = getattr(p, 'name', None)
                 deleted = getattr(p, 'deleted', False)
             
-            # Skip deleted portfolios and Default portfolio
-            if deleted or portfolio_name == 'Default':
+            # Skip deleted portfolios
+            if deleted:
                 continue
+
+            # Log but include Default portfolio - we'll filter it at display time
+            if portfolio_name and portfolio_name.lower() == 'default':
+                logger.info(f"Found Default portfolio with ID: {portfolio_id}")
+                # We don't continue here because we want to include it in the DB for completeness
                 
             if not portfolio_id or not portfolio_name:
                 continue
@@ -234,7 +239,7 @@ def create_portfolio(automation_id):
             ExchangeCredentials.is_default.is_(False)
         ).first()
         
-        # Log more detailed information about what we found
+        # Log credential status
         if trading_creds:
             logger.info(f"Found trading credentials: id={trading_creds.id}, portfolio={trading_creds.portfolio_name}")
         else:
@@ -251,17 +256,16 @@ def create_portfolio(automation_id):
         
         if not trading_creds:
             logger.info("No trading credentials found, will require manual setup")
-            # No trading credentials available, guide user through manual creation
-            # Return a structured response that will be shown in an alert rather than a modal
+            # Check if user has non-default portfolios
+            portfolios = get_coinbase_portfolios(current_user.id)
+            # Filter out any portfolios named "Default"
+            non_default_portfolios = [p for p in portfolios if p.get('name', '').lower() != 'default']
+            has_portfolios = len(non_default_portfolios) > 0
+            
             return jsonify({
                 "success": False,
                 "needs_manual_setup": True,
-                "message": "First Time Portfolio Setup:\n" +
-                          "1. Go to https://www.coinbase.com/advanced-portfolio\n" +
-                          "2. Click 'New Portfolio' and create your portfolio\n" +
-                          "3. Go to https://www.coinbase.com/settings/api\n" +
-                          "4. Create API keys with View and Trade permissions\n" +
-                          "5. Return here, refresh the list, and select your new portfolio"
+                "has_portfolios": has_portfolios
             }), 200
             
         # If we have trading credentials, attempt to create portfolio
@@ -741,7 +745,7 @@ def check_trading_credentials(automation_id):
     try:
         logger.info(f"Checking trading credentials for user {current_user.id}")
         
-        # Try to find existing trading credentials that match ALL of these conditions:
+        # Try to find existing trading credentials that are:
         # 1. Not named 'default'
         # 2. is_default flag is False
         # 3. Has the necessary permissions for trading (implied by the above)
@@ -752,34 +756,35 @@ def check_trading_credentials(automation_id):
             ExchangeCredentials.is_default.is_(False)
         ).first()
         
-        # Log what we found for debugging
+        # Check if user has default credentials (for viewing)
+        default_creds = ExchangeCredentials.query.filter(
+            ExchangeCredentials.user_id == current_user.id,
+            ExchangeCredentials.exchange == 'coinbase',
+            ExchangeCredentials.portfolio_name == 'default'
+        ).first()
+        
+        # Log the credential status
         if trading_creds:
             logger.info(f"Found trading credentials: id={trading_creds.id}, portfolio_name={trading_creds.portfolio_name}")
+        elif default_creds:
+            logger.info("User only has default credentials, needs to create trading credentials")
         else:
-            # Check if user only has default credentials
-            default_creds = ExchangeCredentials.query.filter(
-                ExchangeCredentials.user_id == current_user.id,
-                ExchangeCredentials.exchange == 'coinbase',
-                ExchangeCredentials.portfolio_name == 'default'
-            ).first()
-            
-            if default_creds:
-                logger.info("User only has default credentials, needs to create trading credentials")
-            else:
-                logger.info("User has no credentials at all")
+            logger.info("User has no credentials at all")
         
         # If no trading credentials, guide user through setup
         if not trading_creds:
-            logger.info("No trading credentials found, returning manual setup instructions")
+            logger.info("No trading credentials found, returning setup instructions")
+            
+            # Check if user has non-default portfolios
+            portfolios = get_coinbase_portfolios(current_user.id)
+            # Filter out any portfolios named "Default"
+            non_default_portfolios = [p for p in portfolios if p.get('name', '').lower() != 'default']
+            has_portfolios = len(non_default_portfolios) > 0
+            
             return jsonify({
                 "success": False,
                 "needs_manual_setup": True,
-                "message": "First Time Portfolio Setup:\n" +
-                          "1. Go to https://www.coinbase.com/advanced-portfolio\n" +
-                          "2. Click 'New Portfolio' and create your portfolio\n" +
-                          "3. Go to https://www.coinbase.com/settings/api\n" +
-                          "4. Create API keys with View and Trade permissions\n" +
-                          "5. Return here, refresh the list, and select your new portfolio"
+                "has_portfolios": has_portfolios
             }), 200
 
         logger.info("Trading credentials found, user can create portfolio")

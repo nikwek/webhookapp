@@ -28,7 +28,10 @@ def dashboard():
         Automation.query
         .outerjoin(Portfolio, Automation.portfolio_id == Portfolio.id)
         .filter(Automation.user_id == user_id)
-        .add_columns(Portfolio.name.label('portfolio_name'))
+        .add_columns(
+            Portfolio.name.label('portfolio_name'),
+            Automation.trading_pair
+        )
         .all()
     )
     
@@ -36,11 +39,9 @@ def dashboard():
     automations = []
     for result in automations_query:
         automation = result[0]  # The Automation object
-        # Generate webhook URL for each automation
         automation.webhook_url = f"{request.url_root.rstrip('/')}/webhook?automation_id={automation.automation_id}"
-        
-        # Add the portfolio name to the automation object
         automation.portfolio_name = result[1]  # The Portfolio.name value
+        automation.trading_pair = result[0].trading_pair  # Get trading_pair from Automation object
         automations.append(automation)
 
     # Check if user has Coinbase API keys

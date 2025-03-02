@@ -29,6 +29,7 @@
                                 <tr>
                                     <th>Automation Name</th>
                                     <th>Connected Portfolio</th>
+                                    <th>Trading Pair</th>
                                     <th class="text-end">Actions</th>
                                 </tr>
                             </thead>
@@ -49,6 +50,13 @@
                                                 <span style="color: #2c3e50; font-weight: 500;">{{ automation.portfolio_name }}</span>
                                             {% else %}
                                                 <span class="text-muted fst-italic small">Not Connected</span>
+                                            {% endif %}
+                                        </td>
+                                        <td style="font-size: 1.1em;">
+                                            {% if automation.trading_pair %}
+                                                <span style="color: #2c3e50; font-weight: 500;">{{ automation.trading_pair }}</span>
+                                            {% else %}
+                                                <span class="text-muted fst-italic small">Not Set</span>
                                             {% endif %}
                                         </td>
                                         <td class="text-end">

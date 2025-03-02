@@ -4,6 +4,7 @@ from app.models.automation import Automation
 from app.models.exchange_credentials import ExchangeCredentials
 from app.models.webhook import WebhookLog
 from app.services.coinbase_service import CoinbaseService
+from datetime import datetime, timezone
 from app import db
 from flask import current_app
 import logging
@@ -43,7 +44,8 @@ class WebhookProcessor:
             # Create a log entry for this webhook
             log_entry = WebhookLog(
                 automation_id=automation_id,
-                payload=payload
+                payload=payload,
+                timestamp=datetime.now(timezone.utc)  # When we receive the webhook
             )
             db.session.add(log_entry)
             db.session.commit()

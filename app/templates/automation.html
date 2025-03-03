@@ -271,11 +271,14 @@
                 </div>
             {% endif %}
         </div>
+
+        {% if automation %}
+        <div id="automation-logs"></div>
+        {% endif %}
+        
     </div>
 
-    {% if automation %}
-    <div id="automation-logs"></div>
-    {% endif %}
+
 </div>
 {% endblock %}
 

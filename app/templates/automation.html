@@ -65,11 +65,18 @@
                     <div class="card-header bg-success bg-opacity-10">
                         <h5 class="mb-0">Connected Portfolio</h5>
                     </div>
+                    <!-- Change this section in automation.html -->
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
                                 <p class="mb-1"><strong>Portfolio:</strong> {{ portfolio.name }}</p>
-                                <p class="mb-0"><strong>Exchange:</strong> {{ portfolio.exchange|capitalize }}</p>
+                                <p class="mb-1"><strong>Exchange:</strong> {{ portfolio.exchange|capitalize }}</p>
+                                {% if portfolio.value is defined and portfolio.value is not none %}
+                                    <p class="mb-0">
+                                        <strong>Value:</strong> 
+                                        <span class="text-success">${{ "%.2f"|format(portfolio.value) }}</span>
+                                    </p>
+                                {% endif %}
                             </div>
                             <form method="POST" action="{{ url_for('automation.disconnect_portfolio', automation_id=automation.automation_id) }}">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

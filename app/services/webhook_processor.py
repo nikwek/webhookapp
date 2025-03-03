@@ -4,6 +4,7 @@ from app.models.automation import Automation
 from app.models.exchange_credentials import ExchangeCredentials
 from app.models.webhook import WebhookLog
 from app.services.coinbase_service import CoinbaseService
+from app.services.account_service import AccountService
 from datetime import datetime, timezone
 from app import db
 from flask import current_app
@@ -71,6 +72,20 @@ class WebhookProcessor:
                     "message": "API credentials not found"
                 }
             
+            # Check available balance using AccountService
+            accounts = AccountService.get_accounts(
+                user_id=automation.user_id,
+                portfolio_id=automation.portfolio_id
+            )
+
+            # Validate accounts and balances
+            if not accounts:
+                logger.error(f"No accounts found for automation: {automation_id}")
+                return {
+                    "success": False,
+                    "message": "No accounts found for this automation"
+                }
+
             # Process the webhook payload
             action = payload.get('action', '').lower()
             

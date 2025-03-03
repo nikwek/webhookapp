@@ -8,6 +8,7 @@ from app.models.webhook import WebhookLog
 from app.models.exchange_credentials import ExchangeCredentials
 from app.models.portfolio import Portfolio 
 from app.forms import CoinbaseAPIKeyForm
+from app.services.account_service import AccountService
 from app import db
 import coinbase.rest
 
@@ -30,7 +31,8 @@ def dashboard():
         .filter(Automation.user_id == user_id)
         .add_columns(
             Portfolio.name.label('portfolio_name'),
-            Automation.trading_pair
+            Automation.trading_pair,
+            Portfolio.id.label('portfolio_id')  # Added portfolio_id
         )
         .all()
     )
@@ -42,6 +44,15 @@ def dashboard():
         automation.webhook_url = f"{request.url_root.rstrip('/')}/webhook?automation_id={automation.automation_id}"
         automation.portfolio_name = result[1]  # The Portfolio.name value
         automation.trading_pair = result[0].trading_pair  # Get trading_pair from Automation object
+        
+        # Get portfolio value if portfolio is connected (fix misplaced code)
+        portfolio_id = result[3] if len(result) > 3 else None  # The Portfolio.id value
+        if portfolio_id:
+            portfolio_value = AccountService.get_portfolio_value(user_id, portfolio_id)
+            automation.portfolio_value = portfolio_value
+        else:
+            automation.portfolio_value = None
+            
         automations.append(automation)
 
     # Check if user has Coinbase API keys
@@ -79,17 +90,28 @@ def get_coinbase_portfolios():
             user_id=current_user.id
         ).all()
         
-        # Create portfolio data with connection status
-        portfolio_data = [{
-            'id': p.id,
-            'name': p.name,
-            'portfolio_id': p.portfolio_id,
-            'exchange': p.exchange,
-            'is_connected': bool(ExchangeCredentials.query.filter_by(
+        # Create portfolio data with connection status and value
+        portfolio_data = []
+        for p in db_portfolios:
+            # Check if portfolio has credentials
+            has_credentials = bool(ExchangeCredentials.query.filter_by(
                 portfolio_id=p.id,
                 exchange='coinbase'
             ).first())
-        } for p in db_portfolios]
+            
+            # Get portfolio value if connected
+            portfolio_value = None
+            if has_credentials:
+                portfolio_value = AccountService.get_portfolio_value(current_user.id, p.id)
+            
+            portfolio_data.append({
+                'id': p.id,
+                'name': p.name,
+                'portfolio_id': p.portfolio_id,
+                'exchange': p.exchange,
+                'is_connected': has_credentials,
+                'value': portfolio_value
+            })
         
         return jsonify({
             'has_credentials': True,

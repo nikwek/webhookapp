@@ -2,6 +2,7 @@
 
 from flask import current_app
 from app.models.exchange_credentials import ExchangeCredentials
+from app.models.portfolio import Portfolio
 from coinbase.rest import RESTClient
 import traceback
 import logging
@@ -172,3 +173,84 @@ class CoinbaseService:
         except Exception as e:
             logger.error(f"Error getting trading pairs: {str(e)}", exc_info=True)
             return []
+        
+
+    @staticmethod
+    def get_client_from_credentials(credentials):
+        """
+        Get a Coinbase client instance from credentials
+        """
+        try:
+            if not credentials:
+                return None
+                
+            api_key = credentials.api_key
+            api_secret = credentials.decrypt_secret()
+            
+            return RESTClient(api_key=api_key, api_secret=api_secret)
+            
+        except Exception as e:
+            logger.error(f"Error creating Coinbase client from credentials: {str(e)}", exc_info=True)
+            return None
+
+        
+    @staticmethod
+    def get_portfolio_value_from_breakdown(user_id, portfolio_id, currency='USD'):
+        """
+        Get portfolio value using the get_portfolio_breakdown API endpoint
+        
+        Args:
+            user_id (int): User ID
+            portfolio_id (int): Portfolio ID in our database
+            currency (str): Currency code for the value (default: USD)
+            
+        Returns:
+            float: Total portfolio value
+        """
+        try:
+            # Get the portfolio record to find the UUID
+            portfolio = Portfolio.query.get(portfolio_id)
+            if not portfolio:
+                logger.warning(f"Portfolio not found for ID {portfolio_id}")
+                return 0.0
+                
+            # Get the portfolio UUID
+            portfolio_uuid = portfolio.portfolio_id
+            
+            # Get credentials specifically for this portfolio
+            creds = ExchangeCredentials.query.filter_by(
+                user_id=user_id,
+                portfolio_id=portfolio_id,
+                exchange='coinbase'
+            ).first()
+            
+            if not creds:
+                logger.warning(f"No API credentials found for portfolio_id={portfolio_id}")
+                return 0.0
+            
+            # Create client with these specific credentials
+            client = CoinbaseService.get_client_from_credentials(creds)
+            if not client:
+                logger.error("Failed to create Coinbase client")
+                return 0.0
+            
+            # Get portfolio breakdown
+            breakdown = client.get_portfolio_breakdown(portfolio_uuid=portfolio_uuid, currency=currency)
+            
+            # Extract the value from the response
+            raw_response = str(breakdown)
+            if "'total_balance': {'value': '" in raw_response:
+                start_idx = raw_response.find("'total_balance': {'value': '") + len("'total_balance': {'value': '")
+                end_idx = raw_response.find("'", start_idx)
+                if start_idx > 0 and end_idx > start_idx:
+                    total_value_str = raw_response[start_idx:end_idx]
+                    try:
+                        return float(total_value_str)
+                    except (ValueError, TypeError):
+                        logger.error(f"Could not convert total value to float: {total_value_str}")
+            
+            logger.warning(f"Could not extract total balance from portfolio breakdown")
+            return 0.0
+        except Exception as e:
+            logger.error(f"Error getting portfolio value from breakdown: {str(e)}", exc_info=True)
+            return 0.0

@@ -8,6 +8,8 @@ from app.models.webhook import WebhookLog
 from app.models.portfolio import Portfolio
 from app.models.exchange_credentials import ExchangeCredentials
 from app.forms.portfolio_api_key_form import PortfolioAPIKeyForm
+from app.services.account_service import AccountService
+from app.services.coinbase_service import CoinbaseService
 from coinbase.rest import RESTClient
 from sqlalchemy import inspect
 import os
@@ -184,6 +186,9 @@ def view_automation(automation_id):
     portfolio = None
     if automation.portfolio_id:
         portfolio = Portfolio.query.get(automation.portfolio_id)
+        # Add portfolio value using AccountService
+        if portfolio:
+            portfolio.value = AccountService.get_portfolio_value(session['user_id'], portfolio.id)
     
     # For portfolio selection - only needed if no portfolio is connected yet
     portfolios = []
@@ -215,6 +220,7 @@ def view_automation(automation_id):
         selected_portfolio=selected_portfolio,
         show_api_form=show_api_form
     )
+
 
 @bp.route('/automation/<automation_id>/create-portfolio', methods=['POST'])
 @api_login_required
@@ -574,6 +580,128 @@ def get_automation_logs(automation_id):
         logger.error(f"Error fetching automation logs: {e}")
         return jsonify({"error": str(e)}), 500
 
+@bp.route('/debug/set-default-credentials')
+@api_login_required
+def set_default_credentials():
+    try:
+        # Find the credentials with portfolio_name='default'
+        default_creds = ExchangeCredentials.query.filter_by(
+            user_id=session['user_id'],
+            exchange='coinbase',
+            portfolio_name='default'
+        ).first()
+        
+        if default_creds:
+            # Set is_default to True
+            default_creds.is_default = True
+            db.session.commit()
+            return jsonify({"success": True, "message": "Default credentials updated"})
+        else:
+            return jsonify({"success": False, "message": "No default credentials found"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+@bp.route('/automation/<automation_id>/check-trading-credentials')
+@api_login_required
+def check_trading_credentials(automation_id):
+    """Check if user has trading credentials before showing portfolio creation modal"""
+    try:
+        logger.info(f"Checking trading credentials for user {current_user.id}")
+        
+        # Try to find existing trading credentials that are:
+        # 1. Not named 'default'
+        # 2. is_default flag is False
+        # 3. Has the necessary permissions for trading (implied by the above)
+        trading_creds = ExchangeCredentials.query.filter(
+            ExchangeCredentials.user_id == current_user.id,
+            ExchangeCredentials.exchange == 'coinbase',
+            ExchangeCredentials.portfolio_name != 'default',
+            ExchangeCredentials.is_default.is_(False)
+        ).first()
+        
+        # Check if user has default credentials (for viewing)
+        default_creds = ExchangeCredentials.query.filter(
+            ExchangeCredentials.user_id == current_user.id,
+            ExchangeCredentials.exchange == 'coinbase',
+            ExchangeCredentials.portfolio_name == 'default'
+        ).first()
+        
+        # Log the credential status
+        if trading_creds:
+            logger.info(f"Found trading credentials: id={trading_creds.id}, portfolio_name={trading_creds.portfolio_name}")
+        elif default_creds:
+            logger.info("User only has default credentials, needs to create trading credentials")
+        else:
+            logger.info("User has no credentials at all")
+        
+        # If no trading credentials, guide user through setup
+        if not trading_creds:
+            logger.info("No trading credentials found, returning setup instructions")
+            
+            # Check if user has non-default portfolios
+            portfolios = get_coinbase_portfolios(current_user.id)
+            # Filter out any portfolios named "Default"
+            non_default_portfolios = [p for p in portfolios if p.get('name', '').lower() != 'default']
+            has_portfolios = len(non_default_portfolios) > 0
+            
+            return jsonify({
+                "success": False,
+                "needs_manual_setup": True,
+                "has_portfolios": has_portfolios
+            }), 200
+
+        logger.info("Trading credentials found, user can create portfolio")
+        return jsonify({
+            "success": True,
+            "has_trading_credentials": True
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error checking trading credentials: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/automation/<automation_id>/trading-pair', methods=['POST'])
+@api_login_required
+def set_trading_pair(automation_id):
+    try:
+        automation = get_user_automation(automation_id)
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        data = request.get_json()
+        if not data or 'trading_pair' not in data:
+            return jsonify({"error": "Missing required field: trading_pair"}), 400
+            
+        trading_pair = data['trading_pair']
+        
+        # Validate trading pair format (optional) - simple validation
+        if not isinstance(trading_pair, str) or '-' not in trading_pair:
+            return jsonify({
+                "error": "Invalid trading pair format. Expected format: BTC-USD"
+            }), 400
+            
+        # Update the automation with the trading pair
+        automation.trading_pair = trading_pair
+        db.session.commit()
+        
+        logger.info(f"Set trading pair to {trading_pair} for automation {automation_id}")
+        
+        return jsonify({
+            "success": True,
+            "message": f"Trading pair updated to {trading_pair}",
+            "automation": {
+                "id": automation.id,
+                "name": automation.name,
+                "trading_pair": automation.trading_pair
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error setting trading pair: {e}")
+        return jsonify({"error": str(e)}), 500
+
 # Debug Routes
 @bp.route('/debug/schema')
 @api_login_required
@@ -715,125 +843,4 @@ def debug_portfolios():
     except Exception as e:
         logger.error(f"Error in debug_portfolios: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)})
-
-@bp.route('/debug/set-default-credentials')
-@api_login_required
-def set_default_credentials():
-    try:
-        # Find the credentials with portfolio_name='default'
-        default_creds = ExchangeCredentials.query.filter_by(
-            user_id=session['user_id'],
-            exchange='coinbase',
-            portfolio_name='default'
-        ).first()
-        
-        if default_creds:
-            # Set is_default to True
-            default_creds.is_default = True
-            db.session.commit()
-            return jsonify({"success": True, "message": "Default credentials updated"})
-        else:
-            return jsonify({"success": False, "message": "No default credentials found"})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"success": False, "error": str(e)})
-
-@bp.route('/automation/<automation_id>/check-trading-credentials')
-@api_login_required
-def check_trading_credentials(automation_id):
-    """Check if user has trading credentials before showing portfolio creation modal"""
-    try:
-        logger.info(f"Checking trading credentials for user {current_user.id}")
-        
-        # Try to find existing trading credentials that are:
-        # 1. Not named 'default'
-        # 2. is_default flag is False
-        # 3. Has the necessary permissions for trading (implied by the above)
-        trading_creds = ExchangeCredentials.query.filter(
-            ExchangeCredentials.user_id == current_user.id,
-            ExchangeCredentials.exchange == 'coinbase',
-            ExchangeCredentials.portfolio_name != 'default',
-            ExchangeCredentials.is_default.is_(False)
-        ).first()
-        
-        # Check if user has default credentials (for viewing)
-        default_creds = ExchangeCredentials.query.filter(
-            ExchangeCredentials.user_id == current_user.id,
-            ExchangeCredentials.exchange == 'coinbase',
-            ExchangeCredentials.portfolio_name == 'default'
-        ).first()
-        
-        # Log the credential status
-        if trading_creds:
-            logger.info(f"Found trading credentials: id={trading_creds.id}, portfolio_name={trading_creds.portfolio_name}")
-        elif default_creds:
-            logger.info("User only has default credentials, needs to create trading credentials")
-        else:
-            logger.info("User has no credentials at all")
-        
-        # If no trading credentials, guide user through setup
-        if not trading_creds:
-            logger.info("No trading credentials found, returning setup instructions")
-            
-            # Check if user has non-default portfolios
-            portfolios = get_coinbase_portfolios(current_user.id)
-            # Filter out any portfolios named "Default"
-            non_default_portfolios = [p for p in portfolios if p.get('name', '').lower() != 'default']
-            has_portfolios = len(non_default_portfolios) > 0
-            
-            return jsonify({
-                "success": False,
-                "needs_manual_setup": True,
-                "has_portfolios": has_portfolios
-            }), 200
-
-        logger.info("Trading credentials found, user can create portfolio")
-        return jsonify({
-            "success": True,
-            "has_trading_credentials": True
-        }), 200
-
-    except Exception as e:
-        logger.error(f"Error checking trading credentials: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-
-@bp.route('/automation/<automation_id>/trading-pair', methods=['POST'])
-@api_login_required
-def set_trading_pair(automation_id):
-    try:
-        automation = get_user_automation(automation_id)
-        if not automation:
-            return jsonify({"error": "Automation not found"}), 404
-            
-        data = request.get_json()
-        if not data or 'trading_pair' not in data:
-            return jsonify({"error": "Missing required field: trading_pair"}), 400
-            
-        trading_pair = data['trading_pair']
-        
-        # Validate trading pair format (optional) - simple validation
-        if not isinstance(trading_pair, str) or '-' not in trading_pair:
-            return jsonify({
-                "error": "Invalid trading pair format. Expected format: BTC-USD"
-            }), 400
-            
-        # Update the automation with the trading pair
-        automation.trading_pair = trading_pair
-        db.session.commit()
-        
-        logger.info(f"Set trading pair to {trading_pair} for automation {automation_id}")
-        
-        return jsonify({
-            "success": True,
-            "message": f"Trading pair updated to {trading_pair}",
-            "automation": {
-                "id": automation.id,
-                "name": automation.name,
-                "trading_pair": automation.trading_pair
-            }
-        })
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Error setting trading pair: {e}")
-        return jsonify({"error": str(e)}), 500
+    

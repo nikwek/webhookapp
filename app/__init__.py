@@ -49,6 +49,8 @@ def create_app(config_class=Config):
         from app.models.automation import Automation
         from app.models.webhook import WebhookLog
         from app.models.exchange_credentials import ExchangeCredentials
+        from app.models.account_cache import AccountCache
+        
 
         # Register blueprints
         from app.routes import auth, dashboard, webhook, admin, automation, coinbase

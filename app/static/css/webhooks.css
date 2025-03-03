@@ -84,3 +84,22 @@
 .cursor-pointer {
     cursor: pointer;
 }
+
+.portfolio-value {
+    display: inline-block;
+    margin-left: 10px;
+    background-color: #f8f9fa;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+  
+  .portfolio-value .label {
+    font-weight: 500;
+    color: #555;
+  }
+  
+  .portfolio-value .value {
+    font-weight: 600;
+    color: #28a745;
+  }

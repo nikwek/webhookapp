@@ -17,6 +17,8 @@ class WebhookLog(db.Model):
     status = db.Column(db.String(20), nullable=True)  # 'success' or 'error'
     message = db.Column(db.Text, nullable=True)
     order_id = db.Column(db.String(50), nullable=True)
+    client_order_id = db.Column(db.String(36), nullable=True)
+    raw_response = db.Column(db.Text, nullable=True)
     
     # Relationships
     automation = db.relationship('Automation', backref=db.backref('webhook_logs', lazy=True))
@@ -62,5 +64,7 @@ class WebhookLog(db.Model):
             'ticker': ticker,
             'message': message,
             'status': self.status,
-            'order_id': self.order_id
+            'order_id': self.order_id,
+            'client_order_id': self.client_order_id,  # Add this
+            'raw_response': self.raw_response  # Add this
         }

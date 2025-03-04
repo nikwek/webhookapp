@@ -18,40 +18,31 @@ logger = logging.getLogger(__name__)
 
 class WebhookProcessor:
     def process_webhook(self, automation_id, payload):
-        """
-        Process an incoming webhook for an automation
-        
-        Args:
-            automation_id (str): ID of the automation
-            payload (dict): Webhook payload
-            
-        Returns:
-            dict: Processing result
-        """
+        """Process an incoming webhook for an automation"""
         try:
+            # Generate client_order_id at the start
+            client_order_id = str(uuid.uuid4())
+            logger.info(f"Processing webhook with client_order_id: {client_order_id}")
+            
             # Get the automation
             automation = Automation.query.filter_by(automation_id=automation_id).first()
             
             if not automation:
                 logger.error(f"No automation found with id: {automation_id}")
                 return {
-                    "success": False,
+                    "success": True,  # Webhook received successfully
+                    "trade_executed": False,
+                    "client_order_id": client_order_id,
                     "message": f"No automation found with id: {automation_id}"
                 }
             
-            if not automation.is_active:
-                logger.warning(f"Attempt to process webhook for inactive automation: {automation_id}")
-                return {
-                    "success": False,
-                    "message": "Automation is not active"
-                }
-            
-            # Create a log entry for this webhook
+            # Create a log entry for this webhook immediately
             log_entry = WebhookLog(
                 automation_id=automation_id,
                 payload=payload,
-                timestamp=datetime.now(timezone.utc),  # When we receive the webhook
-                trading_pair=automation.trading_pair  # Add the trading pair from the automation
+                timestamp=datetime.now(timezone.utc),
+                trading_pair=automation.trading_pair,
+                client_order_id=client_order_id  # Add client_order_id to log
             )
             db.session.add(log_entry)
             db.session.commit()
@@ -127,31 +118,44 @@ class WebhookProcessor:
                 portfolio=portfolio,
                 trading_pair=trading_pair,
                 action=action,
-                payload=payload
+                payload=payload,
+                client_order_id=client_order_id  # Pass client_order_id to execute_trade
             )
             
             # Update the log entry with the trade result
             try:
-                log_entry.status = 'success' if trade_result.get('success', False) else 'error'
+                log_entry.status = trade_result.get('trade_status', 'error')
                 log_entry.message = trade_result.get('message', '')
                 log_entry.order_id = trade_result.get('order_id', '')
+                log_entry.raw_response = trade_result.get('raw_response', '')
                 db.session.commit()
-                logger.info(f"Updated webhook log with trade result: {log_entry.id}")
+                logger.info(f"Updated webhook log {log_entry.id} with trade result")
             except Exception as e:
                 logger.error(f"Error updating webhook log: {str(e)}")
-                # Continue even if updating the log fails
             
-            return trade_result
+            # Return combined result
+            return {
+                "success": True,  # Webhook was received and processed
+                "trade_executed": trade_result.get('trade_executed', False),
+                "client_order_id": client_order_id,
+                "order_id": trade_result.get('order_id'),
+                "message": trade_result.get('message'),
+                "trading_pair": trading_pair,
+                "action": action,
+                "size": trade_result.get('size'),
+                "raw_response": trade_result.get('raw_response')
+            }
             
         except Exception as e:
             logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
-            db.session.rollback()
             return {
-                "success": False,
+                "success": True,  # Webhook received, but processing failed
+                "trade_executed": False,
+                "client_order_id": client_order_id,
                 "message": f"Error processing webhook: {str(e)}"
             }
     
-    def execute_trade(self, credentials, portfolio, trading_pair, action, payload):
+    def execute_trade(self, credentials, portfolio, trading_pair, action, payload, client_order_id):
         """
         Execute a trade on Coinbase
         
@@ -178,13 +182,14 @@ class WebhookProcessor:
                 logger.error("Failed to create Coinbase client")
                 return {
                     "success": False,
-                    "message": "Failed to create Coinbase client"
+                    "message": "Failed to create Coinbase client",
+                    "client_order_id": client_order_id
                 }
             
             # Get the portfolio UUID and split trading pair
             portfolio_uuid = portfolio.portfolio_id
             base_currency, quote_currency = trading_pair.split('-')
-            client_order_id = str(uuid.uuid4())
+            # client_order_id = str(uuid.uuid4())
             target_currency = quote_currency if action == 'buy' else base_currency
             
             try:  # Account retrieval try block
@@ -293,35 +298,38 @@ class WebhookProcessor:
                     order_configuration=order_configuration
                 )
                 
-                # Process response
-                if hasattr(order_response, 'to_dict'):
-                    response_dict = order_response.to_dict()
-                elif isinstance(order_response, dict):
-                    response_dict = order_response
-                else:
-                    response_dict = {}
+                # Better response parsing
+                response_dict = (
+                    order_response.to_dict() 
+                    if hasattr(order_response, 'to_dict') 
+                    else order_response if isinstance(order_response, dict) 
+                    else {}
+                )
                 
-                order_id = response_dict.get('order_id')
-                status = response_dict.get('status')
+                # Extract success info from response
+                success_response = response_dict.get('success_response', {})
+                order_id = success_response.get('order_id')
                 
-                logger.info(f"Order executed. ID: {order_id}, Status: {status}")
+                logger.info(f"Order executed. Response: {response_dict}")
                 
                 return {
-                    "success": True if order_id else False,
-                    "message": "Order executed successfully" if order_id else "Order submitted but no order ID returned",
+                    "trade_executed": bool(order_id),
                     "order_id": order_id,
-                    "status": status,
-                    "action": action,
+                    "client_order_id": client_order_id,
+                    "message": "Order executed successfully" if order_id else "Order submitted but pending confirmation",
                     "size": order_size,
                     "trading_pair": trading_pair,
-                    "raw_response": str(order_response)
+                    "trade_status": "success" if order_id else "pending",
+                    "raw_response": str(response_dict)
                 }
                 
             except Exception as e:
                 logger.error(f"Error executing trade: {str(e)}", exc_info=True)
                 return {
-                    "success": False,
-                    "message": f"Error executing trade: {str(e)}"
+                    "trade_executed": False,
+                    "message": f"Error executing trade: {str(e)}",
+                    "client_order_id": client_order_id,
+                    "trade_status": "error"
                 }
                 
         except Exception as e:  # Main exception handler

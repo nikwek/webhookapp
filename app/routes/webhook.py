@@ -83,3 +83,16 @@ def webhook_stream():
 def serve_component():
     component_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'js', 'components')
     return send_from_directory(component_dir, 'WebhookLogs.jsx', mimetype='text/javascript')
+
+@bp.route('/api/logs')
+@login_required
+def get_logs():
+    """API endpoint to get webhook logs"""
+    logs = (WebhookLog.query
+           .join(Automation)
+           .filter(Automation.user_id == session['user_id'])
+           .order_by(WebhookLog.timestamp.desc())
+           .limit(100)
+           .all())
+    
+    return jsonify([log.to_dict() for log in logs])

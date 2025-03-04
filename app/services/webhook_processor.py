@@ -3,12 +3,16 @@
 from app.models.automation import Automation
 from app.models.exchange_credentials import ExchangeCredentials
 from app.models.webhook import WebhookLog
+from app.models.portfolio import Portfolio
 from app.services.coinbase_service import CoinbaseService
 from app.services.account_service import AccountService
 from datetime import datetime, timezone
 from app import db
 from flask import current_app
+from coinbase.rest import RESTClient
 import logging
+import uuid
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +50,8 @@ class WebhookProcessor:
             log_entry = WebhookLog(
                 automation_id=automation_id,
                 payload=payload,
-                timestamp=datetime.now(timezone.utc)  # When we receive the webhook
+                timestamp=datetime.now(timezone.utc),  # When we receive the webhook
+                trading_pair=automation.trading_pair  # Add the trading pair from the automation
             )
             db.session.add(log_entry)
             db.session.commit()
@@ -59,9 +64,26 @@ class WebhookProcessor:
                     "message": "Trading pair not configured for this automation"
                 }
             
+            # Check if portfolio is connected
+            if not automation.portfolio_id:
+                logger.error(f"No portfolio connected to automation: {automation_id}")
+                return {
+                    "success": False, 
+                    "message": "No portfolio connected to this automation"
+                }
+            
+            # Get portfolio details
+            portfolio = Portfolio.query.get(automation.portfolio_id)
+            if not portfolio:
+                logger.error(f"Portfolio not found for automation {automation_id}")
+                return {
+                    "success": False,
+                    "message": "Portfolio not found"
+                }
+            
             # Get the API credentials for this automation
             credentials = ExchangeCredentials.query.filter_by(
-                automation_id=automation.id,
+                portfolio_id=automation.portfolio_id,
                 exchange='coinbase'
             ).first()
             
@@ -72,21 +94,8 @@ class WebhookProcessor:
                     "message": "API credentials not found"
                 }
             
-            # Check available balance using AccountService
-            accounts = AccountService.get_accounts(
-                user_id=automation.user_id,
-                portfolio_id=automation.portfolio_id
-            )
-
-            # Validate accounts and balances
-            if not accounts:
-                logger.error(f"No accounts found for automation: {automation_id}")
-                return {
-                    "success": False,
-                    "message": "No accounts found for this automation"
-                }
-
             # Process the webhook payload
+            # Use action from payload, ignore any trading pair in the webhook
             action = payload.get('action', '').lower()
             
             # Validate action
@@ -97,29 +106,42 @@ class WebhookProcessor:
                     "message": f"Invalid action: {action}. Must be 'buy' or 'sell'."
                 }
             
-            # Use amount from payload or default to position_size
-            amount = payload.get('amount') or payload.get('position_size')
+            # Always use the trading pair defined in the automation
+            trading_pair = automation.trading_pair
+            logger.info(f"Using trading pair from automation: {trading_pair}")
             
-            if not amount:
-                logger.error("No amount or position_size specified in payload")
+            # Extract base and quote currencies from trading pair
+            try:
+                base_currency, quote_currency = trading_pair.split('-')
+                logger.info(f"Base currency: {base_currency}, Quote currency: {quote_currency}")
+            except ValueError:
+                logger.error(f"Invalid trading pair format: {trading_pair}")
                 return {
                     "success": False,
-                    "message": "No amount or position_size specified in payload"
+                    "message": f"Invalid trading pair format: {trading_pair}. Expected format: BTC-USD"
                 }
             
-            # TODO: Implement the actual trading logic with Coinbase API
-            # This would typically call CoinbaseService to place the order
+            # Execute the trade with Coinbase API
+            trade_result = self.execute_trade(
+                credentials=credentials,
+                portfolio=portfolio,
+                trading_pair=trading_pair,
+                action=action,
+                payload=payload
+            )
             
-            # For now, just log the trade we would execute
-            logger.info(f"Would execute {action} order for {amount} of {automation.trading_pair}")
+            # Update the log entry with the trade result
+            try:
+                log_entry.status = 'success' if trade_result.get('success', False) else 'error'
+                log_entry.message = trade_result.get('message', '')
+                log_entry.order_id = trade_result.get('order_id', '')
+                db.session.commit()
+                logger.info(f"Updated webhook log with trade result: {log_entry.id}")
+            except Exception as e:
+                logger.error(f"Error updating webhook log: {str(e)}")
+                # Continue even if updating the log fails
             
-            return {
-                "success": True,
-                "message": "Webhook processed successfully",
-                "action": action,
-                "amount": amount,
-                "trading_pair": automation.trading_pair
-            }
+            return trade_result
             
         except Exception as e:
             logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
@@ -127,4 +149,184 @@ class WebhookProcessor:
             return {
                 "success": False,
                 "message": f"Error processing webhook: {str(e)}"
+            }
+    
+    def execute_trade(self, credentials, portfolio, trading_pair, action, payload):
+        """
+        Execute a trade on Coinbase
+        
+        Args:
+            credentials: The ExchangeCredentials object
+            portfolio: The Portfolio object
+            trading_pair: Trading pair string (e.g. 'BTC-USD')
+            action: 'buy' or 'sell'
+            payload: Original webhook payload
+            
+        Returns:
+            dict: Result of the trade execution
+        """
+        try:  # Main try block
+            logger.info(f"Executing {action} order for {trading_pair} in portfolio {portfolio.name}")
+            
+            # Create Coinbase client
+            client = RESTClient(
+                api_key=credentials.api_key,
+                api_secret=credentials.decrypt_secret()
+            )
+            
+            if not client:
+                logger.error("Failed to create Coinbase client")
+                return {
+                    "success": False,
+                    "message": "Failed to create Coinbase client"
+                }
+            
+            # Get the portfolio UUID and split trading pair
+            portfolio_uuid = portfolio.portfolio_id
+            base_currency, quote_currency = trading_pair.split('-')
+            client_order_id = str(uuid.uuid4())
+            target_currency = quote_currency if action == 'buy' else base_currency
+            
+            try:  # Account retrieval try block
+                # Get accounts from Coinbase API
+                accounts_response = client.get_accounts()
+                
+                # Convert response to dictionary
+                if hasattr(accounts_response, "to_dict"):
+                    accounts_response = accounts_response.to_dict()
+                else:
+                    if hasattr(accounts_response, 'accounts'):
+                        accounts = accounts_response.accounts
+                    elif isinstance(accounts_response, dict) and 'accounts' in accounts_response:
+                        accounts = accounts_response['accounts']
+                    else:
+                        logger.error("Cannot extract accounts from response")
+                        return {
+                            "success": False,
+                            "message": "Failed to extract account information"
+                        }
+                
+                accounts = accounts_response.get('accounts', [])
+                logger.info(f"Looking for {target_currency} account in portfolio {portfolio_uuid}")
+                logger.info(f"Found {len(accounts)} accounts")
+                
+            except Exception as e:
+                logger.error(f"Error getting accounts: {str(e)}", exc_info=True)
+                return {
+                    "success": False,
+                    "message": f"Error retrieving account information: {str(e)}"
+                }
+                
+            try:  # Balance processing try block
+                target_account = None
+                target_balance = 0.0
+                
+                # Find account with matching currency
+                for account in accounts:
+                    currency = account.get('currency')
+                    if currency == target_currency:
+                        account_uuid = account.get('uuid')
+                        account_portfolio = account.get('retail_portfolio_id')
+                        available_balance = account.get('available_balance', {})
+                        balance_str = available_balance.get('value', '0')
+                        
+                        try:
+                            balance = float(balance_str)
+                            logger.info(f"Found {currency} account: {account_uuid} with balance: {balance}")
+                            
+                            if account_portfolio == portfolio_uuid:
+                                target_account = account_uuid
+                                target_balance = balance
+                                logger.info(f"Account matches portfolio {portfolio_uuid}")
+                                break
+                            elif target_account is None:
+                                target_account = account_uuid
+                                target_balance = balance
+                                logger.info(f"Account doesn't match portfolio, using as fallback")
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"Could not convert balance '{balance_str}' to float: {e}")
+                
+                if not target_account:
+                    return {
+                        "success": False,
+                        "message": f"No {target_currency} account found"
+                    }
+                
+                if target_balance <= 0:
+                    return {
+                        "success": False,
+                        "message": f"Insufficient balance ({target_balance} {target_currency}) for {action} order"
+                    }
+                
+                # Determine order size and configuration
+                if action == 'buy':
+                    order_size = math.floor(target_balance) # coinbase rejects order with decimals
+                    order_configuration = {
+                        "market_market_ioc": {
+                            "quote_size": str(order_size)
+                        }
+                    }
+                    side = "BUY"
+                else:
+                    order_size = target_balance
+                    order_configuration = {
+                        "market_market_ioc": {
+                            "base_size": str(order_size)
+                        }
+                    }
+                    side = "SELL"
+                    
+            except Exception as e:
+                logger.error(f"Error processing balance: {str(e)}", exc_info=True)
+                return {
+                    "success": False,
+                    "message": f"Error processing balance: {str(e)}"
+                }
+
+            try:  # Order execution try block
+                logger.info(f"Sending order to Coinbase: client_order_id={client_order_id}, product_id={trading_pair}, side={side}, order_config={order_configuration}")
+                
+                order_response = client.create_order(
+                    client_order_id=client_order_id,
+                    product_id=trading_pair,
+                    side=side,
+                    order_configuration=order_configuration
+                )
+                
+                # Process response
+                if hasattr(order_response, 'to_dict'):
+                    response_dict = order_response.to_dict()
+                elif isinstance(order_response, dict):
+                    response_dict = order_response
+                else:
+                    response_dict = {}
+                
+                order_id = response_dict.get('order_id')
+                status = response_dict.get('status')
+                
+                logger.info(f"Order executed. ID: {order_id}, Status: {status}")
+                
+                return {
+                    "success": True if order_id else False,
+                    "message": "Order executed successfully" if order_id else "Order submitted but no order ID returned",
+                    "order_id": order_id,
+                    "status": status,
+                    "action": action,
+                    "size": order_size,
+                    "trading_pair": trading_pair,
+                    "raw_response": str(order_response)
+                }
+                
+            except Exception as e:
+                logger.error(f"Error executing trade: {str(e)}", exc_info=True)
+                return {
+                    "success": False,
+                    "message": f"Error executing trade: {str(e)}"
+                }
+                
+        except Exception as e:  # Main exception handler
+            logger.error(f"Error in execute_trade: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"Error in execute_trade: {str(e)}"
             }

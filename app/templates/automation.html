@@ -238,8 +238,8 @@
                     </div>
                 </div>
 
-                <div class="card mb-4">    
-                    <!-- TradingView Setup Section -->
+                <!-- TradingView Setup Section -->
+                <div class="card mb-4" id="tradingview-setup-section" {% if not automation.trading_pair %}style="display: none;"{% endif %}>    
                     <div class="card-header">
                         <h5 class="mb-0">TradingView Alert Setup</h5>
                     </div>
@@ -252,22 +252,31 @@
                                 readonly>
                             <button class="btn btn-outline-secondary copy-url" type="button">Copy</button>
                         </div>
-                
+
                         <h5>Template</h5>
                         <div class="position-relative bg-light rounded mb-4">
-                            <pre class="p-3 mb-0"><code class="language-json">{% raw %}{
+                            <pre class="p-3 mb-0"><code class="language-json" id="webhook-template-code">{% raw %}{
     "action": "{{strategy.order.action}}",
-    "ticker": "{{ticker}}",
-    "order_size": "100%",
-    "position_size": "{{strategy.position_size}}",
-    "schema": "2",
-    "timestamp": "{{time}}"
+    "ticker": "{% endraw %}{{ automation.trading_pair }}{% raw %}",
+    "timestamp": "{{time}}",
+    "message": "TradingView order"
 }{% endraw %}</code></pre>
                             <button class="btn btn-sm btn-secondary position-absolute top-0 end-0 m-2 copy-template">
                                 Copy
                             </button>
                         </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <span>Copy this template into your TradingView alert's "Message" field. The action will be automatically filled with "buy" or "sell" based on your TradingView strategy.</span>
+                        </div>
                     </div>
+                </div>
+
+                <!-- No Trading Pair Alert -->
+                <div class="alert alert-warning" id="no-trading-pair-alert" {% if automation.trading_pair %}style="display: none;"{% endif %}>
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Trading Pair Required:</strong> Please select a trading pair above to complete your automation setup and view the webhook details.
                 </div>
             {% endif %}
         </div>
@@ -359,7 +368,7 @@ document.addEventListener('DOMContentLoaded', function() {
     async function saveTradingPair(tradingPair) {
         if (!tradingPair) {
             alert('Please select a trading pair');
-            return;
+            return null;
         }
         
         try {
@@ -377,12 +386,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(data.error);
             }
             
-            // Reload page to reflect changes
-            window.location.reload();
-            
+            return data;
         } catch (error) {
             console.error('Error saving trading pair:', error);
             alert(`Error saving trading pair: ${error.message}`);
+            return null;
         }
     }
     
@@ -433,37 +441,54 @@ document.addEventListener('DOMContentLoaded', function() {
             resultsElement.appendChild(item);
         });
     }
+
+    // Handle trading pair selection and template updates
+    const tradingViewSetupSection = document.getElementById('tradingview-setup-section');
+    const noTradingPairAlert = document.getElementById('no-trading-pair-alert');
+    const webhookTemplateCode = document.getElementById('webhook-template-code');
+
+    // Update the template when a trading pair is selected
+    async function updateTradingPair(tradingPair) {
+        try {
+            const response = await saveTradingPair(tradingPair);
+            
+            if (response && response.success) {
+                // Show the TradingView setup section and hide the alert
+                if (tradingViewSetupSection) tradingViewSetupSection.style.display = 'block';
+                if (noTradingPairAlert) noTradingPairAlert.style.display = 'none';
+                
+                // Update the template with the new trading pair
+                if (webhookTemplateCode) {
+                    const template = webhookTemplateCode.textContent;
+                    const updatedTemplate = template.replace(/"ticker": "[^"]*"/, `"ticker": "${tradingPair}"`);
+                    webhookTemplateCode.textContent = updatedTemplate;
+                }
+                
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('Error updating trading pair:', error);
+            return false;
+        }
+    }
     
     // Set up event listeners for the main form
-    if (tradingPairInput && tradingPairResults) {
-        tradingPairInput.addEventListener('input', function() {
-            filterTradingPairs(this.value, tradingPairResults);
-        });
-        
-        tradingPairInput.addEventListener('focus', function() {
-            if (this.value) {
-                filterTradingPairs(this.value, tradingPairResults);
-            }
-        });
-        
-        // Add this new event listener for saving the trading pair
+    if (tradingPairResults) {
         tradingPairResults.addEventListener('click', async function(e) {
             const item = e.target.closest('.dropdown-item');
             if (item) {
                 const selectedPair = item.textContent;
-                try {
-                    await saveTradingPair(selectedPair);
-                    // The page will reload after successful save
-                } catch (error) {
-                    console.error('Error saving trading pair:', error);
-                    alert('Failed to save trading pair: ' + error.message);
-                }
-            }
-        });
-        
-        document.addEventListener('click', function(e) {
-            if (!tradingPairSelect.contains(e.target)) {
+                tradingPairInput.value = selectedPair;
+                tradingPairHidden.value = selectedPair;
                 tradingPairResults.style.display = 'none';
+                
+                // Update the template without reloading the page
+                const success = await updateTradingPair(selectedPair);
+                if (!success) {
+                    // Only reload if the API call failed
+                    window.location.reload();
+                }
             }
         });
     }
@@ -498,13 +523,51 @@ document.addEventListener('DOMContentLoaded', function() {
                 this.previousElementSibling.value :
                 this.closest('.position-relative').querySelector('pre code').textContent;
 
-            navigator.clipboard.writeText(textToCopy).then(() => {
-                button.textContent = 'Copied!';
-                setTimeout(() => button.textContent = 'Copy', 2000);
-            }).catch(err => {
-                console.error('Failed to copy:', err);
-                alert('Failed to copy to clipboard');
-            });
+            // Try to use the Clipboard API first
+            const copyText = () => {
+                // Create a temporary textarea element to copy from
+                const textarea = document.createElement('textarea');
+                textarea.value = textToCopy;
+                textarea.style.position = 'fixed';  // Prevent scrolling to the element
+                textarea.style.opacity = 0;
+                document.body.appendChild(textarea);
+                textarea.select();
+                
+                try {
+                    // Execute the copy command
+                    const successful = document.execCommand('copy');
+                    if (successful) {
+                        button.textContent = 'Copied!';
+                        setTimeout(() => button.textContent = 'Copy', 2000);
+                    } else {
+                        console.error('Failed to copy text');
+                        alert('Failed to copy to clipboard');
+                    }
+                } catch (err) {
+                    console.error('Error during copy:', err);
+                    alert('Failed to copy to clipboard');
+                } finally {
+                    // Clean up
+                    document.body.removeChild(textarea);
+                }
+            };
+
+            // Try clipboard API first, fall back to execCommand
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(textToCopy)
+                    .then(() => {
+                        button.textContent = 'Copied!';
+                        setTimeout(() => button.textContent = 'Copy', 2000);
+                    })
+                    .catch(err => {
+                        console.error('Clipboard API failed:', err);
+                        // Fall back to execCommand approach
+                        copyText();
+                    });
+            } else {
+                // Clipboard API not available, use execCommand
+                copyText();
+            }
         });
     });
 

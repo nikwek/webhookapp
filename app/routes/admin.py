@@ -1,3 +1,4 @@
+# app/routes/admin.py
 from flask import Blueprint, jsonify, session, render_template, redirect, url_for, request
 from app.models.user import User
 from app.models.automation import Automation
@@ -5,34 +6,19 @@ from app.models.webhook import WebhookLog
 from app import db
 from functools import wraps
 from datetime import datetime, timezone
-from flask_login import login_required
+from flask_security import roles_required, login_required
 
 bp = Blueprint('admin', __name__, url_prefix='/admin')
 
 
-def admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not session.get('is_admin'):
-            return jsonify({"error": "Unauthorized"}), 403
-
-        # Get the current user
-        user = User.query.get(session.get('user_id'))
-        if user and user.require_password_change:
-            return redirect(url_for('auth.change_password'))
-
-        return f(*args, **kwargs)
-    return decorated_function
-
-
 @bp.route('/')
-@admin_required
+@roles_required('admin') 
 def index():
     return redirect(url_for('admin.users'))
 
 
 @bp.route('/users')
-@admin_required
+@roles_required('admin') 
 def users():
     search = request.args.get('search', '')
     query = User.query
@@ -42,20 +28,32 @@ def users():
     return render_template('admin/users.html', users=users)
 
 
+
+
 @bp.route('/automations')
-@admin_required
+@roles_required('admin')
 def automations():
-    automations = Automation.query.join(User).all()
-    return render_template('admin/automations.html', automations=automations)
+    # Join with explicit conditions
+    automations = db.session.query(Automation, User).\
+        join(User, Automation.user_id == User.id).all()
+    
+    # Process results to include user information
+    formatted_automations = []
+    for automation, user in automations:
+        automation.user = user  # Attach user object
+        formatted_automations.append(automation)
+    
+    return render_template('admin/automations.html', automations=formatted_automations)
+
 
 @bp.route('/settings')
-@admin_required
+@roles_required('admin') 
 def settings():
     return render_template('admin/settings.html')
 
 # API endpoints for user management
 @bp.route('/api/user/<int:user_id>/reset', methods=['POST'])
-@admin_required
+@roles_required('admin') 
 def reset_user(user_id):
     try:
         user = User.query.get_or_404(user_id)
@@ -70,7 +68,7 @@ def reset_user(user_id):
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/api/user/<int:user_id>/suspend', methods=['POST'])
-@admin_required
+@roles_required('admin') 
 def suspend_user(user_id):
     try:
         user = User.query.get_or_404(user_id)
@@ -82,7 +80,7 @@ def suspend_user(user_id):
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/api/user/<int:user_id>/delete', methods=['POST'])
-@admin_required
+@roles_required('admin') 
 def delete_user(user_id):
     try:
         user = User.query.get_or_404(user_id)
@@ -99,10 +97,9 @@ def delete_user(user_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-from app import db
-from app.models.automation import Automation
-from flask import Blueprint, jsonify, session, render_template, redirect, url_for, request
-@admin_required
+
+@bp.route('/api/automation/<int:automation_id>/toggle', methods=['POST'])
+@roles_required('admin') 
 def toggle_automation(automation_id):
     try:
         automation = Automation.query.filter_by(automation_id=automation_id).first()
@@ -123,7 +120,7 @@ def toggle_automation(automation_id):
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/api/automation/<automation_id>/purge', methods=['POST'])
-@admin_required
+@roles_required('admin') 
 def purge_automation_logs(automation_id):
     try:
         WebhookLog.query.filter_by(automation_id=automation_id).delete()
@@ -134,7 +131,7 @@ def purge_automation_logs(automation_id):
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/api/automation/<automation_id>/delete', methods=['POST'])
-@admin_required
+@roles_required('admin')  # Use roles_required instead of admin_required
 def delete_automation(automation_id):
     try:
         # First delete all logs
@@ -153,14 +150,14 @@ def delete_automation(automation_id):
 
 @bp.route('/admin/dashboard')
 @login_required
-@admin_required
+@roles_required('admin') 
 def admin_dashboard():
     """Redirect admin users directly to the users page."""
     return redirect(url_for('admin.users'))
 
 @bp.route('/admin/users')
 @login_required
-@admin_required
+@roles_required('admin') 
 def admin_users():
     search = request.args.get('search', '')
     query = User.query
@@ -171,7 +168,7 @@ def admin_users():
 
 @bp.route('/admin/automations')
 @login_required
-@admin_required
+@roles_required('admin') 
 def admin_automations():
     automations = Automation.query.join(User).all()
     return render_template('admin/automations.html', automations=automations)

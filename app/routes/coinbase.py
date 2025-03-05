@@ -1,33 +1,42 @@
 # app/routes/coinbase.py
 
 from flask import Blueprint, jsonify, current_app, session
-from flask_login import login_required, current_user
+from flask_security import login_required, current_user 
 from app.services.coinbase_service import CoinbaseService
 from app.models.exchange_credentials import ExchangeCredentials
 import logging
+from functools import wraps
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint('coinbase', __name__, url_prefix='/api/coinbase')
 
-@bp.route('/account-info')
-@login_required
-def get_account_info():
-    """Get Coinbase account information"""
-    # Check if user has Coinbase API keys
-    has_credentials = ExchangeCredentials.query.filter_by(
-        user_id=current_user.id,
+def has_coinbase_credentials(user_id):
+    """Check if user has default Coinbase API credentials"""
+    return ExchangeCredentials.query.filter_by(
+        user_id=user_id,
         exchange='coinbase',
         portfolio_name='default'
     ).first() is not None
-    
-    if not has_credentials:
-        return jsonify({
-            'error': 'No Coinbase API keys found',
-            'has_credentials': False
-        }), 400
-    
-    # Get account information
+
+def coinbase_credentials_required(f):
+    """Decorator to check if user has Coinbase API credentials"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not has_coinbase_credentials(current_user.id):
+            return jsonify({
+                'error': 'No Coinbase API keys found',
+                'has_credentials': False
+            }), 400
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@bp.route('/account-info')
+@login_required
+@coinbase_credentials_required
+def get_account_info():
+    # Get Coinbase account information
     account_info = CoinbaseService.get_account_info(current_user.id)
     
     if not account_info:
@@ -43,21 +52,8 @@ def get_account_info():
 
 @bp.route('/market/<product_id>')
 @login_required
+@coinbase_credentials_required
 def get_market_data(product_id):
-    """Get market data for a specific product"""
-    # Check if user has Coinbase API keys
-    has_credentials = ExchangeCredentials.query.filter_by(
-        user_id=current_user.id,
-        exchange='coinbase',
-        portfolio_name='default'
-    ).first() is not None
-    
-    if not has_credentials:
-        return jsonify({
-            'error': 'No Coinbase API keys found',
-            'has_credentials': False
-        }), 400
-    
     # Get market data
     market_data = CoinbaseService.get_market_data(current_user.id, product_id)
     
@@ -74,21 +70,8 @@ def get_market_data(product_id):
 
 @bp.route('/portfolios')
 @login_required
-def get_portfolios():
-    """Get Coinbase portfolios"""
-    # Check if user has Coinbase API keys
-    has_credentials = ExchangeCredentials.query.filter_by(
-        user_id=current_user.id,
-        exchange='coinbase',
-        portfolio_name='default'
-    ).first() is not None
-    
-    if not has_credentials:
-        return jsonify({
-            'error': 'No Coinbase API keys found',
-            'has_credentials': False
-        }), 400
-    
+@coinbase_credentials_required
+def get_portfolios():    
     # Get portfolio information
     portfolios = CoinbaseService.get_portfolios(current_user.id)
     
@@ -105,31 +88,14 @@ def get_portfolios():
 
 @bp.route('/trading-pairs')
 @login_required
+@coinbase_credentials_required
 def get_trading_pairs():
-    """Get all available trading pairs from Coinbase"""
-    logger.info("Trading pairs endpoint called")
-    
-    # Check if user has Coinbase API keys
-    credentials = ExchangeCredentials.query.filter_by(
-        user_id=current_user.id,
-        exchange='coinbase',
-        portfolio_name='default'
-    ).first()
-    
-    if not credentials:
-        logger.warning(f"No API credentials found for user {current_user.id}")
-        return jsonify({
-            'success': False,
-            'message': 'API credentials not found',
-            'trading_pairs': []
-        }), 400
-    
     # Get trading pairs
     user_id = session.get('user_id', current_user.id)
-    trading_pairs = CoinbaseService.get_trading_pairs(user_id)
+    trading_pairs = CoinbaseService.get_trading_pairs(current_user.id)
     
     if not trading_pairs:
-        logger.warning(f"No trading pairs found for user {user_id}")
+        logger.warning(f"No trading pairs found for user {current_user.id}")
         return jsonify({
             'success': False,
             'message': 'Failed to retrieve trading pairs',

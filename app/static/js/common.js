@@ -96,10 +96,66 @@ const WebhookManager = {
                 });
             }
         });
+    },
+
+    // Password validation logic
+    setupPasswordValidation: function() {
+        const password = document.getElementById("password");
+        const passwordConfirm = document.getElementById("password_confirm");
+        const strengthMessage = document.getElementById("password-strength");
+        const matchMessage = document.getElementById("password-match-message");
+
+        if (!password || !strengthMessage || !passwordConfirm || !matchMessage) return;
+
+        function checkPasswordStrength() {
+            const value = password.value;
+            let strength = "Weak";
+            let color = "red";
+
+            if (value.length >= 8) {
+                strength = "Medium";
+                color = "orange";
+
+                if (/[A-Z]/.test(value) && 
+                    /[a-z]/.test(value) && 
+                    /\d/.test(value) && 
+                    /[^A-Za-z0-9]/.test(value)) {
+                    strength = "Strong";
+                    color = "green";
+                }
+            }
+
+            strengthMessage.textContent = `Password Strength: ${strength}`;
+            strengthMessage.style.color = color;
+        }
+
+        function checkPasswordMatch() {
+            if (password.value && passwordConfirm.value) {
+                if (password.value === passwordConfirm.value) {
+                    matchMessage.textContent = "Passwords match!";
+                    matchMessage.style.color = "green";
+                } else {
+                    matchMessage.textContent = "Passwords do not match!";
+                    matchMessage.style.color = "red";
+                }
+            } else {
+                matchMessage.textContent = "";
+            }
+        }
+
+        // Add event listeners
+        password.addEventListener("input", () => {
+            checkPasswordStrength();
+            checkPasswordMatch();
+        });
+
+        passwordConfirm.addEventListener("input", checkPasswordMatch);
     }
 };
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     WebhookManager.initializeEventListeners();
+    WebhookManager.setupPasswordValidation();
 });
+

@@ -2,91 +2,79 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_bcrypt import Bcrypt
-from flask_login import LoginManager
-from config import Config
+from flask_security import Security, SQLAlchemyUserDatastore
+from flask_security.forms import RegisterFormV2
 from flask_wtf.csrf import CSRFProtect
+from flask_mail import Mail
+from config import Config
 import os
 import logging
-
+from datetime import datetime, timezone
 
 # Initialize extensions
 db = SQLAlchemy()
 migrate = Migrate()
-bcrypt = Bcrypt()
-login_manager = LoginManager()
-login_manager.login_view = 'auth.login'
 csrf = CSRFProtect()
+security = Security()
+mail = Mail()
 
-def create_app(config_class=Config):
+def create_app(test_config=None):
     app = Flask(__name__)
-    app.config.from_object(config_class)
+    
+    if test_config is None:
+        app.config.from_object(Config)
+    else:
+        app.config.update(test_config)
 
     # Configure logging
+    app.logger.setLevel(logging.DEBUG)
     if not app.debug:
-        # Set the logging level to INFO
         logging.basicConfig(level=logging.INFO)
 
-    # Ensure instance folder exists
-    try:
-        os.makedirs(app.instance_path)
-    except OSError:
-        pass
-
-    # Initialize Flask extensions
+    # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
-    bcrypt.init_app(app)
-    login_manager.init_app(app)
     csrf.init_app(app)
-
-    # Register Jinja2 filters
-    app.jinja_env.filters['from_json'] = from_json_filter
+    mail.init_app(app)
 
     with app.app_context():
-        # Import models (after db initialization)
-        from app.models.user import User
+        # Import models
+        from app.models.user import User, Role
         from app.models.automation import Automation
         from app.models.webhook import WebhookLog
         from app.models.exchange_credentials import ExchangeCredentials
         from app.models.account_cache import AccountCache
         
+        # Setup Flask-Security
+        user_datastore = SQLAlchemyUserDatastore(db, User, Role)
+        user_datastore = SQLAlchemyUserDatastore(db, User, Role)
+        security.init_app(
+            app,
+            user_datastore,
+            register_form=RegisterFormV2
+        )
 
         # Register blueprints
-        from app.routes import auth, dashboard, webhook, admin, automation, coinbase
-        app.register_blueprint(auth.bp)
+        from app.routes import dashboard, webhook, admin, automation
         app.register_blueprint(dashboard.bp)
         app.register_blueprint(webhook.bp)
         app.register_blueprint(admin.bp)
         app.register_blueprint(automation.bp)
-        app.register_blueprint(coinbase.bp)
+        
+        # Import debug blueprint here (after app is created) to avoid circular imports
+        from app.routes.debug import debug as debug_blueprint
+        app.register_blueprint(debug_blueprint)
+        
+        # Register auth routes blueprint
+        from app.routes.auth_routes import bp as auth_routes_bp
+        app.register_blueprint(auth_routes_bp)
 
+        # Configure login redirect
+        app.config.update(
+            SECURITY_POST_LOGIN_VIEW='/login-redirect',
+        )
+        
         # Initialize database
         db.create_all()
-        
-        # Create admin user if needed
-        admin_user = User.query.filter_by(username='admin').first()
-        if not admin_user:
-            admin_user = User(
-                username='admin',
-                is_admin=True,
-                require_password_change=True
-            )
-            admin_user.set_password('admin')
-            db.session.add(admin_user)
-            db.session.commit()
 
     return app
-
-@login_manager.user_loader
-def load_user(id):
-    from app.models.user import User
-    return User.query.get(int(id))
-
-def from_json_filter(value):
-    """Convert a JSON string to a Python object."""
-    import json
-    try:
-        return json.loads(value)
-    except:
-        return value

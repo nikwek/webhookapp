@@ -2,7 +2,7 @@ from flask import (
     Blueprint, render_template, jsonify,
     session, redirect, url_for, request, flash
 )
-from flask_login import login_required, current_user
+from flask_security import login_required, current_user
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
 from app.models.exchange_credentials import ExchangeCredentials

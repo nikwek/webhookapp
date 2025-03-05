@@ -1,6 +1,6 @@
 # app/routes/webhook.py
 from flask import Blueprint, request, jsonify, Response, stream_with_context, session, send_from_directory
-from flask_login import login_required
+from flask_security import login_required, current_user
 from app.models.webhook import WebhookLog
 from app.models.automation import Automation
 from app.services.webhook_processor import WebhookProcessor
@@ -63,7 +63,7 @@ def webhook_stream():
         while True:
             logs = (WebhookLog.query
                    .join(Automation)
-                   .filter(Automation.user_id == session['user_id'])
+                   .filter(Automation.user_id == current_user.id)
                    .order_by(WebhookLog.timestamp.desc())
                    .limit(100)
                    .all())
@@ -90,7 +90,7 @@ def get_logs():
     """API endpoint to get webhook logs"""
     logs = (WebhookLog.query
            .join(Automation)
-           .filter(Automation.user_id == session['user_id'])
+           .filter(Automation.user_id == current_user.id)
            .order_by(WebhookLog.timestamp.desc())
            .limit(100)
            .all())

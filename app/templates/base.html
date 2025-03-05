@@ -22,14 +22,14 @@
                 </button>
                 <div class="collapse navbar-collapse" id="navbarNav">
                     <ul class="navbar-nav me-auto">
-                        {% if session.get('user_id') %}
-                            {% if not session.get('is_admin') %}
+                        {% if current_user.is_authenticated %}
+                            {% if not current_user.has_role('admin') %}
                                 <li class="nav-item">
                                     <a class="nav-link {% if request.endpoint == 'dashboard.dashboard' %}active{% endif %}" 
                                     href="{{ url_for('dashboard.dashboard') }}">Dashboard</a>
                                 </li>
                             {% endif %}
-                            {% if session.get('is_admin') %}
+                            {% if current_user.has_role('admin') %}
                                 <li class="nav-item">
                                     <a class="nav-link {% if request.endpoint == 'admin.users' %}active{% endif %}" 
                                     href="{{ url_for('admin.users') }}">Users</a>
@@ -46,9 +46,9 @@
                         {% endif %}
                     </ul>
                     <ul class="navbar-nav">
-                        {% if session.get('user_id') %}
+                        {% if current_user.is_authenticated %}
                             <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('auth.logout') }}">Logout</a>
+                                <a class="nav-link" href="{{ url_for('security.logout') }}">Logout</a>
                             </li>
                         {% endif %}
                     </ul>

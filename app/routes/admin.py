@@ -1,6 +1,6 @@
 # app/routes/admin.py
 from flask import Blueprint, jsonify, session, render_template, redirect, url_for, request
-from app.models.user import User
+from app.models.user import User, Role
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
 from app import db
@@ -10,6 +10,9 @@ from flask_security import roles_required, login_required
 
 bp = Blueprint('admin', __name__, url_prefix='/admin')
 
+# Role check helper
+def get_user_roles():
+    return [role.name for role in current_user.roles]
 
 @bp.route('/')
 @roles_required('admin') 
@@ -144,30 +147,4 @@ def delete_automation(automation_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-    
-
-@bp.route('/admin/dashboard')
-@login_required
-@roles_required('admin') 
-def admin_dashboard():
-    """Redirect admin users directly to the users page."""
-    return redirect(url_for('admin.users'))
-
-@bp.route('/admin/users')
-@login_required
-@roles_required('admin') 
-def admin_users():
-    search = request.args.get('search', '')
-    query = User.query
-    if search:
-        query = query.filter(User.username.ilike(f'%{search}%'))
-    users = query.all()
-    return render_template('admin/users.html', users=users)
-
-@bp.route('/admin/automations')
-@login_required
-@roles_required('admin') 
-def admin_automations():
-    automations = Automation.query.join(User).all()
-    return render_template('admin/automations.html', automations=automations)
     

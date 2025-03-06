@@ -1,8 +1,11 @@
 import pytest
+import secrets
 from app import create_app, db
-from app.models.user import User
+from app.models.user import User, Role
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
+from flask_security import hash_password
+from app import db
 
 @pytest.fixture
 def app():
@@ -42,11 +45,20 @@ def admin_client(client, admin_user):
 
 @pytest.fixture
 def regular_user(app):
-    user = User(username='testuser')
-    user.set_password('password')
-    db.session.add(user)
-    db.session.commit()
-    return user
+    """Create a regular user for testing"""
+    with app.app_context():
+        user = User.query.filter_by(email='testuser@example.com').first()
+        if not user:
+            user = User(
+                email='testuser@example.com',
+                username='testuser',
+                fs_uniquifier=secrets.token_hex(16),
+                password=hash_password('password'),
+                active=True
+            )
+            db.session.add(user)
+            db.session.commit()
+        return user
 
 @pytest.fixture
 def admin_user(app):

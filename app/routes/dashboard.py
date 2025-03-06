@@ -19,7 +19,7 @@ bp = Blueprint('dashboard', __name__)
 @login_required
 def dashboard():
     """Render the dashboard page for non-admin users."""
-    if session.get('is_admin'):
+    if current_user.has_role('admin'):
         return redirect(url_for('admin.users'))
 
     user_id = current_user.id

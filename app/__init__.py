@@ -47,7 +47,6 @@ def create_app(test_config=None):
         
         # Setup Flask-Security
         user_datastore = SQLAlchemyUserDatastore(db, User, Role)
-        user_datastore = SQLAlchemyUserDatastore(db, User, Role)
         security.init_app(
             app,
             user_datastore,
@@ -60,6 +59,10 @@ def create_app(test_config=None):
         app.register_blueprint(webhook.bp)
         app.register_blueprint(admin.bp)
         app.register_blueprint(automation.bp)
+        
+        # Register coinbase blueprint
+        from app.routes.coinbase import bp as coinbase_bp
+        app.register_blueprint(coinbase_bp)
         
         # Import debug blueprint here (after app is created) to avoid circular imports
         from app.routes.debug import debug as debug_blueprint

@@ -108,3 +108,20 @@ def get_trading_pairs():
         'message': 'Trading pairs retrieved successfully',
         'trading_pairs': trading_pairs
     })
+
+@bp.route('/test')
+def test_route():
+    """Simple test route to verify the blueprint is registered properly"""
+    return jsonify({"message": "API route works!"})
+
+@bp.route('/routes')
+def list_routes():
+    """List all registered routes in the application"""
+    routes = []
+    for rule in current_app.url_map.iter_rules():
+        routes.append({
+            "endpoint": rule.endpoint,
+            "methods": list(rule.methods),
+            "rule": str(rule)
+        })
+    return jsonify(routes)

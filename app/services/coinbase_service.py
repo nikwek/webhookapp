@@ -15,6 +15,8 @@ class CoinbaseService:
     @staticmethod
     def get_client(user_id, portfolio_name='default'):
         """Get a Coinbase API client instance"""
+        from coinbase.rest import RESTClient
+        
         credentials = ExchangeCredentials.query.filter_by(
             user_id=user_id,
             exchange='coinbase',
@@ -34,7 +36,7 @@ class CoinbaseService:
                 api_key=credentials.api_key,
                 api_secret=api_secret
             )
-            logger.info(f"Successfully created Coinbase client for user {user_id}")
+            logger.info(f"Successfully created Coinbase REST client for user {user_id}")
             return client
         except Exception as e:
             logger.error(f"Error creating Coinbase client: {str(e)}")
@@ -93,105 +95,101 @@ class CoinbaseService:
 
     @staticmethod
     def get_trading_pairs(user_id):
-        """Get all available trading pairs from Coinbase"""
-        client = CoinbaseService.get_client(user_id)
-        if not client:
-            logger.error(f"Could not get Coinbase client for user {user_id}")
-            return []
-            
+        """Get all available trading pairs from Coinbase Advanced Trade API"""
+        from coinbase.rest import RESTClient
+        
         try:
-            logger.info(f"Fetching trading pairs for user {user_id}")
+            logger.info(f"Starting get_trading_pairs for user {user_id}")
+            
+            # Get credentials
+            credentials = ExchangeCredentials.query.filter_by(
+                user_id=user_id,
+                exchange='coinbase',
+                portfolio_name='default',
+                is_default=True
+            ).first()
+            
+            if not credentials:
+                logger.error(f"Could not find credentials for user {user_id}")
+                return []
+                    
+            # Decrypt API secret
+            api_secret = credentials.decrypt_secret()
+            api_key = credentials.api_key
+            
+            # Create Coinbase client
+            logger.info(f"Initializing Coinbase REST client")
+            client = RESTClient(api_key=api_key, api_secret=api_secret)
+            
+            # Fetch products
+            logger.info(f"Calling get_products()")
             response = client.get_products()
             
-            # Log raw response for debugging
-            logger.debug(f"Raw response type: {type(response)}")
-            logger.debug(f"Raw response: {response}")
-            
-            # Initialize trading_pairs list
-            trading_pairs = []
-            
-            # Get products from the response
-            products = None
+            # Process response
+            products = []
             if isinstance(response, dict) and 'products' in response:
                 products = response['products']
-                logger.info(f"Found {len(products)} products in response dictionary")
+                logger.info(f"Found {len(products)} products in dictionary response")
             elif hasattr(response, 'products'):
                 products = response.products
                 logger.info(f"Found {len(products)} products using .products attribute")
-            else:
-                try:
-                    response_dict = vars(response)
-                    if 'products' in response_dict:
-                        products = response_dict['products']
-                        logger.info(f"Found {len(products)} products using vars(response)")
-                except Exception as e:
-                    logger.error(f"Could not extract products from response: {e}")
-                    return []
             
             if not products:
-                logger.warning("No products found in response")
+                logger.error(f"No products found in response")
                 return []
-                
-            # Sample logging for first few products
-            logger.debug("First 3 products structure:")
-            for i, product in enumerate(products[:3]):
-                logger.debug(f"Product {i}: {product}")
-                
-            # Process each product
-            for product in products:
-                if isinstance(product, dict):
-                    product_id = product.get('product_id')
-                    base_currency = product.get('base_currency')
-                    quote_currency = product.get('quote_currency')
-                    status = product.get('status')
-                    logger.debug(f"Dict product: {product_id}, {base_currency}-{quote_currency}, {status}")
-                else:
-                    product_id = getattr(product, 'product_id', None)
-                    base_currency = getattr(product, 'base_currency', None)
-                    quote_currency = getattr(product, 'quote_currency', None)
-                    status = getattr(product, 'status', None)
-                    logger.debug(f"Object product: {product_id}, {base_currency}-{quote_currency}, {status}")
-                
-                if product_id and status == 'online':
-                    pair_data = {
-                        'product_id': product_id,
-                        'base_currency': base_currency,
-                        'quote_currency': quote_currency,
-                        'display_name': f"{base_currency}-{quote_currency}"
-                    }
-                    trading_pairs.append(pair_data)
-                    logger.debug(f"Added trading pair: {pair_data}")
             
-            trading_pairs.sort(key=lambda x: x['product_id'])
-            logger.info(f"Returning {len(trading_pairs)} trading pairs")
-            logger.debug("First 3 trading pairs in final result:")
-            for pair in trading_pairs[:3]:
-                logger.debug(f"Trading pair: {pair}")
+            # Format trading pairs
+            trading_pairs = []
+            
+            # Process each product - handle BOTH dict and object types
+            for product in products:
+                try:
+                    # First try to access as attributes (object)
+                    if hasattr(product, 'status') and hasattr(product, 'product_id'):
+                        status = getattr(product, 'status', None)
+                        product_id = getattr(product, 'product_id', None)
+                        base_currency = getattr(product, 'base_currency_id', None)
+                        quote_currency = getattr(product, 'quote_currency_id', None)
+                        base_display = getattr(product, 'base_display_symbol', None)
+                        quote_display = getattr(product, 'quote_display_symbol', None)
+                        display_name = getattr(product, 'display_name', None)
+                    # Then try as dictionary keys
+                    elif isinstance(product, dict):
+                        status = product.get('status')
+                        product_id = product.get('product_id')
+                        base_currency = product.get('base_currency_id')
+                        quote_currency = product.get('quote_currency_id')
+                        base_display = product.get('base_display_symbol')
+                        quote_display = product.get('quote_display_symbol')
+                        display_name = product.get('display_name')
+                    else:
+                        # Skip if neither object nor dict
+                        logger.warning(f"Skipping product of type {type(product)}")
+                        continue
+                    
+                    # Only include online products
+                    if status == 'online' and product_id:
+                        pair_data = {
+                            'id': product_id,
+                            'product_id': product_id,
+                            'base_currency': base_currency,
+                            'quote_currency': quote_currency,
+                            'display_name': f"{base_display}/{quote_display}" if base_display and quote_display else display_name
+                        }
+                        trading_pairs.append(pair_data)
+                except Exception as e:
+                    logger.exception(f"Error processing product: {str(e)}")
+                    # Continue with next product
+                    continue
+            
+            trading_pairs.sort(key=lambda x: x['display_name'])
+            logger.info(f"Successfully processed {len(trading_pairs)} trading pairs")
             
             return trading_pairs
             
         except Exception as e:
-            logger.error(f"Error getting trading pairs: {str(e)}", exc_info=True)
+            logger.exception(f"Unexpected error in get_trading_pairs: {str(e)}")
             return []
-        
-
-    @staticmethod
-    def get_client_from_credentials(credentials):
-        """
-        Get a Coinbase client instance from credentials
-        """
-        try:
-            if not credentials:
-                return None
-                
-            api_key = credentials.api_key
-            api_secret = credentials.decrypt_secret()
-            
-            return RESTClient(api_key=api_key, api_secret=api_secret)
-            
-        except Exception as e:
-            logger.error(f"Error creating Coinbase client from credentials: {str(e)}", exc_info=True)
-            return None
 
         
     @staticmethod
@@ -254,3 +252,23 @@ class CoinbaseService:
         except Exception as e:
             logger.error(f"Error getting portfolio value from breakdown: {str(e)}", exc_info=True)
             return 0.0
+        
+    
+    @staticmethod
+    def get_client_from_credentials(credentials):
+        """
+        Get a Coinbase client instance from credentials
+        """
+        try:
+            if not credentials:
+                return None
+                
+            api_key = credentials.api_key
+            api_secret = credentials.decrypt_secret()
+            
+            from coinbase.rest import RESTClient
+            return RESTClient(api_key=api_key, api_secret=api_secret)
+            
+        except Exception as e:
+            logger.error(f"Error creating Coinbase client from credentials: {str(e)}", exc_info=True)
+            return None

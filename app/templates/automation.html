@@ -225,11 +225,10 @@
                     <div class="card-body">
                         <div id="trading-pair-selection">
                             <div class="trading-pair-select mb-3" id="trading-pair-select">
-                                <input type="text" class="form-control" id="trading-pair-input" 
-                                    placeholder="Start typing (e.g. BTC-USD, ETH-USDT)" 
-                                    value="{{ automation.trading_pair or '' }}" autocomplete="off">
-                                <input type="hidden" id="trading_pair" name="trading_pair" value="{{ automation.trading_pair }}">
-                                <div class="trading-pair-results" id="trading-pair-results"></div>
+                                <input type="text" class="form-control" id="trading_pair" 
+                                       placeholder="Start typing (e.g. BTC-USD, ETH-USDT)" 
+                                       value="{{ automation.trading_pair or '' }}" autocomplete="off">
+                                <input type="hidden" id="trading_pair_id" name="trading_pair_id" value="{{ automation.trading_pair }}">
                             </div>
                             <small class="form-text text-muted">
                                 Select the trading pair for this automation. This determines which assets will be traded.
@@ -302,7 +301,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Get elements for the trading pair editor in the portfolio selection form
     const tradingPairSelect = document.getElementById('trading-pair-select');
-    const tradingPairInput = document.getElementById('trading-pair-input');
+    const tradingPairInput = document.getElementById('trading_pair');
     const tradingPairResults = document.getElementById('trading-pair-results');
     const tradingPairHidden = document.getElementById('trading_pair');
     
@@ -1065,4 +1064,97 @@ document.addEventListener('DOMContentLoaded', function() {
         ReactDOM.render(React.createElement(AutomationLogs), container);
     </script>
 {% endif %}
+<script>
+    // Initialize jQuery UI autocomplete
+    $(document).ready(function() {
+        const tradingPairInput = $('#trading_pair');
+        
+        if (tradingPairInput.length) {
+            console.log('Initializing jQuery UI autocomplete');
+            
+            // Access the automation ID, which is needed for the API call
+            const automationId = $('[data-automation-id]').data('automationId');
+            
+            // Define a function to save the trading pair
+            function handleTradingPairSelection(productId) {
+                console.log('Selected trading pair:', productId);
+                
+                // Update the input field
+                $('#trading_pair').val(productId);
+                
+                // Update the hidden field
+                $('#trading_pair_id').val(productId);
+                
+                // Make the API call manually
+                fetch(`/automation/${automationId}/trading-pair`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')
+                    },
+                    body: JSON.stringify({ trading_pair: productId })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log('Trading pair saved successfully');
+                        
+                        // Show the TradingView setup section and hide the alert
+                        $('#tradingview-setup-section').show();
+                        $('#no-trading-pair-alert').hide();
+                        
+                        // Update the template with the new trading pair
+                        const templateCode = $('#webhook-template-code');
+                        if (templateCode.length) {
+                            const template = templateCode.text();
+                            const updatedTemplate = template.replace(/"ticker": "[^"]*"/, `"ticker": "${productId}"`);
+                            templateCode.text(updatedTemplate);
+                        }
+                    } else if (data.error) {
+                        console.error('Error saving trading pair:', data.error);
+                        alert(`Error saving trading pair: ${data.error}`);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error saving trading pair:', error);
+                    alert('Error saving trading pair. Please try again.');
+                });
+            }
+            
+            // Fetch trading pairs
+            fetch('/api/coinbase/trading-pairs')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.trading_pairs && data.trading_pairs.length > 0) {
+                        console.log(`Loaded ${data.trading_pairs.length} trading pairs for autocomplete`);
+                        
+                        // Initialize autocomplete
+                        tradingPairInput.autocomplete({
+                            source: function(request, response) {
+                                const term = request.term.toLowerCase();
+                                const matches = data.trading_pairs.filter(pair => {
+                                    return (pair.product_id && pair.product_id.toLowerCase().includes(term)) ||
+                                        (pair.base_currency && pair.base_currency.toLowerCase().includes(term)) ||
+                                        (pair.quote_currency && pair.quote_currency.toLowerCase().includes(term));
+                                });
+                                response(matches.slice(0, 15).map(pair => {
+                                    return {
+                                        label: pair.product_id,
+                                        value: pair.product_id
+                                    };
+                                }));
+                            },
+                            minLength: 2,
+                            select: function(event, ui) {
+                                // Call our handler function
+                                handleTradingPairSelection(ui.item.value);
+                                return true;
+                            }
+                        });
+                    }
+                })
+                .catch(error => console.error('Error fetching trading pairs:', error));
+        }
+    });
+</script>
 {% endblock %}

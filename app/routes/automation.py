@@ -1,7 +1,6 @@
 # app/routes/automation.py
 from flask import Blueprint, request, jsonify, session, send_from_directory, render_template, redirect, url_for, flash
-from flask_login import current_user, login_required
-from flask_security import current_user
+from flask_security import current_user, login_required 
 from functools import wraps
 from app import db
 from app.models.automation import Automation

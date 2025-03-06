@@ -9,4 +9,61 @@
     opacity: 1 !important;
 }
 
-/* Add more common utilities and base styles here as needed */
+.automation-table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.automation-table th {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.automation-table th.automation-name {
+    width: 30%;
+}
+
+.automation-table th.portfolio {
+    width: 25%;
+}
+
+.automation-table th.trading-pair {
+    width: 15%;
+}
+
+.automation-table th.value {
+    width: 15%;
+}
+
+.automation-table th.actions {
+    width: 15%;
+    min-width: 160px;
+}
+
+.automation-table td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Add hover effect to show full content on overflow */
+.automation-table td:hover {
+    white-space: normal;
+    overflow: visible;
+    background-color: #fff;
+    position: relative;
+    z-index: 1;
+}
+
+/* Style adjustments for action buttons */
+.automation-table .btn {
+    margin-left: 0.5rem;
+}
+
+/* Ensure consistent padding */
+.automation-table th,
+.automation-table td {
+    padding: 0.75rem;
+    vertical-align: middle;
+}

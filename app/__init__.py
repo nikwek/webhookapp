@@ -69,8 +69,8 @@ def create_app(test_config=None):
         app.register_blueprint(debug_blueprint)
         
         # Register auth routes blueprint
-        from app.routes.auth_routes import bp as auth_routes_bp
-        app.register_blueprint(auth_routes_bp)
+        from app.routes.auth import bp as auth_bp
+        app.register_blueprint(auth_bp)
 
         # Configure login redirect
         app.config.update(

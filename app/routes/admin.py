@@ -28,8 +28,6 @@ def users():
     return render_template('admin/users.html', users=users)
 
 
-
-
 @bp.route('/automations')
 @roles_required('admin')
 def automations():

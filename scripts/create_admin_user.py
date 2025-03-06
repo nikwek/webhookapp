@@ -1,7 +1,7 @@
 from app import create_app, db
 from app.models.user import User, Role
 import secrets
-from flask_security.utils import hash_password  # Import Flask-Security's password hashing function
+from flask_security.utils import hash_password
 
 app = create_app()
 
@@ -19,7 +19,7 @@ with app.app_context():
             email='admin@example.com',
             username='admin',
             fs_uniquifier=secrets.token_hex(16),
-            password=hash_password('password123'),  # Use Flask-Security's hash_password instead of set_password
+            password=hash_password('password123'),  # Use Flask-Security's hash_password
             active=True
         )
         test_user.roles.append(admin_role)

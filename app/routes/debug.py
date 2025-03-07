@@ -34,3 +34,26 @@ def debug_register_form():
     # Get all field names
     fields = [f.name for f in form]
     return f"Registration form fields: {fields}"
+
+@debug.route('/debug/db-test')
+def test_db():
+    """Test database connectivity and user table"""
+    try:
+        # Test raw connection with proper text() wrapper
+        result = db.session.execute(text('SELECT 1'))
+        connection_ok = result.scalar() == 1
+        
+        # Test user table
+        users = User.query.all()
+        
+        return jsonify({
+            'status': 'success',
+            'connection': 'OK' if connection_ok else 'Failed',
+            'user_count': len(users),
+            'first_user_email': users[0].email if users else None
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500

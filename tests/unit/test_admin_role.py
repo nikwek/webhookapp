@@ -42,12 +42,8 @@ def admin_user(app, admin_role):
 def test_admin_access(client, admin_user, app):
     """Test admin route access"""
     with app.app_context():
-        # Start a fresh database session
-        db.session.begin()
-        
-        # Refresh admin user from database
-        admin = db.session.merge(admin_user)
-        db.session.refresh(admin)
+        # Refresh admin user in session
+        admin = User.query.get(admin_user.id)
         
         # Set session variables before login
         with client.session_transaction() as session:
@@ -78,6 +74,4 @@ def test_admin_access(client, admin_user, app):
             if response.status_code != 200:
                 print(f"Response data: {response.data.decode()}")
             assert response.status_code == 200
-            
-        # Clean up
-        db.session.commit()
+

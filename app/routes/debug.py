@@ -1,8 +1,13 @@
 # app/routes/debug.py
-from flask import Blueprint, current_app
+from flask import Blueprint, current_app, jsonify
 from flask_mail import Message
 from flask_security import RegisterForm
 from flask import current_app
+from sqlalchemy import text, inspect
+from sqlalchemy.exc import SQLAlchemyError
+from datetime import datetime, timezone
+from app import db
+from app.models.user import User
 
 debug = Blueprint('debug', __name__)
 
@@ -51,6 +56,65 @@ def test_db():
             'connection': 'OK' if connection_ok else 'Failed',
             'user_count': len(users),
             'first_user_email': users[0].email if users else None
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+    
+@debug.route('/health')
+def health_check():
+    """General health check endpoint"""
+    return jsonify({'status': 'healthy'})
+
+@debug.route('/health/db')
+def db_health_check():
+    """Database-specific health check endpoint"""
+    try:
+        # Test database connection and critical tables
+        db.session.execute(text('SELECT 1 FROM users'))
+        db.session.execute(text('SELECT 1 FROM roles'))
+        
+        # Get database statistics
+        inspector = inspect(db.engine)
+        table_names = inspector.get_table_names()
+        
+        return jsonify({
+            'status': 'healthy',
+            'message': 'Database connection is working',
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'tables': table_names,
+            'database_url': current_app.config['SQLALCHEMY_DATABASE_URI'].split('///')[0] + '///*****'
+        })
+    except SQLAlchemyError as e:
+        current_app.logger.error(f"Database health check failed: {e}")
+        return jsonify({
+            'status': 'unhealthy',
+            'message': str(e),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 500
+    
+@debug.route('/debug/db-tables')
+def db_tables():
+    """List all database tables and their columns"""
+    try:
+        inspector = inspect(db.engine)
+        tables = {}
+        for table_name in inspector.get_table_names():
+            columns = []
+            for column in inspector.get_columns(table_name):
+                columns.append({
+                    'name': column['name'],
+                    'type': str(column['type']),
+                    'nullable': column['nullable']
+                })
+            tables[table_name] = columns
+            
+        return jsonify({
+            'status': 'success',
+            'tables': tables,
+            'database_url': current_app.config['SQLALCHEMY_DATABASE_URI'].split('///')[0] + '///*****'
         })
     except Exception as e:
         return jsonify({

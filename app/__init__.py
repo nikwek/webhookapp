@@ -1,6 +1,7 @@
 # app/__init__.py
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect, text 
 from flask_migrate import Migrate
 from flask_security import Security, SQLAlchemyUserDatastore
 from flask_security.forms import RegisterFormV2
@@ -38,13 +39,30 @@ def create_app(test_config=None):
     mail.init_app(app)
 
     with app.app_context():
-        # Import models
-        from app.models.user import User, Role
-        from app.models.automation import Automation
-        from app.models.webhook import WebhookLog
-        from app.models.exchange_credentials import ExchangeCredentials
-        from app.models.account_cache import AccountCache
-        
+        try:
+            # Import models
+            from app.models.user import User, Role
+            from app.models.automation import Automation
+            from app.models.webhook import WebhookLog
+            from app.models.exchange_credentials import ExchangeCredentials
+            from app.models.account_cache import AccountCache
+            
+            # Check if database needs to be created using inspect
+            inspector = inspect(db.engine)
+            if not inspector.has_table('users'):
+                app.logger.info("Creating database tables...")
+                db.create_all()
+                app.logger.info("Database tables created successfully")
+            
+            # Verify critical tables exist using text()
+            db.session.execute(text('SELECT 1 FROM users'))
+            db.session.execute(text('SELECT 1 FROM roles'))
+            
+        except Exception as e:
+            app.logger.error(f"Database initialization error: {e}")
+            app.logger.info("Attempting to recreate database tables...")
+            db.create_all()
+            
         # Setup Flask-Security
         user_datastore = SQLAlchemyUserDatastore(db, User, Role)
         security.init_app(

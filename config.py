@@ -10,6 +10,12 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         'sqlite:///' + os.path.join(basedir, 'instance', 'webhook.db')
+        # Database connection pool settings
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_pre_ping': True,  # Enables automatic reconnection
+        'pool_recycle': 300,    # Recycle connections every 5 minutes
+        'pool_size': 10         # Maximum number of connections to keep
+    }
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Security settings

@@ -1,5 +1,5 @@
 // Common utilities for webhook manager
-const WebhookManager = {
+window.WebhookManager = window.WebhookManager || {
     // CSRF token fetch wrapper
     fetchWithCSRF: function(url, options = {}) {
         const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');

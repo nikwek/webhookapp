@@ -1,0 +1,30 @@
+<div class="card mb-4">    
+    <div class="card-header">
+        <h5 class="mb-0">Trading Pair</h5>
+    </div>
+    <div class="card-body">
+        <div id="trading-pair-selection">
+            <!-- View Mode -->
+            {% if not is_new_automation and automation.trading_pair %}
+                <div class="view-mode" id="pairViewMode">
+                    <div class="selected-pair mb-3">{{ automation.trading_pair }}</div>
+                    <button type="button" class="btn btn-primary" id="editPairBtn">Edit Trading Pair</button>
+                </div>
+            {% endif %}
+
+            <!-- Edit Mode -->
+            <div class="edit-mode {% if not is_new_automation and automation.trading_pair %}d-none{% endif %}" id="pairEditMode">
+                <div class="trading-pair-select mb-3" id="trading-pair-select">
+                    <input type="text" class="form-control" id="trading_pair" 
+                           placeholder="Start typing (e.g. BTC-USD, ETH-USDT)" 
+                           value="{{ automation.trading_pair or '' }}" autocomplete="off">
+                    <input type="hidden" id="trading_pair_id" name="trading_pair_id" value="{{ automation.trading_pair }}">
+                </div>
+                {% if not is_new_automation and automation.trading_pair %}
+                    <button type="button" class="btn btn-secondary me-2" id="cancelPairEdit">Cancel</button>
+                {% endif %}
+                <button type="button" class="btn btn-primary" id="savePairBtn">Save</button>
+            </div>
+        </div>
+    </div>
+</div>

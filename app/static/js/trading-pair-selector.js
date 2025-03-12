@@ -1,89 +1,128 @@
-// trading-pair-selector.js
-
 document.addEventListener('DOMContentLoaded', function() {
     const tradingPairInput = document.getElementById('trading_pair');
+    const editBtn = document.getElementById('editPairBtn');
+    const cancelBtn = document.getElementById('cancelPairEdit');
+    const saveBtn = document.getElementById('savePairBtn');
+    const viewMode = document.getElementById('pairViewMode');
+    const editMode = document.getElementById('pairEditMode');
+    
     if (!tradingPairInput) return;
     
     console.log('Initializing trading pair selector');
     
-    // Add loading indicator
-    const loadingIndicator = document.createElement('div');
-    loadingIndicator.className = 'mt-2 text-muted';
-    loadingIndicator.innerHTML = '<small>Loading trading pairs...</small>';
-    tradingPairInput.parentNode.appendChild(loadingIndicator);
-    
-    // Function to fetch trading pairs
-    function fetchTradingPairs() {
-        console.log('Fetching trading pairs...');
-        
-        // Fetch trading pairs
-        return fetch('/api/coinbase/trading-pairs', {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json'
-            },
-            credentials: 'same-origin'
-        })
-        .then(response => {
-            if (!response.ok) {
-                console.error('Response not OK:', response.status, response.statusText);
-                return response.text().then(text => {
-                    console.error('Response body:', text);
-                    throw new Error(`HTTP error! Status: ${response.status}`);
+    let tradingPairsLoaded = false;
+    let tradingPairsData = [];
+
+    // For new automations, load trading pairs immediately
+    if (!viewMode || document.querySelector('form#createAutomationForm')) {
+        console.log('New automation - loading trading pairs');
+        initializeTradingPairs();
+    }
+
+    // Edit button handler
+    if (editBtn) {
+        console.log('Adding edit button handler');
+        editBtn.addEventListener('click', function() {
+            console.log('Edit button clicked');
+            if (viewMode) viewMode.classList.add('d-none');
+            if (editMode) editMode.classList.remove('d-none');
+            if (!tradingPairsLoaded) {
+                initializeTradingPairs();
+            }
+        });
+    }
+
+    // Save button handler
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async function() {
+            const automationId = document.querySelector('[data-automation-id]')?.dataset.automationId;
+            if (!automationId) return;
+
+            try {
+                const response = await fetch(`/automation/${automationId}/trading-pair`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    },
+                    body: JSON.stringify({ trading_pair: tradingPairInput.value })
                 });
+
+                if (!response.ok) throw new Error('Failed to save trading pair');
+                
+                window.location.reload();
+            } catch (error) {
+                console.error('Error saving trading pair:', error);
+                alert('Error saving trading pair. Please try again.');
             }
-            return response.json();
-        })
-        .then(data => {
-            console.log('Trading pairs response received:', data);
-            
-            // Remove loading indicator
-            loadingIndicator.remove();
-            
-            if (!data.success) {
-                console.error('API reported error:', data.message);
-                throw new Error(data.message || 'Unknown error');
+        });
+    }
+
+    // Cancel button handler
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', function() {
+            viewMode.classList.remove('d-none');
+            editMode.classList.add('d-none');
+            tradingPairInput.value = tradingPairInput.defaultValue;
+        });
+    }
+
+    async function initializeTradingPairs() {
+        if (tradingPairsLoaded) return;
+
+        // Add loading indicator
+        const loadingIndicator = document.createElement('div');
+        loadingIndicator.className = 'mt-2 text-muted';
+        loadingIndicator.innerHTML = '<small>Loading trading pairs...</small>';
+        tradingPairInput.parentNode.appendChild(loadingIndicator);
+
+        try {
+            const response = await fetch('/api/coinbase/trading-pairs', {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                },
+                credentials: 'same-origin'
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
             }
+
+            const data = await response.json();
             
-            const tradingPairs = data.trading_pairs || [];
-            console.log(`Trading pairs loaded: ${tradingPairs.length}`);
-            
-            if (tradingPairs.length === 0) {
-                console.warn('No trading pairs were returned');
-                const warningElement = document.createElement('div');
-                warningElement.className = 'alert alert-warning mt-2';
-                warningElement.textContent = 'No trading pairs available. Please check your Coinbase API connection.';
-                tradingPairInput.parentNode.appendChild(warningElement);
-                return [];
+            if (!data.trading_pairs) {
+                throw new Error('No trading pairs in response');
             }
-            
-            return tradingPairs;
-        })
-        .catch(error => {
-            // Remove loading indicator
-            loadingIndicator.remove();
-            
+
+            tradingPairsData = data.trading_pairs;
+            tradingPairsLoaded = true;
+
+            // Initialize autocomplete after data is loaded
+            initializeAutocomplete();
+
+            // Show success message
+            const successElement = document.createElement('div');
+            successElement.className = 'text-success mt-1';
+            successElement.innerHTML = `<small>${tradingPairsData.length} trading pairs available</small>`;
+            tradingPairInput.parentNode.appendChild(successElement);
+
+        } catch (error) {
             console.error('Error fetching trading pairs:', error);
             const errorElement = document.createElement('div');
             errorElement.className = 'alert alert-danger mt-2';
             errorElement.textContent = 'Failed to fetch trading pairs: ' + error.message;
             tradingPairInput.parentNode.appendChild(errorElement);
-            return [];
-        });
+        } finally {
+            loadingIndicator.remove();
+        }
     }
-    
-    // Initialize autocomplete with trading pairs
-    fetchTradingPairs().then(tradingPairs => {
-        if (tradingPairs.length === 0) return;
-        
-        // Log sample data for debugging
-        console.log('Sample trading pair:', tradingPairs[0]);
-        
-        // Initialize jQuery UI autocomplete
+
+    function initializeAutocomplete() {
         $(tradingPairInput).autocomplete({
             source: function(request, response) {
                 const term = request.term.toLowerCase();
-                const matches = tradingPairs.filter(pair => {
+                const matches = tradingPairsData.filter(pair => {
                     const displayName = pair.display_name || '';
                     const baseCurrency = pair.base_currency || '';
                     const quoteCurrency = pair.quote_currency || '';
@@ -119,8 +158,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 return false; // Prevent default behavior
             }
+        });
 
-        .autocomplete("instance")._renderItem = function(ul, item) {
+        // Custom rendering for autocomplete dropdown
+        $(tradingPairInput).autocomplete("instance")._renderItem = function(ul, item) {
             // Ensure item has all required properties
             const displayName = item.display_name || item.product_id || '';
             const baseCurrency = item.base_currency || '';
@@ -134,11 +175,5 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>`)
                 .appendTo(ul);
         };
-        
-        // Show success message
-        const successElement = document.createElement('div');
-        successElement.className = 'text-success mt-1';
-        successElement.innerHTML = `<small>${tradingPairs.length} trading pairs available</small>`;
-        tradingPairInput.parentNode.appendChild(successElement);
-    });
+    }
 });

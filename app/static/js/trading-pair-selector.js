@@ -1,3 +1,4 @@
+// app/static/js/trading-pair-selector.js
 document.addEventListener('DOMContentLoaded', function() {
     const tradingPairInput = document.getElementById('trading_pair');
     const editBtn = document.getElementById('editPairBtn');
@@ -126,52 +127,50 @@ document.addEventListener('DOMContentLoaded', function() {
                     const displayName = pair.display_name || '';
                     const baseCurrency = pair.base_currency || '';
                     const quoteCurrency = pair.quote_currency || '';
+                    const productId = pair.product_id || '';
                     
                     return displayName.toLowerCase().includes(term) || 
                            baseCurrency.toLowerCase().includes(term) || 
-                           quoteCurrency.toLowerCase().includes(term);
+                           quoteCurrency.toLowerCase().includes(term) ||
+                           productId.toLowerCase().includes(term);
                 });
                 
                 // Limit to 15 results for better UI
-                response(matches.slice(0, 15));
+                response(matches.slice(0, 15).map(pair => {
+                    return {
+                        label: pair.product_id || pair.id || '',
+                        value: pair.product_id || pair.id || '',
+                        product_id: pair.product_id || pair.id || ''
+                    };
+                }));
             },
             minLength: 2,
             select: function(event, ui) {
-                event.preventDefault();
-                
-                // Update the visible input field with the display name
-                $(this).val(ui.item.display_name);
-                
-                // Store the product ID in a hidden field
+                // Store the product ID in a hidden field for reference
                 const hiddenField = document.getElementById('trading_pair_id');
+                const productId = ui.item.product_id;
+                
                 if (hiddenField) {
-                    hiddenField.value = ui.item.id || ui.item.product_id;
+                    hiddenField.value = productId;
                 } else {
                     // Create hidden field if it doesn't exist
                     const newHiddenField = document.createElement('input');
                     newHiddenField.type = 'hidden';
                     newHiddenField.id = 'trading_pair_id';
                     newHiddenField.name = 'trading_pair_id';
-                    newHiddenField.value = ui.item.id || ui.item.product_id;
+                    newHiddenField.value = productId;
                     tradingPairInput.parentNode.appendChild(newHiddenField);
                 }
                 
-                return false; // Prevent default behavior
+                return true; // Keep default behavior
             }
         });
 
         // Custom rendering for autocomplete dropdown
         $(tradingPairInput).autocomplete("instance")._renderItem = function(ul, item) {
-            // Ensure item has all required properties
-            const displayName = item.display_name || item.product_id || '';
-            const baseCurrency = item.base_currency || '';
-            const quoteCurrency = item.quote_currency || '';
-            
-            // Custom rendering with better styling for dropdown items
             return $("<li>")
                 .append(`<div class="ui-menu-item-wrapper" style="padding: 5px;">
-                    <strong>${displayName}</strong>
-                    <span class="text-muted ms-2">${baseCurrency}/${quoteCurrency}</span>
+                    <strong>${item.label}</strong>
                 </div>`)
                 .appendTo(ul);
         };

@@ -5,6 +5,7 @@
 {% block styles %}
 {{ super() }}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/trading-pair-selector.css') }}">
+<link rel="stylesheet" href="//code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
 {% endblock %}
 
 {% block content %}
@@ -219,20 +220,40 @@
                 {% endif %}
                 <!-- Trading Pair Section -->
                 <div class="card mb-4">    
-                    <div class="card-header">
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">Trading Pair</h5>
+                        {% if automation and automation.trading_pair %}
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="editPairBtn">
+                                <i class="fas fa-pencil-alt"></i> Edit
+                            </button>
+                        {% endif %}
                     </div>
                     <div class="card-body">
                         <div id="trading-pair-selection">
-                            <div class="trading-pair-select mb-3" id="trading-pair-select">
-                                <input type="text" class="form-control" id="trading_pair" 
-                                       placeholder="Start typing (e.g. BTC-USD, ETH-USDT)" 
-                                       value="{{ automation.trading_pair or '' }}" autocomplete="off">
-                                <input type="hidden" id="trading_pair_id" name="trading_pair_id" value="{{ automation.trading_pair }}">
+                            <!-- View Mode -->
+                            {% if automation and automation.trading_pair %}
+                                <div class="view-mode" id="pairViewMode">
+                                    <div class="selected-pair">{{ automation.trading_pair }}</div>
+                                </div>
+                            {% endif %}
+
+                            <!-- Edit Mode - Show for new automations or when editing -->
+                            <div class="edit-mode {% if automation and automation.trading_pair %}d-none{% endif %}" id="pairEditMode">
+                                <div class="trading-pair-select" id="trading-pair-select">
+                                    <input type="text" class="form-control" id="trading_pair" 
+                                        placeholder="Start typing (e.g. BTC-USD, ETH-USDT)" 
+                                        value="{{ automation.trading_pair or '' }}" autocomplete="off">
+                                    <input type="hidden" id="trading_pair_id" name="trading_pair_id" value="{{ automation.trading_pair or '' }}">
+                                </div>
+                                
+                                <!-- Always show these buttons in edit mode -->
+                                <div class="mt-3">
+                                    {% if automation and automation.trading_pair %}
+                                        <button type="button" class="btn btn-secondary" id="cancelPairEdit">Cancel</button>
+                                    {% endif %}
+                                    <button type="button" class="btn btn-primary ms-2" id="savePairBtn">Save</button>
+                                </div>
                             </div>
-                            <small class="form-text text-muted">
-                                Select the trading pair for this automation. This determines which assets will be traded.
-                            </small>
                         </div>
                     </div>
                 </div>
@@ -292,516 +313,278 @@
 
 {% block scripts %}
 {{ super() }}
+
+<script src="{{ url_for('static', filename='js/trading-pair-selector.js') }}"></script>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const automationId = '{{ automation.automation_id if automation }}';
-
-        // Global variable to store trading pairs data
-        window.tradingPairs = [];
-    
-    // Get elements for the trading pair editor in the portfolio selection form
-    const tradingPairSelect = document.getElementById('trading-pair-select');
-    const tradingPairInput = document.getElementById('trading_pair');
-    const tradingPairResults = document.getElementById('trading-pair-results');
-    const tradingPairHidden = document.getElementById('trading_pair');
-    
-    // For connected portfolio - modal for changing trading pair
-    const changeTradingPairBtn = document.getElementById('changeTradingPairBtn');
-    const addTradingPairBtn = document.getElementById('addTradingPairBtn');
-    const tradingPairModal = document.getElementById('tradingPairModal');
-    const modalTradingPairInput = document.getElementById('modal-trading-pair-input');
-    const modalTradingPairHidden = document.getElementById('modal-trading_pair');
-    const modalTradingPairResults = document.getElementById('modal-trading-pair-results');
-    const saveTradingPairBtn = document.getElementById('saveTradingPairBtn');
-    
-    let tradingPairModalInstance = null;
-    
-    // Initialize the modal if it exists
-    if (tradingPairModal && typeof bootstrap !== 'undefined') {
-        tradingPairModalInstance = new bootstrap.Modal(tradingPairModal);
-        
-        // Set up buttons to open the modal
-        if (changeTradingPairBtn) {
-            changeTradingPairBtn.addEventListener('click', function() {
-                tradingPairModalInstance.show();
-            });
-        }
-        
-        if (addTradingPairBtn) {
-            addTradingPairBtn.addEventListener('click', function() {
-                tradingPairModalInstance.show();
-            });
-        }
-        
-        // Set up save button
-        if (saveTradingPairBtn) {
-            saveTradingPairBtn.addEventListener('click', async function() {
-                await saveTradingPair(modalTradingPairHidden.value);
-                tradingPairModalInstance.hide();
-            });
-        }
-    }
-    
-    // Fetch trading pairs from API
-    async function fetchTradingPairs() {
-        try {
-            console.log('Fetching trading pairs...');
-            const response = await fetch('/api/coinbase/trading-pairs');
-            const data = await response.json();
-            
-            if (data.success) {
-                console.log(`Retrieved ${data.trading_pairs.length} trading pairs`);
-                window.tradingPairs = data.trading_pairs;
-                return data.trading_pairs;
-            } else {
-                console.error('Failed to fetch trading pairs:', data.message);
-                return [];
-            }
-        } catch (error) {
-            console.error('Error fetching trading pairs:', error);
-            return [];
-        }
-    }
-    
-    // Save trading pair via API
-    async function saveTradingPair(tradingPair) {
-        if (!tradingPair) {
-            alert('Please select a trading pair');
-            return null;
-        }
-        
-        try {
-            const response = await fetch(`/automation/${automationId}/trading-pair`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-                },
-                body: JSON.stringify({ trading_pair: tradingPair })
-            });
-            
-            const data = await response.json();
-            if (data.error) {
-                throw new Error(data.error);
-            }
-            
-            return data;
-        } catch (error) {
-            console.error('Error saving trading pair:', error);
-            alert(`Error saving trading pair: ${error.message}`);
-            return null;
-        }
-    }
-    
-    // Filter trading pairs based on search
-    function filterTradingPairs(searchTerm, resultsElement) {
-        if (!searchTerm) {
-            resultsElement.innerHTML = '';
-            resultsElement.style.display = 'none';
-            return;
-        }
-        
-        if (!window.tradingPairs || !Array.isArray(window.tradingPairs)) {
-            console.error('Trading pairs not available:', window.tradingPairs);
-            return;
-        }
-
-        const term = searchTerm.toUpperCase();
-        const filteredPairs = window.tradingPairs
-            .filter(pair => {
-                if (!pair || !pair.product_id) {
-                    console.error('Invalid pair object:', pair);
-                    return false;
-                }
-                return pair.product_id.toUpperCase().includes(term) ||
-                    (pair.base_currency && pair.base_currency.toUpperCase().includes(term)) ||
-                    (pair.quote_currency && pair.quote_currency.toUpperCase().includes(term));
-            })
-            .slice(0, 10); // Limit to 10 results
-        
-        // Display results
-        resultsElement.innerHTML = '';
-        resultsElement.style.display = filteredPairs.length ? 'block' : 'none';
-        
-        filteredPairs.forEach(pair => {
-            const item = document.createElement('div');
-            item.className = 'dropdown-item';
-            item.textContent = pair.product_id;
-            item.addEventListener('click', () => {
-                const input = resultsElement.id === 'trading-pair-results' ? 
-                    tradingPairInput : modalTradingPairInput;
-                const hidden = resultsElement.id === 'trading-pair-results' ? 
-                    tradingPairHidden : modalTradingPairHidden;
-                
-                input.value = pair.product_id;
-                hidden.value = pair.product_id;
-                resultsElement.style.display = 'none';
-            });
-            resultsElement.appendChild(item);
-        });
-    }
-
-    // Handle trading pair selection and template updates
-    const tradingViewSetupSection = document.getElementById('tradingview-setup-section');
-    const noTradingPairAlert = document.getElementById('no-trading-pair-alert');
-    const webhookTemplateCode = document.getElementById('webhook-template-code');
-
-    // Update the template when a trading pair is selected
-    async function updateTradingPair(tradingPair) {
-        try {
-            const response = await saveTradingPair(tradingPair);
-            
-            if (response && response.success) {
-                // Show the TradingView setup section and hide the alert
-                if (tradingViewSetupSection) tradingViewSetupSection.style.display = 'block';
-                if (noTradingPairAlert) noTradingPairAlert.style.display = 'none';
-                
-                // Update the template with the new trading pair
-                if (webhookTemplateCode) {
-                    const template = webhookTemplateCode.textContent;
-                    const updatedTemplate = template.replace(/"ticker": "[^"]*"/, `"ticker": "${tradingPair}"`);
-                    webhookTemplateCode.textContent = updatedTemplate;
-                }
-                
-                return true;
-            }
-            return false;
-        } catch (error) {
-            console.error('Error updating trading pair:', error);
-            return false;
-        }
-    }
-    
-    // Set up event listeners for the main form
-    if (tradingPairResults) {
-        tradingPairResults.addEventListener('click', async function(e) {
-            const item = e.target.closest('.dropdown-item');
-            if (item) {
-                const selectedPair = item.textContent;
-                tradingPairInput.value = selectedPair;
-                tradingPairHidden.value = selectedPair;
-                tradingPairResults.style.display = 'none';
-                
-                // Update the template without reloading the page
-                const success = await updateTradingPair(selectedPair);
-                if (!success) {
-                    // Only reload if the API call failed
-                    window.location.reload();
-                }
-            }
-        });
-    }
-    
-    // Set up event listeners for the modal
-    if (modalTradingPairInput && modalTradingPairResults) {
-        modalTradingPairInput.addEventListener('input', function() {
-            filterTradingPairs(this.value, modalTradingPairResults);
-        });
-        
-        modalTradingPairInput.addEventListener('focus', function() {
-            if (this.value) {
-                filterTradingPairs(this.value, modalTradingPairResults);
-            }
-        });
-        
-        document.addEventListener('click', function(e) {
-            if (!document.getElementById('modal-trading-pair-select').contains(e.target)) {
-                modalTradingPairResults.style.display = 'none';
-            }
-        });
-    }
-    
-    // Load trading pairs on page load
-    fetchTradingPairs();
-
-    // Initialize copy buttons
-    document.querySelectorAll('.copy-url, .copy-template').forEach(button => {
-        button.addEventListener('click', function() {
-            const isUrl = this.classList.contains('copy-url');
-            const textToCopy = isUrl ? 
-                this.previousElementSibling.value :
-                this.closest('.position-relative').querySelector('pre code').textContent;
-
-            // Try to use the Clipboard API first
-            const copyText = () => {
-                // Create a temporary textarea element to copy from
-                const textarea = document.createElement('textarea');
-                textarea.value = textToCopy;
-                textarea.style.position = 'fixed';  // Prevent scrolling to the element
-                textarea.style.opacity = 0;
-                document.body.appendChild(textarea);
-                textarea.select();
-                
-                try {
-                    // Execute the copy command
-                    const successful = document.execCommand('copy');
-                    if (successful) {
-                        button.textContent = 'Copied!';
-                        setTimeout(() => button.textContent = 'Copy', 2000);
-                    } else {
-                        console.error('Failed to copy text');
-                        alert('Failed to copy to clipboard');
-                    }
-                } catch (err) {
-                    console.error('Error during copy:', err);
-                    alert('Failed to copy to clipboard');
-                } finally {
-                    // Clean up
-                    document.body.removeChild(textarea);
-                }
-            };
-
-            // Try clipboard API first, fall back to execCommand
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(textToCopy)
-                    .then(() => {
-                        button.textContent = 'Copied!';
-                        setTimeout(() => button.textContent = 'Copy', 2000);
-                    })
-                    .catch(err => {
-                        console.error('Clipboard API failed:', err);
-                        // Fall back to execCommand approach
-                        copyText();
-                    });
-            } else {
-                // Clipboard API not available, use execCommand
-                copyText();
-            }
-        });
-    });
-
-    // Portfolio connection handling
-    const portfolioSelectionSection = document.getElementById('portfolio-selection-section');
-    const apiKeyFormSection = document.getElementById('api-key-form-section');
-    const backToPortfolioSelectionBtn = document.getElementById('backToPortfolioSelection');
-    const refreshPortfoliosBtn = document.getElementById('refreshPortfoliosBtn');
-    
-    // Back button handler
-    if (backToPortfolioSelectionBtn) {
-        backToPortfolioSelectionBtn.addEventListener('click', function() {
-            apiKeyFormSection.classList.add('d-none');
-            portfolioSelectionSection.classList.remove('d-none');
-        });
-    }
-    
-    // Refresh portfolios button
-    if (refreshPortfoliosBtn) {
-        refreshPortfoliosBtn.addEventListener('click', function() {
-            window.location.reload();
-        });
-    }
-
-    // CSRF token for fetch requests
-    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-
-    // Create Automation Form
-    const createForm = document.getElementById('createAutomationForm');
-    if (createForm) {
-        createForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-
-            // Disable the submit button to prevent double submission
-            const submitButton = this.querySelector('button[type="submit"]');
-            submitButton.disabled = true;
-
-            const name = document.getElementById('automationName').value.trim();
-            
-            if (!name) {
-                alert('Please enter an automation name');
-                submitButton.disabled = false;
-                return;
-            }
-
-            try {
-                const response = await WebhookManager.fetchWithCSRF('/automation', {
-                    method: 'POST',
-                    body: JSON.stringify({ name: name })
-                });
-                
-                const data = await response.json();
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-                
-                // Only redirect if we got a successful response
-                if (data.automation_id) {
-                    window.location.href = `/automation/${data.automation_id}`;
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                submitButton.disabled = false;
-                alert(`Error creating automation: ${error.message}`);
-            }
-        });
-    }
-
-    // Delete button handler
-    const deleteBtn = document.getElementById('deleteAutomationBtn');
-    if (deleteBtn) {
-        deleteBtn.addEventListener('click', async function() {
-            if (confirm('Are you sure you want to delete this automation? This action cannot be undone.')) {
-                try {
-                    const response = await WebhookManager.fetchWithCSRF(`/automation/${automationId}`, {
-                        method: 'DELETE'
-                    });
-                    
-                    const data = await response.json();
-                    if (data.error) throw new Error(data.error);
-                    window.location.href = '/dashboard';
-                } catch (error) {
-                    console.error('Error:', error);
-                    alert('Error deleting automation: ' + error.message);
-                }
-            }
-        });
-    }
-
-    // Inline editing functionality
-    const titleContainer = document.getElementById('titleContainer');
-    if (titleContainer) {
-        const title = document.getElementById('automationTitle');
-        const input = document.getElementById('automationTitleInput');
-        const editBtn = document.getElementById('editTitleBtn');
-        const saveBtn = document.getElementById('saveTitleBtn');
-
-        function enableEditing() {
-            title.classList.add('d-none');
-            input.classList.remove('d-none');
-            editBtn.classList.add('d-none');
-            saveBtn.classList.remove('d-none');
-            input.focus();
-            input.select();
-        }
-
-        function disableEditing() {
-            title.classList.remove('d-none');
-            input.classList.add('d-none');
-            editBtn.classList.remove('d-none');
-            saveBtn.classList.add('d-none');
-            input.value = title.textContent;
-        }
-
-        async function saveTitle() {
-            const newName = input.value.trim();
-            if (!newName) {
-                alert('Please enter an automation name');
-                return;
-            }
-
-            try {
-                const response = await WebhookManager.fetchWithCSRF(`/automation/${automationId}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ name: newName })
-                });
-                
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
-                
-                title.textContent = newName;
-                disableEditing();
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error updating automation name: ' + error.message);
-                disableEditing();
-            }
-        }
-
-        editBtn.addEventListener('click', enableEditing);
-        saveBtn.addEventListener('click', saveTitle);
-
-        // Handle escape key to cancel editing
-        input.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                disableEditing();
-            } else if (e.key === 'Enter') {
-                saveTitle();
-            }
-        });
-
-        // Handle clicking outside to cancel editing
-        document.addEventListener('click', function(e) {
-            if (!titleContainer.contains(e.target) && !input.classList.contains('d-none')) {
-                disableEditing();
-            }
-        }); 
-    }
-
-});
-
-// Unified portfolio management code
-document.addEventListener('DOMContentLoaded', function() {
     const automationId = document.querySelector('[data-automation-id]')?.dataset.automationId || 
-                         '{{ automation.automation_id if automation }}';
+                            '{{ automation.automation_id if automation }}';
     
-    if (!automationId) {
-        console.log('No automation ID found, skipping portfolio setup');
-        return;
-    }
-
-    // Cache DOM elements
+    // Get CSRF token - make it available in a broader scope
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    // Cache DOM elements for portfolio management
     const createPortfolioBtn = document.getElementById('createPortfolioBtn');
     const portfolioSelectionSection = document.getElementById('portfolio-selection-section');
     const refreshPortfoliosBtn = document.getElementById('refreshPortfoliosBtn');
     const createPortfolioModal = document.getElementById('createPortfolioModal');
     const createPortfolioForm = document.getElementById('createPortfolioForm');
-    
-    // Only proceed if we have the necessary elements
-    if (!createPortfolioBtn || !portfolioSelectionSection) {
-        console.log('Missing required elements, skipping portfolio setup');
-        return;
-    }
-    
-    // Initialize Bootstrap modal if available
-    let portfolioModal;
-    if (createPortfolioModal && typeof bootstrap !== 'undefined') {
-        portfolioModal = new bootstrap.Modal(createPortfolioModal);
-    }
-    
-    // Get CSRF token for fetch requests
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    
-    // Utility function for fetch with CSRF
-    const fetchWithCSRF = async (url, options = {}) => {
-        const defaultOptions = {
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
+    const deleteAutomationBtn = document.getElementById('deleteAutomationBtn');
+
+    // Handler for Delete Automation button
+    if (deleteAutomationBtn && automationId) {
+        console.log('Adding delete automation button handler');
+        deleteAutomationBtn.addEventListener('click', function() {
+            if (confirm('Are you sure you want to delete this automation? This action cannot be undone.')) {
+                fetch(`/automation/${automationId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to delete automation');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = '/dashboard';
+                    } else if (data.error) {
+                        throw new Error(data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting automation:', error);
+                    alert('Error deleting automation: ' + error.message);
+                });
             }
-        };
-        
-        const mergedOptions = { ...defaultOptions, ...options };
-        
-        if (options.body && typeof options.body === 'object') {
-            mergedOptions.body = JSON.stringify(options.body);
+        });
+    }
+    
+    // Create automation form handler
+    const createForm = document.getElementById('createAutomationForm');
+    if (createForm) {
+        console.log('Initializing create automation form handler');
+        createForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const automationName = document.getElementById('automationName').value.trim();
+            if (!automationName) {
+                alert('Please enter an automation name');
+                return;
+            }
+            
+            // Make API request to create automation
+            fetch('/automation', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ name: automationName })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Server responded with an error');
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Automation created:', data);
+                // Redirect to the new automation page
+                window.location.href = `/automation/${data.automation_id}`;
+            })
+            .catch(error => {
+                console.error('Error creating automation:', error);
+                alert('Error creating automation: ' + error.message);
+            });
+        });
+    }
+    
+    // Initialize portfolio management if elements exist
+    if (portfolioSelectionSection) {
+        // Refresh button handler
+        if (refreshPortfoliosBtn) {
+            refreshPortfoliosBtn.addEventListener('click', function() {
+                window.location.reload();
+            });
         }
         
-        return fetch(url, mergedOptions);
-    };
-    
-    /**
-     * Displays instruction alert for portfolio setup
-     * @param {string} message - The message to display (optional)
-     * @param {boolean} hasPortfolios - Whether portfolios exist
-     */
-    function showPortfolioInstructions(message, hasPortfolios = false) {
-        console.log('Showing portfolio instructions alert');
+        // Create Portfolio button handler - Direct approach without using modal
+        if (createPortfolioBtn) {
+            createPortfolioBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Simple approach: Ask for the name directly with prompt
+                const portfolioName = prompt('Enter new portfolio name:');
+                if (!portfolioName || portfolioName.trim() === '') {
+                    return;
+                }
+                
+                fetch(`/automation/${automationId}/create-portfolio`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: JSON.stringify({ name: portfolioName.trim() })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    
+                    if (data.needs_manual_setup) {
+                        if (confirm('You need to create a portfolio manually on Coinbase. Would you like to open Coinbase now?')) {
+                            window.open('https://www.coinbase.com/advanced-portfolio', '_blank');
+                        }
+                        return;
+                    }
+                    
+                    if (data.success) {
+                        const select = document.getElementById('portfolio_id');
+                        if (select) {
+                            const option = new Option(data.portfolio.name, data.portfolio.id);
+                            select.add(option);
+                            select.value = data.portfolio.id;
+                        }
+                        
+                        alert(`Portfolio "${data.portfolio.name}" created successfully!`);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error creating portfolio:', error);
+                    alert('Error creating portfolio: ' + error.message);
+                });
+            });
+        }
         
-        // Remove any existing alerts
+        // Setup portfolio form if it exists
+        if (createPortfolioForm) {
+            createPortfolioForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const portfolioName = document.getElementById('portfolioName').value.trim();
+                if (!portfolioName) {
+                    alert('Please enter a portfolio name');
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/automation/${automationId}/create-portfolio`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken
+                        },
+                        body: JSON.stringify({ name: portfolioName })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.error) throw new Error(data.error);
+                    
+                    if (data.needs_manual_setup) {
+                        if (confirm('You need to create a portfolio manually on Coinbase. Would you like to open Coinbase now?')) {
+                            window.open('https://www.coinbase.com/advanced-portfolio', '_blank');
+                        }
+                        return;
+                    }
+                    
+                    if (data.success) {
+                        // Try to hide the modal
+                        try {
+                            if (createPortfolioModal && typeof bootstrap !== 'undefined') {
+                                const modal = bootstrap.Modal.getInstance(createPortfolioModal);
+                                if (modal) modal.hide();
+                            }
+                        } catch (error) {
+                            console.warn('Could not close modal:', error);
+                        }
+                        
+                        const select = document.getElementById('portfolio_id');
+                        if (select) {
+                            const option = new Option(data.portfolio.name, data.portfolio.id);
+                            select.add(option);
+                            select.value = data.portfolio.id;
+                        }
+                        
+                        alert(`Portfolio "${data.portfolio.name}" created successfully!`);
+                    }
+                } catch (error) {
+                    console.error('Error creating portfolio:', error);
+                    alert('Error creating portfolio: ' + error.message);
+                }
+            });
+        }
+        
+        // Check trading credentials
+        checkTradingCredentials();
+    }
+
+    // Portfolio management functions
+    async function checkTradingCredentials() {
+        if (!automationId) return;
+        
+        try {
+            const response = await fetch(`/automation/${automationId}/check-trading-credentials`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log('Credential check response:', data);
+            
+            const hasPortfolios = checkForNonDefaultPortfolios();
+            
+            if (data.needs_manual_setup) {
+                if (createPortfolioBtn) createPortfolioBtn.style.display = 'none';
+                showPortfolioInstructions(data.message, hasPortfolios);
+            } else {
+                if (createPortfolioBtn) {
+                    createPortfolioBtn.style.display = 'inline-block';
+                }
+            }
+        } catch (error) {
+            console.error('Error checking trading credentials:', error);
+        }
+    }
+
+    function checkForNonDefaultPortfolios() {
+        const portfolioSelect = document.getElementById('portfolio_id');
+        if (!portfolioSelect) return false;
+        
+        let nonDefaultOptions = 0;
+        for (let i = 0; i < portfolioSelect.options.length; i++) {
+            const option = portfolioSelect.options[i];
+            if (option.value && option.text.toLowerCase() !== 'default') {
+                nonDefaultOptions++;
+            }
+        }
+        return nonDefaultOptions > 0;
+    }
+
+    function showPortfolioInstructions(message, hasPortfolios) {
+        if (!portfolioSelectionSection) return;
+        
         const existingAlerts = document.querySelectorAll('.portfolio-instructions-alert');
         existingAlerts.forEach(alert => alert.remove());
         
-        // Create alert container
         const alertDiv = document.createElement('div');
         alertDiv.className = 'alert alert-info portfolio-instructions-alert mb-3';
-        
-        // Set appropriate heading based on whether portfolios exist
-        const heading = hasPortfolios 
-            ? 'Pick a portfolio or create a new one'
-            : 'Create a Portfolio';
-            
-        // Build alert content
         alertDiv.innerHTML = `
-            <h5 class="alert-heading">${heading}</h5>
+            <h5 class="alert-heading">${hasPortfolios ? 'Pick a portfolio or create a new one' : 'Create a Portfolio'}</h5>
             <ol>
                 <li>Go to <a href="https://www.coinbase.com/advanced-portfolio" target="_blank">https://www.coinbase.com/advanced-portfolio</a></li>
                 <li>Click "New Portfolio" and create your portfolio</li>
@@ -809,138 +592,10 @@ document.addEventListener('DOMContentLoaded', function() {
             </ol>
         `;
         
-        // Insert the alert at the beginning of the container
         portfolioSelectionSection.insertBefore(alertDiv, portfolioSelectionSection.firstChild);
     }
-    
-    /**
-     * Checks if the user has trading credentials
-     */
-    async function checkTradingCredentials() {
-        console.log('Checking trading credentials');
-        
-        try {
-            const response = await fetchWithCSRF(`/automation/${automationId}/check-trading-credentials`);
-            
-            if (!response.ok) {
-                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-            }
-            
-            const data = await response.json();
-            console.log('Credential check response:', data);
-            
-            // Check if non-default portfolios exist
-            const portfolioSelect = document.getElementById('portfolio_id');
-            
-            // Count options that don't contain "Default" in their text
-            let nonDefaultOptions = 0;
-            if (portfolioSelect) {
-                for (let i = 0; i < portfolioSelect.options.length; i++) {
-                    const option = portfolioSelect.options[i];
-                    // Skip the placeholder option and any option with "Default" in the name
-                    if (option.value && option.text.toLowerCase() !== 'default') {
-                        nonDefaultOptions++;
-                    }
-                }
-            }
-            
-            const hasPortfolios = nonDefaultOptions > 0;
-            
-            if (data.needs_manual_setup) {
-                // No trading credentials - show instructions
-                createPortfolioBtn.style.display = 'none';
-                showPortfolioInstructions(data.message, hasPortfolios);
-            } else {
-                // Has trading credentials - enable portfolio creation
-                createPortfolioBtn.style.display = 'inline-block';
-                setupCreatePortfolioButton();
-            }
-        } catch (error) {
-            console.error('Error checking trading credentials:', error);
-        }
-    }
-    
-    /**
-     * Sets up the create portfolio button click handler
-     */
-    function setupCreatePortfolioButton() {
-        createPortfolioBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            
-            if (portfolioModal) {
-                portfolioModal.show();
-            } else {
-                alert('Portfolio creation is not available at this time. Please refresh the page and try again.');
-            }
-        });
-    }
-    
-    /**
-     * Handle portfolio creation form submission
-     */
-    function setupPortfolioForm() {
-        if (!createPortfolioForm) return;
-        
-        createPortfolioForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const portfolioName = document.getElementById('portfolioName').value.trim();
-            
-            if (!portfolioName) {
-                alert('Please enter a portfolio name');
-                return;
-            }
-            
-            try {
-                const response = await fetchWithCSRF(`/automation/${automationId}/create-portfolio`, {
-                    method: 'POST',
-                    body: { name: portfolioName }
-                });
-                
-                const data = await response.json();
-                
-                if (data.error) throw new Error(data.error);
-                
-                // Handle manual setup instruction case
-                if (data.needs_manual_setup) {
-                    if (portfolioModal) portfolioModal.hide();
-                    showPortfolioInstructions(data.message, false);
-                    return;
-                }
-                
-                // Handle successful portfolio creation
-                if (data.success) {
-                    if (portfolioModal) portfolioModal.hide();
-                    
-                    const select = document.getElementById('portfolio_id');
-                    if (select) {
-                        const option = new Option(data.portfolio.name, data.portfolio.id);
-                        select.add(option);
-                        select.value = data.portfolio.id;
-                    }
-                    
-                    alert(`Portfolio "${data.portfolio.name}" created successfully! You can now select it and click "Next" to continue.`);
-                }
-            } catch (error) {
-                console.error('Error creating portfolio:', error);
-                alert('Error creating portfolio: ' + error.message);
-            }
-        });
-    }
-    
-    // Set up refresh button if it exists
-    if (refreshPortfoliosBtn) {
-        refreshPortfoliosBtn.addEventListener('click', function() {
-            window.location.reload();
-        });
-    }
-    
-    // Initialize the portfolio management
-    checkTradingCredentials();
-    setupPortfolioForm();
 });
 </script>
-
 
 {% if automation %}
     <script type="text/babel">
@@ -980,7 +635,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     return next;
                 });
             };
-
+            
+            // Move useEffect outside of toggleRow
             React.useEffect(() => {
                 fetchLogs();
                 // Set up auto-refresh every 30 seconds
@@ -1028,7 +684,6 @@ document.addEventListener('DOMContentLoaded', function() {
                                                     key={log.timestamp}
                                                     onClick={() => toggleRow(log.timestamp)}
                                                     className="webhook-log-row cursor-pointer"
-                                                    className="webhook-log-row"
                                                 >
                                                     <td>{new Date(log.timestamp).toLocaleString()}</td>
                                                     <td>
@@ -1064,97 +719,5 @@ document.addEventListener('DOMContentLoaded', function() {
         ReactDOM.render(React.createElement(AutomationLogs), container);
     </script>
 {% endif %}
-<script>
-    // Initialize jQuery UI autocomplete
-    $(document).ready(function() {
-        const tradingPairInput = $('#trading_pair');
-        
-        if (tradingPairInput.length) {
-            console.log('Initializing jQuery UI autocomplete');
-            
-            // Access the automation ID, which is needed for the API call
-            const automationId = $('[data-automation-id]').data('automationId');
-            
-            // Define a function to save the trading pair
-            function handleTradingPairSelection(productId) {
-                console.log('Selected trading pair:', productId);
-                
-                // Update the input field
-                $('#trading_pair').val(productId);
-                
-                // Update the hidden field
-                $('#trading_pair_id').val(productId);
-                
-                // Make the API call manually
-                fetch(`/automation/${automationId}/trading-pair`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': $('meta[name="csrf-token"]').attr('content')
-                    },
-                    body: JSON.stringify({ trading_pair: productId })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        console.log('Trading pair saved successfully');
-                        
-                        // Show the TradingView setup section and hide the alert
-                        $('#tradingview-setup-section').show();
-                        $('#no-trading-pair-alert').hide();
-                        
-                        // Update the template with the new trading pair
-                        const templateCode = $('#webhook-template-code');
-                        if (templateCode.length) {
-                            const template = templateCode.text();
-                            const updatedTemplate = template.replace(/"ticker": "[^"]*"/, `"ticker": "${productId}"`);
-                            templateCode.text(updatedTemplate);
-                        }
-                    } else if (data.error) {
-                        console.error('Error saving trading pair:', data.error);
-                        alert(`Error saving trading pair: ${data.error}`);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error saving trading pair:', error);
-                    alert('Error saving trading pair. Please try again.');
-                });
-            }
-            
-            // Fetch trading pairs
-            fetch('/api/coinbase/trading-pairs')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success && data.trading_pairs && data.trading_pairs.length > 0) {
-                        console.log(`Loaded ${data.trading_pairs.length} trading pairs for autocomplete`);
-                        
-                        // Initialize autocomplete
-                        tradingPairInput.autocomplete({
-                            source: function(request, response) {
-                                const term = request.term.toLowerCase();
-                                const matches = data.trading_pairs.filter(pair => {
-                                    return (pair.product_id && pair.product_id.toLowerCase().includes(term)) ||
-                                        (pair.base_currency && pair.base_currency.toLowerCase().includes(term)) ||
-                                        (pair.quote_currency && pair.quote_currency.toLowerCase().includes(term));
-                                });
-                                response(matches.slice(0, 15).map(pair => {
-                                    return {
-                                        label: pair.product_id,
-                                        value: pair.product_id
-                                    };
-                                }));
-                            },
-                            minLength: 2,
-                            select: function(event, ui) {
-                                // Call our handler function
-                                handleTradingPairSelection(ui.item.value);
-                                return true;
-                            }
-                        });
-                    }
-                })
-                .catch(error => console.error('Error fetching trading pairs:', error));
-        }
-    });
-</script>
+
 {% endblock %}

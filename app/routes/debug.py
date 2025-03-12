@@ -176,3 +176,52 @@ def get_automation_by_portfolio(coinbase_portfolio_id):
             'status': 'error',
             'message': str(e)
         }), 500
+    
+@debug.route('/debug/automations')
+def debug_automations():
+    """Debug endpoint to check automation_id values"""
+    try:
+        # Get all automations
+        automations = Automation.query.all()
+        
+        # Prepare data for display
+        automation_data = []
+        for automation in automations:
+            automation_data.append({
+                'id': automation.id,
+                'automation_id': automation.automation_id,
+                'name': automation.name,
+                'is_active': automation.is_active,
+                'portfolio_id': automation.portfolio_id,
+                'user_id': automation.user_id,
+                # Test URL generation
+                'url_to_automation': f"/automation/{automation.automation_id}"
+            })
+        
+        # Check the blueprint registration
+        blueprints = []
+        for name, blueprint in current_app.blueprints.items():
+            routes = []
+            for rule in current_app.url_map.iter_rules():
+                if rule.endpoint.startswith(name + '.'):
+                    routes.append({
+                        'endpoint': rule.endpoint,
+                        'methods': [m for m in rule.methods if m not in ('HEAD', 'OPTIONS')],
+                        'rule': str(rule)
+                    })
+            
+            blueprints.append({
+                'name': name,
+                'routes': routes
+            })
+        
+        return jsonify({
+            'count': len(automation_data),
+            'automations': automation_data,
+            'blueprints': blueprints
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500

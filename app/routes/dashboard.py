@@ -24,36 +24,32 @@ def dashboard():
 
     user_id = current_user.id
     
-    # Get automations with portfolio details using a join
-    automations_query = (
-        Automation.query
-        .outerjoin(Portfolio, Automation.portfolio_id == Portfolio.id)
-        .filter(Automation.user_id == user_id)
-        .add_columns(
-            Portfolio.name.label('portfolio_name'),
-            Automation.trading_pair,
-            Portfolio.id.label('portfolio_id')  # Added portfolio_id
-        )
-        .all()
-    )
+    # Get automations
+    db_automations = Automation.query.filter_by(user_id=user_id).all()
     
-    # Process the results into a format suitable for the template
+    # Get portfolios
+    portfolios = {p.id: p for p in Portfolio.query.filter_by(user_id=user_id).all()}
+    
+    # Convert to dictionaries for template
     automations = []
-    for result in automations_query:
-        automation = result[0]  # The Automation object
-        automation.webhook_url = f"{request.url_root.rstrip('/')}/webhook?automation_id={automation.automation_id}"
-        automation.portfolio_name = result[1]  # The Portfolio.name value
-        automation.trading_pair = result[0].trading_pair  # Get trading_pair from Automation object
+    for automation in db_automations:
+        automation_dict = {
+            'id': automation.id,
+            'automation_id': automation.automation_id,
+            'name': automation.name,
+            'is_active': automation.is_active,
+            'trading_pair': automation.trading_pair,
+            'webhook_url': f"{request.url_root.rstrip('/')}/webhook?automation_id={automation.automation_id}",
+            'portfolio_name': None,
+            'portfolio_value': None
+        }
         
-        # Get portfolio value if portfolio is connected (fix misplaced code)
-        portfolio_id = result[3] if len(result) > 3 else None  # The Portfolio.id value
-        if portfolio_id:
-            portfolio_value = AccountService.get_portfolio_value(user_id, portfolio_id)
-            automation.portfolio_value = portfolio_value
-        else:
-            automation.portfolio_value = None
-            
-        automations.append(automation)
+        if automation.portfolio_id and automation.portfolio_id in portfolios:
+            portfolio = portfolios[automation.portfolio_id]
+            automation_dict['portfolio_name'] = portfolio.name
+            automation_dict['portfolio_value'] = AccountService.get_portfolio_value(user_id, portfolio.id)
+        
+        automations.append(automation_dict)
 
     # Check if user has Coinbase API keys
     has_coinbase_keys = ExchangeCredentials.query.filter_by(

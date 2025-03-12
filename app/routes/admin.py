@@ -167,19 +167,21 @@ def purge_automation_logs(automation_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-@bp.route('/api/automation/<automation_id>/delete', methods=['POST'])
-@roles_required('admin')  # Use roles_required instead of admin_required
+@bp.route('/api/automation/<int:automation_id>/delete', methods=['POST'])
+@roles_required('admin')
 def delete_automation(automation_id):
     try:
-        # First delete all logs
-        WebhookLog.query.filter_by(automation_id=automation_id).delete()
+        # First delete all logs for this automation
+        automation = Automation.query.get(automation_id)
+        if not automation:
+            return jsonify({"error": "Automation not found"}), 404
+            
+        WebhookLog.query.filter_by(automation_id=automation.automation_id).delete()
+        
         # Then delete the automation
-        automation = Automation.query.filter_by(automation_id=automation_id).first()
-        if automation:
-            db.session.delete(automation)
-            db.session.commit()
-            return jsonify({"success": True})
-        return jsonify({"error": "Automation not found"}), 404
+        db.session.delete(automation)
+        db.session.commit()
+        return jsonify({"success": True})
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500

@@ -8,7 +8,9 @@ class Automation(db.Model):
     __tablename__ = 'automations'
     
     id = db.Column(db.Integer, primary_key=True)
-    automation_id = db.Column(db.String(40), unique=True, index=True)
+    # Add default value for automation_id
+    automation_id = db.Column(db.String(40), unique=True, index=True, 
+                              default=lambda: str(uuid.uuid4()))
     user_id = db.Column(db.Integer)
     name = db.Column(db.String(100), nullable=False)
     is_active = db.Column(db.Boolean, default=True)

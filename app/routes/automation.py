@@ -1136,3 +1136,6 @@ def debug_portfolio_breakdown(portfolio_uuid):
         logger.error(f"Error in debug_portfolio_breakdown: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
     
+@bp.route('/test-route/<automation_id>')
+def test_automation_route(automation_id):
+    return f"Automation ID: {automation_id}"

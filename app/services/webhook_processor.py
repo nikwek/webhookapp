@@ -13,6 +13,7 @@ from coinbase.rest import RESTClient
 import logging
 import uuid
 import math
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -290,7 +291,9 @@ class WebhookProcessor:
 
             try:  # Order execution try block
                 logger.info(f"Sending order to Coinbase: client_order_id={client_order_id}, product_id={trading_pair}, side={side}, order_config={order_configuration}")
-                
+                portfolio = Portfolio.query.filter_by(portfolio_id=portfolio_uuid).first()
+                automation = Automation.query.filter_by(portfolio_id=portfolio.id).first()
+
                 order_response = client.create_order(
                     client_order_id=client_order_id,
                     product_id=trading_pair,
@@ -308,29 +311,67 @@ class WebhookProcessor:
                 
                 # Extract success info from response
                 success_response = response_dict.get('success_response', {})
+                success = response_dict.get('success', False)
+                coinbase_trade = "Filled" if success else "Rejected"
                 order_id = success_response.get('order_id')
+                product_id = success_response.get('product_id')
+                side = success_response.get('side')
+                message = f"Status: {coinbase_trade} | Order ID: {success_response.get('order_id', 'Unknown')}"
                 
                 logger.info(f"Order executed. Response: {response_dict}")
                 
-                return {
-                    "trade_executed": bool(order_id),
-                    "order_id": order_id,
-                    "client_order_id": client_order_id,
-                    "message": "Order executed successfully" if order_id else "Order submitted but pending confirmation",
-                    "size": order_size,
-                    "trading_pair": trading_pair,
-                    "trade_status": "success" if order_id else "pending",
-                    "raw_response": str(response_dict)
-                }
-                
             except Exception as e:
                 logger.error(f"Error executing trade: {str(e)}", exc_info=True)
-                return {
-                    "trade_executed": False,
-                    "message": f"Error executing trade: {str(e)}",
-                    "client_order_id": client_order_id,
-                    "trade_status": "error"
-                }
+                response_dict = {}
+                success = False
+                coinbase_trade = "Error"
+                order_id = None
+                product_id = trading_pair
+                message = "Something went wrong"
+                
+                if hasattr(e, 'response'):
+                    try:
+                        error_response = e.response.json()
+                        message = error_response.get('message', message)
+                        response_dict = error_response
+                    except:
+                        response_dict = {"error": str(e)}
+
+            # Create webhook log entry (moved outside try/except)
+            try:
+                current_time = datetime.now(timezone.utc)
+                log_entry = WebhookLog(
+                    automation_id=automation.automation_id,
+                    payload={
+                        "action": side,
+                        "ticker": product_id,
+                        "timestamp": current_time.isoformat(),
+                        "message": message
+                    },
+                    timestamp=current_time,
+                    trading_pair=product_id,
+                    status=coinbase_trade,
+                    message=message,
+                    order_id=order_id,
+                    client_order_id=client_order_id,
+                    raw_response=str(response_dict)
+                )
+                db.session.add(log_entry)
+                db.session.commit()
+            except Exception as log_error:
+                logger.error(f"Error creating webhook log: {str(log_error)}")
+
+            # Return response (moved outside try/except)
+            return {
+                "trade_executed": bool(order_id),
+                "order_id": order_id,
+                "client_order_id": client_order_id,
+                "message": message,
+                "size": order_size,
+                "trading_pair": trading_pair,
+                "trade_status": "success" if order_id else "error",
+                "raw_response": str(response_dict)
+            }
                 
         except Exception as e:  # Main exception handler
             logger.error(f"Error in execute_trade: {str(e)}", exc_info=True)

@@ -29,7 +29,7 @@
                 <tr>
                     <th>Automation</th>
                     <th>ID</th>
-                    <th>Username</th>
+                    <th>Login</th>
                     <th>Last Activity (UTC)</th>
                     <th>Actions</th>
                 </tr>
@@ -39,7 +39,7 @@
                 <tr>
                     <td>{{ automation.name }}</td>
                     <td>{{ automation.id }}</td>
-                    <td>{{ automation.user.username }}</td>
+                    <td>{{ automation.user.email }}</td>
                     <td>{{ automation.last_run.strftime('%Y-%m-%d %H:%M:%S') if automation.last_run else 'Never' }}</td>
                     <td>
                         <button class="btn btn-{{ 'success' if automation.is_active else 'warning' }} btn-sm" 

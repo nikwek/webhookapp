@@ -28,7 +28,7 @@
         <table class="table table-striped">
             <thead>
                 <tr>
-                    <th>Username</th>
+                    <th>Login</th>
                     <th>Automations</th>
                     <th>Last Activity (UTC)</th>
                     <th>Actions</th>
@@ -37,7 +37,7 @@
             <tbody>
                 {% for user in users %}
                 <tr>
-                    <td>{{ user.username }}</td>
+                    <td>{{ user.email }}</td>
                     <td>{{ user.automation_count }}</td>
                     <td>{{ user.last_activity.strftime('%Y-%m-%d %H:%M:%S') if user.last_activity else 'Never' }}</td>
                     <td>
@@ -58,9 +58,32 @@
         </table>
     </div>
 </div>
+
+<!-- Modal HTML -->
+<div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmModalLabel">Confirm Action</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirmButton">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
+
+{{ super() }}
+
 <script>
 function confirmAction(action, userId) {
     const messages = {
@@ -75,11 +98,16 @@ function confirmAction(action, userId) {
             .done(function(response) {
                 if (response.success) {
                     location.reload();
+                } else {
+                    console.error('Server returned success:false', response);
+                    alert('Operation failed: ' + (response.error || 'Unknown error'));
                 }
             })
-            .fail(function(error) {
-                alert('An error occurred');
+            .fail(function(xhr) {
+                console.error('Server error:', xhr.responseText);
+                alert('Error: ' + (xhr.responseJSON?.error || 'Server error occurred'));
             });
+        $('#confirmModal').modal('hide');
     });
     $('#confirmModal').modal('show');
 }

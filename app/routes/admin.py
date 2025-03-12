@@ -1,8 +1,9 @@
 # app/routes/admin.py
-from flask import Blueprint, jsonify, session, render_template, redirect, url_for, request
+from flask import Blueprint, jsonify, session, render_template, redirect, url_for, request, current_app
 from app.models.user import User, Role
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
+from sqlalchemy import func
 from app import db
 from functools import wraps
 from datetime import datetime, timezone
@@ -21,13 +22,27 @@ def index():
 
 
 @bp.route('/users')
-@roles_required('admin') 
+@roles_required('admin')
 def users():
     search = request.args.get('search', '')
-    query = User.query
+    
+    # Query users with automation count
+    query = db.session.query(User, func.count(Automation.id).label('automation_count'))\
+        .outerjoin(Automation, User.id == Automation.user_id)\
+        .group_by(User.id)
+    
     if search:
-        query = query.filter(User.username.ilike(f'%{search}%'))
-    users = query.all()
+        query = query.filter(User.email.ilike(f'%{search}%'))
+    
+    # Returns tuple of (user, automation_count)
+    results = query.all()
+    
+    # Transform results for template
+    users = []
+    for user, count in results:
+        user.automation_count = count
+        users.append(user)
+    
     return render_template('admin/users.html', users=users)
 
 
@@ -85,17 +100,38 @@ def suspend_user(user_id):
 def delete_user(user_id):
     try:
         user = User.query.get_or_404(user_id)
-        # Delete all associated logs and automations
-        automation_ids = [a.automation_id for a in user.automations]
+        
+        # Get automation IDs directly from the Automation table
+        automation_ids = [a.automation_id for a in Automation.query.filter_by(user_id=user.id).all()]
+        
+        # Delete webhook logs first
         if automation_ids:
-            WebhookLog.query.filter(WebhookLog.automation_id.in_(automation_ids)).delete()
-        for automation in user.automations:
-            db.session.delete(automation)
+            WebhookLog.query.filter(WebhookLog.automation_id.in_(automation_ids)).delete(synchronize_session='fetch')
+        
+        # Delete user's automations
+        Automation.query.filter_by(user_id=user.id).delete()
+        
+        # Delete user's portfolios (if the relationship exists)
+        if hasattr(user, 'portfolios'):
+            for portfolio in user.portfolios:
+                db.session.delete(portfolio)
+        
+        # Delete user's exchange credentials (if the relationship exists)
+        if hasattr(user, 'exchange_credentials'):
+            for cred in user.exchange_credentials:
+                db.session.delete(cred)
+        
+        # Remove user from roles
+        user.roles = []
+        
+        # Finally delete the user
         db.session.delete(user)
         db.session.commit()
+        
         return jsonify({"success": True})
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"Error deleting user: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 

@@ -8,6 +8,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timezone
 from app import db
 from app.models.user import User
+from app.models.automation import Automation
+from app.models.portfolio import Portfolio
 
 debug = Blueprint('debug', __name__)
 
@@ -116,6 +118,59 @@ def db_tables():
             'tables': tables,
             'database_url': current_app.config['SQLALCHEMY_DATABASE_URI'].split('///')[0] + '///*****'
         })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+    
+@debug.route('/debug/automation/portfolio/<string:coinbase_portfolio_id>')
+def get_automation_by_portfolio(coinbase_portfolio_id):
+    """Debug endpoint to find automation by Coinbase portfolio UUID"""
+    try:
+        portfolio = Portfolio.query.filter_by(portfolio_id=coinbase_portfolio_id).first()
+        
+        if not portfolio:
+            return jsonify({
+                'status': 'not_found',
+                'message': f'No portfolio found with Coinbase UUID: {coinbase_portfolio_id}'
+            }), 404
+        
+        current_app.logger.info(f"Found portfolio - ID: {portfolio.id}, Name: {portfolio.name}, Coinbase UUID: {portfolio.portfolio_id}")
+        
+        automation = Automation.query.filter_by(portfolio_id=portfolio.id).first()
+        
+        if not automation:
+            return jsonify({
+                'status': 'not_found',
+                'message': f'Portfolio exists but has no automation',
+                'portfolio': {
+                    'id': portfolio.id,
+                    'portfolio_id': portfolio.portfolio_id,
+                    'name': portfolio.name
+                }
+            }), 404
+            
+        current_app.logger.info(f"Found automation - ID: {automation.id}, Name: {automation.name}, Portfolio ID: {automation.portfolio_id}")
+            
+        return jsonify({
+            'status': 'success',
+            'automation': {
+                'id': automation.id,
+                'automation_id': automation.automation_id,
+                'name': automation.name,
+                'portfolio_id': automation.portfolio_id,
+                'trading_pair': automation.trading_pair,
+                'is_active': automation.is_active,
+                'created_at': automation.created_at.isoformat() if automation.created_at else None
+            },
+            'portfolio': {
+                'id': portfolio.id,
+                'portfolio_id': portfolio.portfolio_id,
+                'name': portfolio.name
+            }
+        })
+        
     except Exception as e:
         return jsonify({
             'status': 'error',

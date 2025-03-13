@@ -26,7 +26,8 @@ def api_login_required(f):
         if not auth_header and not current_user.is_authenticated:
             # Check if the request prefers HTML (browser request)
             if request.accept_mimetypes.accept_html:
-                flash("Your session has expired. Please log in again.", "warning")
+                # Use a special category for session expiration
+                flash("Your session has expired. Please log in again.", "auth_expired")
                 return redirect(url_for('security.login', next=request.path))
             else:
                 # API request, return JSON response

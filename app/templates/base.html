@@ -56,22 +56,35 @@
                 </div>
             </div>
         </nav>
-
+        <!-- Avoid duplicate alert messages -->
         <div class="container mt-3">
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     {% for category, message in messages %}
-                        {% set alert_class = {
-                            'message': 'info',
-                            'error': 'danger',
-                            'warning': 'warning',
-                            'info': 'info',
-                            'success': 'success'
-                        }.get(category, 'info') %}
-                        <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="alert">
-                            {{ message }}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
+                        {% set is_security_page = request.endpoint and request.endpoint.startswith('security.') %}
+                        
+                        {% if not is_security_page or not (
+                            # Common security messages that appear in both places
+                            message.startswith('Thank you. Your email has been confirmed') or
+                            message.startswith('You must sign in') or 
+                            message.startswith('Thank you. To confirm your email') or
+                            message.startswith('Your password has been changed') or
+                            message.startswith('Instructions to reset your password') or
+                            category == 'auth_expired'
+                        ) %}
+                            {% set alert_class = {
+                                'message': 'info',
+                                'error': 'danger',
+                                'warning': 'warning',
+                                'info': 'info',
+                                'success': 'success',
+                                'auth_expired': 'warning'
+                            }.get(category, 'info') %}
+                            <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {% endif %}
                     {% endfor %}
                 {% endif %}
             {% endwith %}

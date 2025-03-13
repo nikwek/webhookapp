@@ -745,7 +745,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <table className="table mb-0">
                                     <thead>
                                         <tr>
-                                            <th className="w-200">Timestamp (UTC)</th>
+                                            <th className="w-200 text-nowrap">Timestamp (UTC)</th>
                                             <th>Payload</th>
                                         </tr>
                                     </thead>
@@ -763,7 +763,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                                     onClick={() => toggleRow(log.timestamp)}
                                                     className="webhook-log-row cursor-pointer"
                                                 >
-                                                    <td>{new Date(log.timestamp).toLocaleString()}</td>
+                                                    <td className="text-nowrap w-200">{new Date(log.timestamp).toLocaleString()}</td>
                                                     <td>
                                                         {expandedRows.has(log.timestamp) ? (
                                                             <pre className="mb-0 payload-expanded">

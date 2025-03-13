@@ -24,7 +24,13 @@ def api_login_required(f):
     def decorated_function(*args, **kwargs):
         auth_header = request.environ.get('HTTP_AUTHORIZATION')
         if not auth_header and not current_user.is_authenticated:
-            return jsonify({"error": "Unauthorized"}), 403
+            # Check if the request prefers HTML (browser request)
+            if request.accept_mimetypes.accept_html:
+                flash("Your session has expired. Please log in again.", "warning")
+                return redirect(url_for('security.login', next=request.path))
+            else:
+                # API request, return JSON response
+                return jsonify({"error": "Unauthorized"}), 403
         return f(*args, **kwargs)
     return decorated_function
 

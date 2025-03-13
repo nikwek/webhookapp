@@ -594,6 +594,84 @@ document.addEventListener('DOMContentLoaded', function() {
         
         portfolioSelectionSection.insertBefore(alertDiv, portfolioSelectionSection.firstChild);
     }
+    
+    // Set up copy buttons for webhook URL and template
+    const copyUrlBtn = document.querySelector('.copy-url');
+    if (copyUrlBtn) {
+        copyUrlBtn.addEventListener('click', function() {
+            const urlInput = this.previousElementSibling;
+            // Use the value property for input elements
+            copyToClipboard(urlInput.value, this);
+        });
+    }
+
+    // Copy template button
+    const copyTemplateBtn = document.querySelector('.copy-template');
+    if (copyTemplateBtn) {
+        copyTemplateBtn.addEventListener('click', function() {
+            const templateCode = document.getElementById('webhook-template-code');
+            // Use textContent for code elements
+            copyToClipboard(templateCode.textContent, this);
+        });
+    }
+    
+    // Simplified clipboard function that always uses the fallback method in development
+    function copyToClipboard(text, button) {
+        // Create temporary textarea
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        
+        // Make it invisible but keep it in the document flow for selection
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        textArea.style.left = '0';
+        textArea.style.top = '0';
+        
+        document.body.appendChild(textArea);
+        textArea.select();
+        
+        let success = false;
+        try {
+            // Execute the copy command
+            success = document.execCommand('copy');
+        } catch (err) {
+            console.error('Copy command failed:', err);
+        }
+        
+        // Clean up
+        document.body.removeChild(textArea);
+        
+        // Show feedback
+        const originalText = button.textContent;
+        const isOutlineBtn = button.classList.contains('btn-outline-secondary');
+        
+        if (success) {
+            button.textContent = 'Copied!';
+            button.classList.add('btn-success');
+            
+            if (isOutlineBtn) {
+                button.classList.remove('btn-outline-secondary');
+            } else {
+                button.classList.remove('btn-secondary');
+            }
+            
+            // Reset after 2 seconds
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.classList.remove('btn-success');
+                if (isOutlineBtn) {
+                    button.classList.add('btn-outline-secondary');
+                } else {
+                    button.classList.add('btn-secondary');
+                }
+            }, 2000);
+        } else {
+            button.textContent = 'Copy failed';
+            setTimeout(() => {
+                button.textContent = originalText;
+            }, 2000);
+        }
+    }
 });
 </script>
 

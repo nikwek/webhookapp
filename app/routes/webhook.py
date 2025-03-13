@@ -72,7 +72,7 @@ def webhook_stream():
                 data = [log.to_dict() for log in logs]
                 yield f"data: {json.dumps(data)}\n\n"
             
-            time.sleep(1)
+            time.sleep(30)
 
     return Response(
         stream_with_context(event_stream()),

@@ -1,7 +1,7 @@
 # app/routes/debug.py
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, abort
 from flask_mail import Message
-from flask_security import RegisterForm
+from flask_security import RegisterForm, current_user, login_required
 from flask import current_app
 from sqlalchemy import text, inspect
 from sqlalchemy.exc import SQLAlchemyError
@@ -221,6 +221,46 @@ def debug_automations():
             'blueprints': blueprints
         })
     except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+    
+from flask_security import current_user, login_required
+
+@debug.route('/debug/check-suspension/<int:user_id>')
+@login_required
+def check_suspension(user_id):
+    """Debug endpoint to verify user suspension status"""
+    
+    # Only allow admins to check suspension status
+    if not current_user.is_admin:
+        return jsonify({
+            'status': 'error',
+            'message': 'Admin access required'
+        }), 403
+        
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': f'User with ID {user_id} not found'
+            }), 404
+            
+        return jsonify({
+            'status': 'success',
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'is_suspended': user.is_suspended,
+                'active': user.active,
+                'last_activity': user.last_activity.isoformat() if user.last_activity else None
+            }
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"Error checking user suspension: {e}")
         return jsonify({
             'status': 'error',
             'message': str(e)

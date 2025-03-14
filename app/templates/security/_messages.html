@@ -1,7 +1,16 @@
+{# This template overrides Flask-Security's default message display with Bootstrap styling #}
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
     {% for category, message in messages %}
-      <div class="alert alert-{{ category if category != 'message' else 'info' }} alert-dismissible fade show" role="alert">
+      {% set bootstrap_class = {
+        'message': 'info',
+        'error': 'danger',
+        'warning': 'warning',
+        'info': 'info',
+        'success': 'success',
+        'auth_expired': 'warning'
+      }.get(category, 'info') %}
+      <div class="alert alert-{{ bootstrap_class }} alert-dismissible fade show mb-4" role="alert">
         {{ message }}
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
       </div>

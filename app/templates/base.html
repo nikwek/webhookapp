@@ -58,19 +58,11 @@
         </nav>
         <!-- Avoid duplicate alert messages -->
         <div class="container mt-3">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        {% set is_security_page = request.endpoint and request.endpoint.startswith('security.') %}
-                        
-                        {% if not is_security_page or not (
-                            message.startswith('Thank you. Your email has been confirmed') or
-                            message.startswith('You must sign in') or 
-                            message.startswith('Thank you. To confirm your email') or
-                            message.startswith('Your password has been changed') or
-                            message.startswith('Instructions to reset your password') or
-                            category == 'auth_expired'
-                        ) %}
+            {% set is_security_page = request.endpoint and request.endpoint.startswith('security.') %}
+            {% if not is_security_page %}
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
                             {% set alert_class = {
                                 'message': 'info',
                                 'error': 'danger',
@@ -83,10 +75,10 @@
                                 {{ message }}
                                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                             </div>
-                        {% endif %}
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+            {% endif %}
         </div>
 
         <div class="container mt-4">

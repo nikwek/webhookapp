@@ -1,5 +1,7 @@
 # app/__init__.py
-from flask import Flask
+from flask import Flask, flash
+from flask_security import user_authenticated
+from flask_login import logout_user
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text 
 from flask_migrate import Migrate
@@ -18,6 +20,20 @@ migrate = Migrate()
 csrf = CSRFProtect()
 security = Security()
 mail = Mail()
+
+
+# Check if account is suspended 
+def check_if_account_is_suspended(app, user, **kwargs):
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"Checking if user {user.email} is suspended: {user.is_suspended}")
+    
+    if user and hasattr(user, 'is_suspended') and user.is_suspended:
+        logger.warning(f"Blocking login attempt for suspended user: {user.email}")
+        flash("Your account has been suspended. Please contact support for assistance.", "error")
+        return False
+    return True
 
 def create_app(test_config=None):
     app = Flask(__name__)
@@ -70,6 +86,18 @@ def create_app(test_config=None):
             user_datastore,
             register_form=RegisterFormV2
         )
+
+        @user_authenticated.connect_via(app)
+        def _on_user_authenticated(app, user, **extra):
+            app.logger.info(f"Auth signal: Checking if user {user.email} is suspended")
+            
+            if user and hasattr(user, 'is_suspended') and user.is_suspended:
+                app.logger.warning(f"Auth signal: Blocking suspended user: {user.email}")
+                flash("Your account has been suspended. Please contact support for assistance.", "error")
+                # Force logout
+                logout_user()
+                # Return False to indicate authentication failure
+                return False
 
         # Register blueprints
         from app.routes import dashboard, webhook, admin, automation

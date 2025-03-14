@@ -64,7 +64,6 @@
                         {% set is_security_page = request.endpoint and request.endpoint.startswith('security.') %}
                         
                         {% if not is_security_page or not (
-                            # Common security messages that appear in both places
                             message.startswith('Thank you. Your email has been confirmed') or
                             message.startswith('You must sign in') or 
                             message.startswith('Thank you. To confirm your email') or

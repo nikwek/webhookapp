@@ -52,8 +52,10 @@ class Config:
 
     # Session settings - needed for Raspberry Pi
     SESSION_TYPE = 'filesystem'
-    PERMANENT_SESSION_LIFETIME = timedelta(hours=24)  # Longer session lifetime
-    SESSION_COOKIE_SECURE = False  # Set to True only with HTTPS
+    SESSION_FILE_DIR = '/tmp/flask_session'
+    SESSION_PERMANENT = True
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
+    SESSION_COOKIE_SECURE = False
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
 

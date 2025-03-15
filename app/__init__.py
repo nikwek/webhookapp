@@ -9,6 +9,7 @@ from flask_security import Security, SQLAlchemyUserDatastore
 from flask_security.forms import RegisterFormV2
 from flask_wtf.csrf import CSRFProtect
 from flask_mail import Mail
+from flask_session import Session
 from config import Config
 import os
 import logging
@@ -20,6 +21,7 @@ migrate = Migrate()
 csrf = CSRFProtect()
 security = Security()
 mail = Mail()
+sess = Session()
 
 
 # Check if account is suspended 
@@ -53,6 +55,7 @@ def create_app(test_config=None):
     migrate.init_app(app, db)
     csrf.init_app(app)
     mail.init_app(app)
+    sess.init_app(app)
 
     with app.app_context():
         try:

@@ -717,9 +717,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Move useEffect outside of toggleRow
             React.useEffect(() => {
                 fetchLogs();
-                // Set up auto-refresh every 30 seconds
-                const interval = setInterval(fetchLogs, 30000);
-                return () => clearInterval(interval);
+                // removed auto refresh interval
             }, []);
 
             return (

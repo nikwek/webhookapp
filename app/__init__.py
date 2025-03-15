@@ -1,12 +1,11 @@
 # app/__init__.py
 from flask import Flask, flash
-from flask_security import user_authenticated
+from flask_security import user_authenticated,Security, SQLAlchemyUserDatastore
+from flask_security.forms import RegisterFormV2
 from flask_login import logout_user
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text 
 from flask_migrate import Migrate
-from flask_security import Security, SQLAlchemyUserDatastore
-from flask_security.forms import RegisterFormV2
 from flask_wtf.csrf import CSRFProtect
 from flask_mail import Mail
 from flask_session import Session

@@ -1,6 +1,7 @@
 # config.py
 import os
 import secrets
+from datetime import timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -48,6 +49,13 @@ class Config:
         {'numbers': 1},
         {'special': 1}
     ]
+
+    # Session settings - needed for Raspberry Pi
+    SESSION_TYPE = 'filesystem'
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=24)  # Longer session lifetime
+    SESSION_COOKIE_SECURE = False  # Set to True only with HTTPS
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
 
     # Add a warning if no salt is set
     if not os.environ.get('SECURITY_PASSWORD_SALT'):

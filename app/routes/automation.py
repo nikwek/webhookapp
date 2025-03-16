@@ -1,5 +1,5 @@
 # app/routes/automation.py
-from flask import Blueprint, request, jsonify, session, send_from_directory, render_template, redirect, url_for, flash
+from flask import Blueprint, request, jsonify, session, send_from_directory, render_template, redirect, url_for, flash, current_app
 from flask_security import current_user, login_required 
 from functools import wraps
 from app import db
@@ -219,13 +219,21 @@ def view_automation(automation_id):
             except (ValueError, TypeError):
                 pass
     
+    # Generate webhook URL using APPLICATION_URL if available
+    webhook_url = None
+    if current_app.config.get('APPLICATION_URL'):
+        webhook_url = f"{current_app.config['APPLICATION_URL'].rstrip('/')}/webhook?automation_id={automation.automation_id}" if automation else None
+    else:
+        webhook_url = f"{request.url_root}webhook?automation_id={automation.automation_id}" if automation else None
+
     return render_template(
         'automation.html', 
         automation=automation,
         portfolio=portfolio,
         portfolios=portfolios,
         selected_portfolio=selected_portfolio,
-        show_api_form=show_api_form
+        show_api_form=show_api_form,
+        webhook_url=webhook_url 
     )
 
 

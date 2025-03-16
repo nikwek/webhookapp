@@ -87,12 +87,27 @@ def serve_component():
 @bp.route('/api/logs')
 @login_required
 def get_logs():
-    """API endpoint to get webhook logs"""
-    logs = (WebhookLog.query
-           .join(Automation)
-           .filter(Automation.user_id == current_user.id)
-           .order_by(WebhookLog.timestamp.desc())
-           .limit(100)
-           .all())
+    """API endpoint to get webhook logs with pagination"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
     
-    return jsonify([log.to_dict() for log in logs])
+    # Get logs with pagination
+    pagination = (WebhookLog.query
+                 .join(Automation)
+                 .filter(Automation.user_id == current_user.id)
+                 .order_by(WebhookLog.timestamp.desc())
+                 .paginate(page=page, per_page=per_page, error_out=False))
+    
+    return jsonify({
+        'logs': [log.to_dict() for log in pagination.items],
+        'pagination': {
+            'page': pagination.page,
+            'per_page': pagination.per_page,
+            'total': pagination.total,
+            'pages': pagination.pages,
+            'has_next': pagination.has_next,
+            'has_prev': pagination.has_prev,
+            'next_num': pagination.next_num,
+            'prev_num': pagination.prev_num
+        }
+    })

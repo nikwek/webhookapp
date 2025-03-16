@@ -683,23 +683,49 @@ document.addEventListener('DOMContentLoaded', function() {
             const [isLoading, setIsLoading] = React.useState(false);
             const [error, setError] = React.useState(null);
             const [expandedRows, setExpandedRows] = React.useState(new Set());
+            const [pagination, setPagination] = React.useState({
+                page: 1,
+                per_page: 20,
+                total: 0,
+                pages: 0,
+                has_next: false,
+                has_prev: false
+            });
 
-
-            const fetchLogs = async () => {
+            const fetchLogs = async (page = 1, per_page = 20) => {
                 setIsLoading(true);
                 setError(null);
                 try {
-                    const response = await fetch(`/automation/{{ automation.automation_id }}/logs`);
+                    const response = await fetch(`/automation/{{ automation.automation_id }}/logs?page=${page}&per_page=${per_page}`);
                     if (!response.ok) {
                         throw new Error('Failed to fetch logs');
                     }
                     const data = await response.json();
-                    setLogs(data);
+                    setLogs(data.logs);
+                    setPagination(data.pagination);
                 } catch (err) {
                     setError(err.message);
                 } finally {
                     setIsLoading(false);
                 }
+            };
+
+            const changePage = (newPage) => {
+                // Optional: clear expanded rows when changing pages
+                setExpandedRows(new Set());
+                setPagination(prev => ({
+                    ...prev,
+                    page: newPage
+                }));
+            };
+
+            const changePerPage = (newPerPage) => {
+                setExpandedRows(new Set());
+                setPagination(prev => ({
+                    ...prev,
+                    per_page: newPerPage,
+                    page: 1
+                }));
             };
 
             const toggleRow = (timestamp) => {
@@ -714,11 +740,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             };
             
-            // Move useEffect outside of toggleRow
             React.useEffect(() => {
-                fetchLogs();
-                // removed auto refresh interval
-            }, []);
+                fetchLogs(pagination.page, pagination.per_page);
+            }, [pagination.page, pagination.per_page]);
 
             return (
                 <div className="mt-4">
@@ -784,6 +808,66 @@ document.addEventListener('DOMContentLoaded', function() {
                                     {error}
                                 </div>
                             )}
+                        </div>
+                        <div className="card-footer d-flex justify-content-between align-items-center">
+                            <div>
+                                <span className="me-2">Show</span>
+                                <select 
+                                    className="form-select form-select-sm d-inline-block w-auto"
+                                    value={pagination.per_page}
+                                    onChange={(e) => changePerPage(parseInt(e.target.value))}
+                                >
+                                    <option value="10">10</option>
+                                    <option value="20">20</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                                <span className="ms-2">entries</span>
+                            </div>
+                            
+                            <nav aria-label="Automation logs pagination">
+                                <ul className="pagination pagination-sm mb-0">
+                                    <li className={`page-item ${!pagination.has_prev ? 'disabled' : ''}`}>
+                                        <button className="page-link" onClick={() => changePage(pagination.prev_num)} disabled={!pagination.has_prev}>Previous</button>
+                                    </li>
+                                    
+                                    {pagination.pages <= 7 ? (
+                                        [...Array(pagination.pages).keys()].map(i => (
+                                            <li key={i+1} className={`page-item ${pagination.page === i+1 ? 'active' : ''}`}>
+                                                <button className="page-link" onClick={() => changePage(i+1)}>{i+1}</button>
+                                            </li>
+                                        ))
+                                    ) : (
+                                        <>
+                                            <li className={`page-item ${pagination.page === 1 ? 'active' : ''}`}>
+                                                <button className="page-link" onClick={() => changePage(1)}>1</button>
+                                            </li>
+                                            
+                                            {pagination.page > 3 && <li className="page-item disabled"><span className="page-link">...</span></li>}
+                                            
+                                            {pagination.page !== 1 && pagination.page !== pagination.pages && (
+                                                <li className="page-item active">
+                                                    <button className="page-link">{pagination.page}</button>
+                                                </li>
+                                            )}
+                                            
+                                            {pagination.page < pagination.pages - 2 && <li className="page-item disabled"><span className="page-link">...</span></li>}
+                                            
+                                            <li className={`page-item ${pagination.page === pagination.pages ? 'active' : ''}`}>
+                                                <button className="page-link" onClick={() => changePage(pagination.pages)}>{pagination.pages}</button>
+                                            </li>
+                                        </>
+                                    )}
+                                    
+                                    <li className={`page-item ${!pagination.has_next ? 'disabled' : ''}`}>
+                                        <button className="page-link" onClick={() => changePage(pagination.next_num)} disabled={!pagination.has_next}>Next</button>
+                                    </li>
+                                </ul>
+                            </nav>
+                            
+                            <div>
+                                Showing {logs.length} of {pagination.total} entries
+                            </div>
                         </div>
                     </div>
                 </div>

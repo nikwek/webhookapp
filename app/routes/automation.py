@@ -170,11 +170,11 @@ def get_coinbase_portfolios(user_id):
     
     return portfolios
 
-@bp.route('/static/js/components/WebhookLogs.jsx')
-def serve_component(filename):
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    static_dir = os.path.join(root_dir, 'static', 'js', 'components')
-    return send_from_directory(static_dir, filename, mimetype='text/jsx')
+# @bp.route('/static/js/components/WebhookLogs.jsx')
+# def serve_component(filename):
+#     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+#     static_dir = os.path.join(root_dir, 'static', 'js', 'components')
+#     return send_from_directory(static_dir, filename, mimetype='text/jsx')
 
 # UI Routes
 @bp.route('/automation/new', methods=['GET'])
@@ -579,18 +579,34 @@ def delete_automation(automation_id):
 @bp.route('/automation/<automation_id>/logs')
 @api_login_required
 def get_automation_logs(automation_id):
-    """Get webhook logs for a specific automation."""
+    """Get webhook logs for a specific automation with pagination."""
     try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        
         # Verify user has access to this automation
         automation = get_user_automation(automation_id)
         if not automation:
             return jsonify({"error": "Automation not found"}), 404
         
-        logs = WebhookLog.query.filter_by(
+        # Get logs with pagination
+        pagination = WebhookLog.query.filter_by(
             automation_id=automation_id
-        ).order_by(WebhookLog.timestamp.desc()).limit(100).all()
+        ).order_by(WebhookLog.timestamp.desc()).paginate(page=page, per_page=per_page, error_out=False)
         
-        return jsonify([log.to_dict() for log in logs])
+        return jsonify({
+            'logs': [log.to_dict() for log in pagination.items],
+            'pagination': {
+                'page': pagination.page,
+                'per_page': pagination.per_page,
+                'total': pagination.total,
+                'pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+                'next_num': pagination.next_num,
+                'prev_num': pagination.prev_num
+            }
+        })
     except Exception as e:
         logger.error(f"Error fetching automation logs: {e}")
         return jsonify({"error": str(e)}), 500

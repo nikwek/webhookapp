@@ -63,19 +63,19 @@ def dashboard():
                            has_coinbase_keys=has_coinbase_keys)
 
 
-@bp.route('/api/logs')
-@login_required
-def get_logs():
-    """Get webhook logs for the current user."""
-    try:
-        logs = WebhookLog.query.join(Automation).filter(
-            Automation.user_id == current_user.id
-        ).order_by(WebhookLog.timestamp.desc()).limit(100).all()
+# @bp.route('/api/logs')
+# @login_required
+# def get_logs():
+#     """Get webhook logs for the current user."""
+#     try:
+#         logs = WebhookLog.query.join(Automation).filter(
+#             Automation.user_id == current_user.id
+#         ).order_by(WebhookLog.timestamp.desc()).limit(100).all()
         
-        return jsonify([log.to_dict() for log in logs])
-    except Exception as e:
-        print(f"Error getting logs: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+#         return jsonify([log.to_dict() for log in logs])
+#     except Exception as e:
+#         print(f"Error getting logs: {str(e)}")
+#         return jsonify({"error": str(e)}), 500
     
 @bp.route('/api/coinbase/portfolios')
 @login_required

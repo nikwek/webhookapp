@@ -1,26 +1,31 @@
 #!/bin/bash
+# filepath: /Users/nikwekwerth/Developer/webhookapp/deploy.sh
+
+set -e  # Exit immediately if a command fails
 
 # Get current branch
-CURRENT_BRANCH=$(git branch --show-current)
-echo "Deploying branch: $CURRENT_BRANCH"
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+echo "Deploying branch: $BRANCH"
 
-# First push the current branch to remote to ensure it exists
-echo "Pushing current branch to remote repository..."
-git push -u origin $CURRENT_BRANCH
+# Step 1: Push current branch to remote
+echo "Pushing to GitHub..."
+git push origin $BRANCH
 
-# SSH into Pi and deploy changes
-ssh nik@raspberrypi.local "cd ~/webhookapp && \
-                          git fetch --all && \
-                          git checkout $CURRENT_BRANCH || git checkout -b $CURRENT_BRANCH --track origin/$CURRENT_BRANCH && \
-                          git pull origin $CURRENT_BRANCH && \
-                          echo 'Stopping webhookapp service...' && \
-                          sudo systemctl stop webhookapp && \
-                          echo 'Ensuring all gunicorn processes are terminated...' && \
-                          sudo pkill -f gunicorn || true && \
-                          sleep 2 && \
-                          echo 'Starting webhookapp service...' && \
-                          sudo systemctl start webhookapp && \
-                          echo 'Checking service status:' && \
-                          sudo systemctl status webhookapp --no-pager"
+# Step 2: SSH to Raspberry Pi and deploy
+echo "Deploying to Raspberry Pi..."
+ssh nik@raspberrypi.local "
+  cd /home/nik/webhookapp &&
+  git fetch origin &&
+  (git checkout $BRANCH || git checkout -b $BRANCH origin/$BRANCH) &&
+  git pull origin $BRANCH &&
+  source venv/bin/activate &&
+  pip install -r requirements.txt &&
+  sudo systemctl restart webhookapp &&
+  sleep 2 &&
+  echo 'Checking service status:' &&
+  sudo systemctl status webhookapp | head -10 &&
+  curl -s http://localhost:5001/ > /dev/null &&
+  echo 'Service is responding to HTTP requests'
+"
 
-echo "Deployment of branch '$CURRENT_BRANCH' complete!"
+echo "Deployment of branch '$BRANCH' complete!"

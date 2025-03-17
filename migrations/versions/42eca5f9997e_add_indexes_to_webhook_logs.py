@@ -1,18 +1,20 @@
 """add_indexes_to_webhook_logs
 
-Revision ID: [auto-generated]
-Revises: [auto-generated]
-Create Date: [auto-generated]
+Revision ID: 42eca5f9997e
+Revises: 3f5665c11741
+Create Date: 2025-03-17 09:21:23.168053
 
 """
 from alembic import op
 import sqlalchemy as sa
 
-# revision identifiers
-revision = '[auto-generated]'
-down_revision = '[auto-generated]'  # Keep these as they were generated
+
+# revision identifiers, used by Alembic.
+revision = '42eca5f9997e'
+down_revision = '3f5665c11741'
 branch_labels = None
 depends_on = None
+
 
 def upgrade():
     # Add indexes to webhook_logs table

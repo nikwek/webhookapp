@@ -1,5 +1,5 @@
 # app/routes/webhook.py
-from flask import Blueprint, request, jsonify, Response, stream_with_context, session, send_from_directory
+from flask import Blueprint, request, jsonify, Response, send_from_directory
 from flask_security import login_required, current_user
 from app.models.webhook import WebhookLog
 from app.models.automation import Automation
@@ -55,29 +55,6 @@ def webhook():
     
     return jsonify(result)
 
-@bp.route('/webhook-stream')
-@login_required
-def webhook_stream():
-    def event_stream():
-        last_id = 0
-        while True:
-            logs = (WebhookLog.query
-                   .join(Automation)
-                   .filter(Automation.user_id == current_user.id)
-                   .order_by(WebhookLog.timestamp.desc())
-                   .limit(100)
-                   .all())
-            
-            if logs:
-                data = [log.to_dict() for log in logs]
-                yield f"data: {json.dumps(data)}\n\n"
-            
-            time.sleep(30)
-
-    return Response(
-        stream_with_context(event_stream()),
-        mimetype='text/event-stream'
-    )
 
 @bp.route('/static/js/components/WebhookLogs.jsx')
 def serve_component():

@@ -8,6 +8,7 @@ load_dotenv()
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
+
 class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         'sqlite:///' + os.path.join(basedir, 'instance', 'webhook.db')
@@ -35,7 +36,7 @@ class Config:
     SECURITY_CSRF_IGNORE_UNAUTH_ENDPOINTS = True
     SECURITY_PASSWORD_CONFIRM_REQUIRED = True
     WTF_CSRF_CHECK_DEFAULT = False
-    
+
     # Security redirects
     SECURITY_POST_LOGIN_VIEW = '/login-redirect'
     SECURITY_POST_LOGOUT_VIEW = '/login'
@@ -71,10 +72,8 @@ class Config:
     MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
     MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
     MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER')
-    
-    # Application URL
-    APPLICATION_URL = os.environ.get('APPLICATION_URL')
-    
+
+
 class DevelopmentConfig(Config):
     DEBUG = True
     FLASK_ENV = 'development'

@@ -9,7 +9,7 @@ from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
 from flask_mail import Mail
 from flask_session import Session
-from config import Config
+from config import get_config
 import os
 import logging
 from datetime import datetime, timezone
@@ -40,7 +40,7 @@ def create_app(test_config=None):
     app = Flask(__name__)
     
     if test_config is None:
-        app.config.from_object(Config)
+        app.config.from_object(get_config())
     else:
         app.config.update(test_config)
 

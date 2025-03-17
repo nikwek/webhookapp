@@ -90,8 +90,20 @@ class ProductionConfig(Config):
     APPLICATION_URL = os.environ.get('PROD_APPLICATION_URL') or os.environ.get('APPLICATION_URL')
     # Enable SSL in production
     SSL_ENABLED = True
-    SSL_CERT = os.path.join(basedir, 'certificates', 'fullchain.pem')
-    SSL_KEY = os.path.join(basedir, 'certificates', 'privkey.pem')
+    
+    # Absolute paths for Pi deployment
+    if os.environ.get('ABSOLUTE_CERT_PATH'):
+        SSL_CERT = os.environ.get('ABSOLUTE_CERT_PATH')
+        SSL_KEY = os.environ.get('ABSOLUTE_KEY_PATH')
+    else:
+        SSL_CERT = os.path.join(basedir, 'certificates', 'fullchain.pem')
+        SSL_KEY = os.path.join(basedir, 'certificates', 'privkey.pem')
+    
+    # Log certificate paths to help with debugging
+    import logging
+    logging.getLogger(__name__).info(f"SSL certificate path: {SSL_CERT}")
+    logging.getLogger(__name__).info(f"SSL key path: {SSL_KEY}")
+    
     # Enhance security in production
     SESSION_COOKIE_SECURE = True
 

@@ -41,8 +41,8 @@ ssh nik@raspberrypi.local "
   sudo systemctl status webhookapp | head -10 &&
   
   # Check service response
-  curl -s http://localhost:5001/ > /dev/null &&
-  echo 'Service is responding to HTTP requests'
+  curl -s -k https://localhost:5001/ > /dev/null &&
+  echo 'Service is responding to HTTPS requests'
 "
 
 echo "Deployment of branch '$BRANCH' complete!"

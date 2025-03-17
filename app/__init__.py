@@ -129,7 +129,7 @@ def create_app(test_config=None):
         db.create_all()
 
         # Configure SSL for the app if enabled
-        if app.config.get('SSL_ENABLED', False):
+        if app.config.get('SSL_ENABLED', False) or os.environ.get('GUNICORN_SSL', False):
             app.config['SESSION_COOKIE_SECURE'] = True
             app.logger.info(f"SSL enabled with cert: {app.config.get('SSL_CERT')}")
         else:

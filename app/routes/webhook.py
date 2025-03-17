@@ -90,13 +90,17 @@ def get_logs():
     """API endpoint to get webhook logs with pagination"""
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
+    max_per_page = 100  # Limit maximum number of items per page
     
-    # Get logs with pagination
+    # Apply limits to prevent excessive resource usage
+    per_page = min(per_page, max_per_page)
+    
+    # Get logs with pagination and optimize query
     pagination = (WebhookLog.query
                  .join(Automation)
                  .filter(Automation.user_id == current_user.id)
                  .order_by(WebhookLog.timestamp.desc())
-                 .paginate(page=page, per_page=per_page, error_out=False))
+                 .paginate(page=page, per_page=per_page, error_out=False, max_per_page=max_per_page))
     
     return jsonify({
         'logs': [log.to_dict() for log in pagination.items],

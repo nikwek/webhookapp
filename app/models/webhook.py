@@ -8,9 +8,9 @@ class WebhookLog(db.Model):
     __tablename__ = 'webhook_logs'
     
     id = db.Column(db.Integer, primary_key=True)
-    automation_id = db.Column(db.String(36), db.ForeignKey('automations.automation_id'), nullable=False)
+    automation_id = db.Column(db.String(36), db.ForeignKey('automations.automation_id'), nullable=False, index=True)
     payload = db.Column(db.JSON, nullable=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
     
     # Fields to store trade execution results
     trading_pair = db.Column(db.String(20), nullable=True)

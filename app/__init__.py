@@ -128,4 +128,11 @@ def create_app(test_config=None):
         # Initialize database
         db.create_all()
 
+        # Configure SSL for the app if enabled
+        if app.config.get('SSL_ENABLED', False):
+            app.config['SESSION_COOKIE_SECURE'] = True
+            app.logger.info(f"SSL enabled with cert: {app.config.get('SSL_CERT')}")
+        else:
+            app.logger.info("Running without SSL")
+
     return app

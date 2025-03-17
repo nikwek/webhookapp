@@ -75,3 +75,31 @@ class Config:
     # Application URL
     APPLICATION_URL = os.environ.get('APPLICATION_URL')
     
+class DevelopmentConfig(Config):
+    DEBUG = True
+    FLASK_ENV = 'development'
+    # Use development URL for webhooks
+    APPLICATION_URL = os.environ.get('DEV_APPLICATION_URL') or os.environ.get('APPLICATION_URL')
+    # No SSL in development
+    SSL_ENABLED = False
+
+
+class ProductionConfig(Config):
+    DEBUG = False
+    FLASK_ENV = 'production'
+    # Use production URL for webhooks
+    APPLICATION_URL = os.environ.get('PROD_APPLICATION_URL') or os.environ.get('APPLICATION_URL')
+    # Enable SSL in production
+    SSL_ENABLED = True
+    SSL_CERT = '/etc/letsencrypt/live/app.wekwerth.services/fullchain.pem'
+    SSL_KEY = '/etc/letsencrypt/live/app.wekwerth.services/privkey.pem'
+    # Enhance security in production
+    SESSION_COOKIE_SECURE = True
+
+
+# Function to get the appropriate config
+def get_config():
+    env = os.environ.get('FLASK_ENV', 'development').lower()
+    if env == 'production':
+        return ProductionConfig()
+    return DevelopmentConfig()

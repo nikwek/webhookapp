@@ -20,11 +20,21 @@ ssh nik@raspberrypi.local "
   source venv/bin/activate &&
   pip install -r requirements.txt &&
   
-  # Apply database migrations
+  # Apply database migrations with error handling for existing indexes
   echo 'Running database migrations...' &&
-  flask db upgrade &&
+  flask db upgrade || {
+    if grep -q 'index.*already exists' <<< \$?; then
+      echo 'Indexes already exist, marking migration as complete...'
+      flask db stamp 42eca5f9997e
+    else
+      echo 'Migration failed for unexpected reason'
+      exit 1
+    fi
+  } &&
   
-  # Restart service
+  # Reload systemd configuration and restart service
+  echo 'Reloading systemd configuration and restarting service...' &&
+  sudo systemctl daemon-reload &&
   sudo systemctl restart webhookapp &&
   sleep 2 &&
   echo 'Checking service status:' &&

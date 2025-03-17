@@ -90,8 +90,8 @@ class ProductionConfig(Config):
     APPLICATION_URL = os.environ.get('PROD_APPLICATION_URL') or os.environ.get('APPLICATION_URL')
     # Enable SSL in production
     SSL_ENABLED = True
-    SSL_CERT = '/etc/letsencrypt/live/app.wekwerth.services/fullchain.pem'
-    SSL_KEY = '/etc/letsencrypt/live/app.wekwerth.services/privkey.pem'
+    SSL_CERT = os.path.join(basedir, 'certificates', 'fullchain.pem')
+    SSL_KEY = os.path.join(basedir, 'certificates', 'privkey.pem')
     # Enhance security in production
     SESSION_COOKIE_SECURE = True
 

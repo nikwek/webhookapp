@@ -323,6 +323,74 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Get CSRF token - make it available in a broader scope
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+    // Add title editing functionality
+    const editTitleBtn = document.getElementById('editTitleBtn');
+    const saveTitleBtn = document.getElementById('saveTitleBtn');
+    const automationTitle = document.getElementById('automationTitle');
+    const automationTitleInput = document.getElementById('automationTitleInput');
+    
+    if (editTitleBtn && saveTitleBtn && automationTitle && automationTitleInput) {
+        // Handle edit button click
+        editTitleBtn.addEventListener('click', function() {
+            // Show input and save button
+            automationTitle.classList.add('d-none');
+            automationTitleInput.classList.remove('d-none');
+            editTitleBtn.classList.add('d-none');
+            saveTitleBtn.classList.remove('d-none');
+            
+            // Focus the input
+            automationTitleInput.focus();
+        });
+        
+        // Handle save button click
+        saveTitleBtn.addEventListener('click', function() {
+            const newTitle = automationTitleInput.value.trim();
+            
+            // Don't save empty titles
+            if (!newTitle) {
+                alert('Please enter a title');
+                return;
+            }
+            
+            // Save via API
+            fetch(`/automation/${automationId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ name: newTitle })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to update title');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Update displayed title
+                automationTitle.textContent = newTitle;
+                
+                // Switch back to view mode
+                automationTitle.classList.remove('d-none');
+                automationTitleInput.classList.add('d-none');
+                editTitleBtn.classList.remove('d-none');
+                saveTitleBtn.classList.add('d-none');
+            })
+            .catch(error => {
+                console.error('Error updating title:', error);
+                alert('Error updating title: ' + error.message);
+            });
+        });
+        
+        // Also save on Enter key
+        automationTitleInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                saveTitleBtn.click();
+            }
+        });
+    }
     
     // Cache DOM elements for portfolio management
     const createPortfolioBtn = document.getElementById('createPortfolioBtn');

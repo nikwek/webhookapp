@@ -193,9 +193,20 @@ def view_automation(automation_id):
     portfolio = None
     if automation.portfolio_id:
         portfolio = Portfolio.query.get(automation.portfolio_id)
-        # Add portfolio value using AccountService
+        
+        # Check if portfolio has valid credentials
+        has_valid_credentials = False
         if portfolio:
-            portfolio.value = AccountService.get_portfolio_value(current_user.id, portfolio.id)
+            credentials = ExchangeCredentials.query.filter_by(
+                portfolio_id=portfolio.id,
+                exchange='coinbase'
+            ).first()
+            has_valid_credentials = credentials is not None
+            portfolio.has_valid_credentials = has_valid_credentials
+            
+            # Only try to get portfolio value if credentials exist
+            if has_valid_credentials:
+                portfolio.value = AccountService.get_portfolio_value(current_user.id, portfolio.id)
     
     # For portfolio selection - only needed if no portfolio is connected yet
     portfolios = []

@@ -6,7 +6,7 @@ from app.models.webhook import WebhookLog
 from app.models.portfolio import Portfolio
 from app.services.coinbase_service import CoinbaseService
 from app.services.account_service import AccountService
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from app import db
 from flask import current_app
 from coinbase.rest import RESTClient
@@ -14,16 +14,69 @@ import logging
 import uuid
 import math
 import json
+import hashlib
+from sqlalchemy import and_, func
+from app.utils.circuit_breaker import circuit_breaker
 
 logger = logging.getLogger(__name__)
 
-class WebhookProcessor:
+class EnhancedWebhookProcessor:
+    IDEMPOTENCY_WINDOW = timedelta(hours=24)  # Consider webhooks unique for 24 hours
+    
+    def __init__(self):
+        self.webhook_cache = {}  # In-memory cache for recent webhooks
+    
+    def get_webhook_hash(self, automation_id, payload):
+        """Generate a unique hash for this webhook to prevent duplicate processing"""
+        # Create a string combining automation ID and payload content
+        webhook_str = f"{automation_id}:{json.dumps(payload, sort_keys=True)}"
+        # Create a hash of this string
+        return hashlib.sha256(webhook_str.encode()).hexdigest()
+
+    def is_duplicate_webhook(self, automation_id, payload):
+        """Check if this webhook was recently processed"""
+        webhook_hash = self.get_webhook_hash(automation_id, payload)
+        
+        # First check the in-memory cache
+        current_time = datetime.now(timezone.utc)
+        if webhook_hash in self.webhook_cache:
+            cache_time = self.webhook_cache[webhook_hash]
+            if current_time - cache_time < self.IDEMPOTENCY_WINDOW:
+                return True
+        
+        # Then check the database (with a simplified approach compatible with SQLite)
+        # Instead of using json_contains, we store and compare the hash
+        existing_log = WebhookLog.query.filter(
+            WebhookLog.automation_id == automation_id,
+            WebhookLog.client_order_id == webhook_hash,  # Use the hash as a unique identifier
+            WebhookLog.timestamp > current_time - self.IDEMPOTENCY_WINDOW
+        ).first()
+        
+        # If a matching webhook was found, update the cache and return True
+        if existing_log:
+            self.webhook_cache[webhook_hash] = existing_log.timestamp
+            return True
+            
+        # No matching webhook found
+        return False
+    
     def process_webhook(self, automation_id, payload):
-        """Process an incoming webhook for an automation"""
+        """Process an incoming webhook for an automation with idempotency check"""
         try:
             # Generate client_order_id at the start
             client_order_id = str(uuid.uuid4())
             logger.info(f"Processing webhook with client_order_id: {client_order_id}")
+            
+            # Check if this is a duplicate webhook
+            if self.is_duplicate_webhook(automation_id, payload):
+                logger.info(f"Duplicate webhook detected for automation {automation_id}")
+                return {
+                    "success": True,
+                    "trade_executed": False,
+                    "duplicate_webhook": True,
+                    "client_order_id": client_order_id,
+                    "message": "Webhook already processed (duplicate request)"
+                }
             
             # Get the automation
             automation = Automation.query.filter_by(automation_id=automation_id).first()
@@ -38,17 +91,21 @@ class WebhookProcessor:
                 }
             
             # Create a log entry for this webhook immediately
+            webhook_hash = self.get_webhook_hash(automation_id, payload)
             log_entry = WebhookLog(
                 automation_id=automation_id,
                 payload=payload,
                 timestamp=datetime.now(timezone.utc),
                 trading_pair=automation.trading_pair,
-                client_order_id=client_order_id  # Add client_order_id to log
+                client_order_id=webhook_hash  # Use the hash instead of a random UUID
             )
             db.session.add(log_entry)
             db.session.commit()
             
-            # Check if automation has a trading pair configured
+            # Add to in-memory cache
+            self.webhook_cache[webhook_hash] = log_entry.timestamp
+            
+            # Standard validation checks
             if not automation.trading_pair:
                 logger.warning(f"Automation {automation_id} does not have a trading pair configured")
                 return {
@@ -133,6 +190,15 @@ class WebhookProcessor:
                 logger.info(f"Updated webhook log {log_entry.id} with trade result")
             except Exception as e:
                 logger.error(f"Error updating webhook log: {str(e)}")
+                db.session.rollback()
+            
+            # Update the automation's last_run timestamp
+            try:
+                automation.last_run = datetime.now(timezone.utc)
+                db.session.commit()
+            except Exception as e:
+                logger.error(f"Error updating automation last_run: {str(e)}")
+                db.session.rollback()
             
             # Return combined result
             return {
@@ -149,6 +215,26 @@ class WebhookProcessor:
             
         except Exception as e:
             logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
+            # Create a failed log entry if one hasn't been created yet
+            try:
+                db.session.rollback()  # Roll back any pending transactions
+                
+                # Check if a log entry exists for this client_order_id
+                existing_log = WebhookLog.query.filter_by(client_order_id=client_order_id).first()
+                if not existing_log:
+                    error_log = WebhookLog(
+                        automation_id=automation_id,
+                        payload=payload,
+                        timestamp=datetime.now(timezone.utc),
+                        status="error",
+                        message=f"Error: {str(e)}",
+                        client_order_id=client_order_id
+                    )
+                    db.session.add(error_log)
+                    db.session.commit()
+            except Exception as log_err:
+                logger.error(f"Failed to create error log: {str(log_err)}")
+                
             return {
                 "success": True,  # Webhook received, but processing failed
                 "trade_executed": False,
@@ -156,9 +242,10 @@ class WebhookProcessor:
                 "message": f"Error processing webhook: {str(e)}"
             }
     
+    @circuit_breaker('coinbase_api', failure_threshold=3, recovery_timeout=60)
     def execute_trade(self, credentials, portfolio, trading_pair, action, payload, client_order_id):
         """
-        Execute a trade on Coinbase
+        Execute a trade on Coinbase with circuit breaker protection
         
         Args:
             credentials: The ExchangeCredentials object
@@ -166,34 +253,38 @@ class WebhookProcessor:
             trading_pair: Trading pair string (e.g. 'BTC-USD')
             action: 'buy' or 'sell'
             payload: Original webhook payload
+            client_order_id: Generated UUID for this order
             
         Returns:
             dict: Result of the trade execution
         """
-        try:  # Main try block
-            logger.info(f"Executing {action} order for {trading_pair} in portfolio {portfolio.name}")
-            
-            # Create Coinbase client
-            client = RESTClient(
-                api_key=credentials.api_key,
-                api_secret=credentials.decrypt_secret()
-            )
-            
-            if not client:
-                logger.error("Failed to create Coinbase client")
-                return {
-                    "success": False,
-                    "message": "Failed to create Coinbase client",
-                    "client_order_id": client_order_id
-                }
-            
-            # Get the portfolio UUID and split trading pair
-            portfolio_uuid = portfolio.portfolio_id
-            base_currency, quote_currency = trading_pair.split('-')
-            # client_order_id = str(uuid.uuid4())
-            target_currency = quote_currency if action == 'buy' else base_currency
-            
-            try:  # Account retrieval try block
+        max_retries = 3
+        retry_count = 0
+        base_delay = 1  # second
+        
+        while retry_count < max_retries:
+            try:
+                logger.info(f"Executing {action} order for {trading_pair} in portfolio {portfolio.name} (attempt {retry_count+1}/{max_retries})")
+                
+                # Create Coinbase client
+                client = RESTClient(
+                    api_key=credentials.api_key,
+                    api_secret=credentials.decrypt_secret()
+                )
+                
+                if not client:
+                    logger.error("Failed to create Coinbase client")
+                    return {
+                        "success": False,
+                        "message": "Failed to create Coinbase client",
+                        "client_order_id": client_order_id
+                    }
+                
+                # Get the portfolio UUID and split trading pair
+                portfolio_uuid = portfolio.portfolio_id
+                base_currency, quote_currency = trading_pair.split('-')
+                target_currency = quote_currency if action == 'buy' else base_currency
+                
                 # Get accounts from Coinbase API
                 accounts_response = client.get_accounts()
                 
@@ -207,27 +298,16 @@ class WebhookProcessor:
                         accounts = accounts_response['accounts']
                     else:
                         logger.error("Cannot extract accounts from response")
-                        return {
-                            "success": False,
-                            "message": "Failed to extract account information"
-                        }
+                        raise ValueError("Failed to extract account information")
                 
                 accounts = accounts_response.get('accounts', [])
                 logger.info(f"Looking for {target_currency} account in portfolio {portfolio_uuid}")
                 logger.info(f"Found {len(accounts)} accounts")
                 
-            except Exception as e:
-                logger.error(f"Error getting accounts: {str(e)}", exc_info=True)
-                return {
-                    "success": False,
-                    "message": f"Error retrieving account information: {str(e)}"
-                }
-                
-            try:  # Balance processing try block
+                # Find account with matching currency
                 target_account = None
                 target_balance = 0.0
                 
-                # Find account with matching currency
                 for account in accounts:
                     currency = account.get('currency')
                     if currency == target_currency:
@@ -266,7 +346,7 @@ class WebhookProcessor:
                 
                 # Determine order size and configuration
                 if action == 'buy':
-                    order_size = math.floor(target_balance) # coinbase rejects order with decimals
+                    order_size = math.floor(target_balance)  # coinbase rejects order with decimals
                     order_configuration = {
                         "market_market_ioc": {
                             "quote_size": str(order_size)
@@ -281,19 +361,10 @@ class WebhookProcessor:
                         }
                     }
                     side = "SELL"
-                    
-            except Exception as e:
-                logger.error(f"Error processing balance: {str(e)}", exc_info=True)
-                return {
-                    "success": False,
-                    "message": f"Error processing balance: {str(e)}"
-                }
-
-            try:  # Order execution try block
-                logger.info(f"Sending order to Coinbase: client_order_id={client_order_id}, product_id={trading_pair}, side={side}, order_config={order_configuration}")
-                portfolio = Portfolio.query.filter_by(portfolio_id=portfolio_uuid).first()
-                automation = Automation.query.filter_by(portfolio_id=portfolio.id).first()
-
+                
+                # Send order to Coinbase
+                logger.info(f"Sending order to Coinbase: client_order_id={client_order_id}, product_id={trading_pair}, side={side}")
+                
                 order_response = client.create_order(
                     client_order_id=client_order_id,
                     product_id=trading_pair,
@@ -320,62 +391,57 @@ class WebhookProcessor:
                 
                 logger.info(f"Order executed. Response: {response_dict}")
                 
+                # Return successful response
+                return {
+                    "trade_executed": bool(order_id),
+                    "order_id": order_id,
+                    "client_order_id": client_order_id,
+                    "message": message,
+                    "size": order_size,
+                    "trading_pair": trading_pair,
+                    "trade_status": "success" if order_id else "error",
+                    "raw_response": str(response_dict)
+                }
+                
             except Exception as e:
-                logger.error(f"Error executing trade: {str(e)}", exc_info=True)
-                response_dict = {}
-                success = False
-                coinbase_trade = "Error"
-                order_id = None
-                product_id = trading_pair
-                message = "Something went wrong"
+                retry_count += 1
+                error_type = str(e).lower()
                 
-                if hasattr(e, 'response'):
-                    try:
-                        error_response = e.response.json()
-                        message = error_response.get('message', message)
-                        response_dict = error_response
-                    except:
-                        response_dict = {"error": str(e)}
-
-            # Create webhook log entry (moved outside try/except)
-            try:
-                current_time = datetime.now(timezone.utc)
-                log_entry = WebhookLog(
-                    automation_id=automation.automation_id,
-                    payload={
-                        "action": side,
-                        "ticker": product_id,
-                        "timestamp": current_time.isoformat(),
-                        "message": message
-                    },
-                    timestamp=current_time,
-                    trading_pair=product_id,
-                    status=coinbase_trade,
-                    message=message,
-                    order_id=order_id,
-                    client_order_id=client_order_id,
-                    raw_response=str(response_dict)
+                # Check if error is retryable
+                retryable = (
+                    'timeout' in error_type or 
+                    'connection' in error_type or 
+                    'rate limit' in error_type or
+                    'network' in error_type or
+                    'socket' in error_type or
+                    'availability' in error_type
                 )
-                db.session.add(log_entry)
-                db.session.commit()
-            except Exception as log_error:
-                logger.error(f"Error creating webhook log: {str(log_error)}")
-
-            # Return response (moved outside try/except)
-            return {
-                "trade_executed": bool(order_id),
-                "order_id": order_id,
-                "client_order_id": client_order_id,
-                "message": message,
-                "size": order_size,
-                "trading_pair": trading_pair,
-                "trade_status": "success" if order_id else "error",
-                "raw_response": str(response_dict)
-            }
                 
-        except Exception as e:  # Main exception handler
-            logger.error(f"Error in execute_trade: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "message": f"Error in execute_trade: {str(e)}"
-            }
+                if retry_count < max_retries and retryable:
+                    # Use exponential backoff for retries
+                    delay = base_delay * (2 ** (retry_count - 1))
+                    logger.warning(f"Retryable error: {str(e)}. Retrying in {delay} seconds...")
+                    time.sleep(delay)
+                else:
+                    # Non-retryable error or max retries reached
+                    logger.error(f"Error in execute_trade: {str(e)}", exc_info=True)
+                    
+                    response_dict = {}
+                    if hasattr(e, 'response'):
+                        try:
+                            error_response = e.response.json()
+                            message = error_response.get('message', str(e))
+                            response_dict = error_response
+                        except:
+                            response_dict = {"error": str(e)}
+                    else:
+                        message = str(e)
+                        response_dict = {"error": str(e)}
+                    
+                    return {
+                        "trade_executed": False,
+                        "message": f"Error: {message}",
+                        "client_order_id": client_order_id,
+                        "trade_status": "error",
+                        "raw_response": str(response_dict)
+                    }

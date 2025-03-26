@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify, Response, send_from_directory
 from flask_security import login_required, current_user
 from app.models.webhook import WebhookLog
 from app.models.automation import Automation
-from app.services.webhook_processor import WebhookProcessor
+from app.services.webhook_processor import EnhancedWebhookProcessor as WebhookProcessor
 from app import db, csrf
 from datetime import datetime, timezone
 import json

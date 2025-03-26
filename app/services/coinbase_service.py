@@ -4,8 +4,10 @@ from flask import current_app
 from app.models.exchange_credentials import ExchangeCredentials
 from app.models.portfolio import Portfolio
 from coinbase.rest import RESTClient
+from app.utils.circuit_breaker import circuit_breaker
 import traceback
 import logging
+from app import db
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +96,7 @@ class CoinbaseService:
             return None
 
     @staticmethod
+    @circuit_breaker('coinbase_api')
     def get_trading_pairs(user_id):
         """Get all available trading pairs from Coinbase Advanced Trade API"""
         from coinbase.rest import RESTClient
@@ -193,6 +196,7 @@ class CoinbaseService:
 
         
     @staticmethod
+    @circuit_breaker('coinbase_api')
     def get_portfolio_value_from_breakdown(user_id, portfolio_id, currency='USD'):
         """
         Get portfolio value using the get_portfolio_breakdown API endpoint
@@ -246,29 +250,79 @@ class CoinbaseService:
                         return float(total_value_str)
                     except (ValueError, TypeError):
                         logger.error(f"Could not convert total value to float: {total_value_str}")
-            
+
             logger.warning(f"Could not extract total balance from portfolio breakdown")
             return 0.0
         except Exception as e:
             logger.error(f"Error getting portfolio value from breakdown: {str(e)}", exc_info=True)
             return 0.0
-        
-    
+
     @staticmethod
+    @circuit_breaker('coinbase_api')
     def get_client_from_credentials(credentials):
         """
-        Get a Coinbase client instance from credentials
+        Get a Coinbase client instance from credentials with immediate validation
+        
+        Args:
+            credentials: ExchangeCredentials object
+            
+        Returns:
+            RESTClient or None: Validated Coinbase client or None if credentials invalid
         """
         try:
             if not credentials:
+                logger.warning("No credentials provided to get_client_from_credentials")
                 return None
-                
+                    
+            # Create Coinbase client
+            from coinbase.rest import RESTClient
+            from app.models.portfolio import Portfolio
+            
             api_key = credentials.api_key
             api_secret = credentials.decrypt_secret()
             
-            from coinbase.rest import RESTClient
-            return RESTClient(api_key=api_key, api_secret=api_secret)
+            client = RESTClient(api_key=api_key, api_secret=api_secret)
             
+            # Immediately validate with a simple API call
+            try:
+                # Use a lightweight API call to validate credentials
+                client.get_accounts()
+                
+                # If we get here, the credentials are valid
+                logger.debug(f"Successfully validated Coinbase API credentials for portfolio {credentials.portfolio_id}")
+                return client
+                
+            except Exception as e:
+                error_str = str(e).lower()
+                
+                # Check specifically for auth errors (401/403)
+                if 'unauthorized' in error_str or '401' in error_str or '403' in error_str:
+                    logger.warning(f"Invalid Coinbase API credentials detected for portfolio {credentials.portfolio_id}: {str(e)}")
+                    
+                    # Delete the invalid credentials
+                    try:
+                        # Get portfolio name for better logging
+                        portfolio = Portfolio.query.get(credentials.portfolio_id)
+                        portfolio_name = portfolio.name if portfolio else "Unknown"
+                        
+                        logger.info(f"Deleting invalid credentials for portfolio '{portfolio_name}' (ID: {credentials.portfolio_id})")
+                        db.session.delete(credentials)
+                        db.session.commit()
+                        
+                        # You could add a notification here if you have a notification system
+                        # notify_user(credentials.user_id, f"Your Coinbase API credentials for portfolio '{portfolio_name}' are no longer valid and have been removed.")
+                        
+                    except Exception as del_err:
+                        logger.error(f"Error deleting invalid credentials: {str(del_err)}")
+                        db.session.rollback()
+                    
+                    return None
+                
+                # For other types of errors (network issues, rate limits, etc.),
+                # log but don't delete credentials as they might be temporary
+                logger.error(f"Error validating Coinbase credentials (non-auth): {str(e)}")
+                raise  # Let caller handle non-auth errors
+                
         except Exception as e:
             logger.error(f"Error creating Coinbase client from credentials: {str(e)}", exc_info=True)
             return None

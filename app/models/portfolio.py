@@ -27,3 +27,17 @@ class Portfolio(db.Model):
             portfolio_id=self.id,
             exchange='coinbase'
         ).first())
+    
+    # In app/models/portfolio.py
+
+def has_valid_credentials(self, user_id=None):
+    """Check if this portfolio has valid Coinbase credentials"""
+    query = ExchangeCredentials.query.filter_by(
+        portfolio_id=self.id,
+        exchange='coinbase'
+    )
+    
+    if user_id:
+        query = query.filter_by(user_id=user_id)
+        
+    return query.count() > 0

@@ -120,6 +120,43 @@ def create_app(test_config=None):
         from app.routes.auth import bp as auth_bp
         app.register_blueprint(auth_bp)
 
+        # Register error handlers
+        @app.errorhandler(404)
+        def page_not_found(e):
+            return jsonify({
+                'error': 'Resource not found',
+                'status_code': 404
+            }), 404
+
+        @app.errorhandler(500)
+        def internal_server_error(e):
+            # Log the error
+            logger.error(f"Internal server error: {str(e)}", exc_info=True)
+            return jsonify({
+                'error': 'An internal server error occurred',
+                'status_code': 500
+            }), 500
+
+        @app.errorhandler(429)
+        def too_many_requests(e):
+            return jsonify({
+                'error': 'Rate limit exceeded',
+                'status_code': 429,
+                'retry_after': e.description.get('retry_after', 60)
+            }), 429
+
+        @app.errorhandler(Exception)
+        def handle_unhandled_exception(e):
+            # Only trigger in production
+            if not app.debug:
+                logger.error(f"Unhandled exception: {str(e)}", exc_info=True)
+                return jsonify({
+                    'error': 'An unexpected error occurred',
+                    'status_code': 500
+                }), 500
+            # In debug mode, let the default handlers deal with it
+            raise e
+
         # Configure login redirect
         app.config.update(
             SECURITY_POST_LOGIN_VIEW='/login-redirect',
@@ -134,5 +171,38 @@ def create_app(test_config=None):
             app.logger.info(f"SSL enabled with cert: {app.config.get('SSL_CERT')}")
         else:
             app.logger.info("Running without SSL")
+
+        # Initialize Health Check System
+        from app.utils.health_check import HealthCheck
+
+        # Initialize health check system
+        health_check = HealthCheck.get_instance()
+        health_check.start(app)
+
+        # Register a shutdown function to clean up
+        @app.teardown_appcontext
+        def shutdown_health_check(exception=None):
+            health_check.shutdown()
+
+        # Add health check endpoint
+        @app.route('/health')
+        def health_check_endpoint():
+            system_health = health_check.get_system_health()
+            service_statuses = {
+                name: info['status'] 
+                for name, info in health_check.services.items()
+            }
+            
+            status_code = 200
+            if system_health == HealthCheck.STATUS_DEGRADED:
+                status_code = 429  # Too Many Requests
+            elif system_health == HealthCheck.STATUS_UNHEALTHY:
+                status_code = 503  # Service Unavailable
+            
+            return jsonify({
+                'status': system_health,
+                'services': service_statuses,
+                'timestamp': datetime.now().isoformat()
+            }), status_code
 
     return app

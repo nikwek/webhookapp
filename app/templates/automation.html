@@ -66,17 +66,22 @@
                     <div class="card-header bg-success bg-opacity-10">
                         <h5 class="mb-0">Connected Portfolio</h5>
                     </div>
-                    <!-- Change this section in automation.html -->
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
                                 <p class="mb-1"><strong>Portfolio:</strong> {{ portfolio.name }}</p>
                                 <p class="mb-1"><strong>Exchange:</strong> {{ portfolio.exchange|capitalize }}</p>
-                                {% if portfolio.value is defined and portfolio.value is not none %}
-                                    <p class="mb-0">
-                                        <strong>Value:</strong> 
-                                        <span class="text-success">${{ "%.2f"|format(portfolio.value) }}</span>
-                                    </p>
+                                {% if portfolio.has_valid_credentials == false %}
+                                <div class="alert alert-warning mt-2">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    <strong>API Keys Missing or Invalid:</strong> Your Coinbase API keys for this portfolio are no longer valid.
+                                    <a href="{{ url_for('automation.save_api_keys', automation_id=automation.automation_id) }}" class="btn btn-sm btn-primary ms-2">Update API Keys</a>
+                                </div>
+                                {% elif portfolio.value is defined and portfolio.value is not none %}
+                                <p class="mb-0">
+                                    <strong>Value:</strong> 
+                                    <span class="text-success">${{ "%.2f"|format(portfolio.value) }}</span>
+                                </p>
                                 {% endif %}
                             </div>
                             <form method="POST" action="{{ url_for('automation.disconnect_portfolio', automation_id=automation.automation_id) }}">
@@ -745,7 +750,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 {% if automation %}
     <script type="text/babel">
-        // AutomationLogs component definition
+        // AutomationLogs component with support for displaying order details and API responses
         const AutomationLogs = () => {
             const [logs, setLogs] = React.useState([]);
             const [isLoading, setIsLoading] = React.useState(false);
@@ -769,6 +774,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         throw new Error('Failed to fetch logs');
                     }
                     const data = await response.json();
+                    console.log("Fetched logs:", data.logs); // Debug: view full log data
                     setLogs(data.logs);
                     setPagination(data.pagination);
                 } catch (err) {
@@ -779,7 +785,7 @@ document.addEventListener('DOMContentLoaded', function() {
             };
 
             const changePage = (newPage) => {
-                // Optional: clear expanded rows when changing pages
+                // Clear expanded rows when changing pages
                 setExpandedRows(new Set());
                 setPagination(prev => ({
                     ...prev,
@@ -808,6 +814,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             };
             
+            // Parse JSON strings if needed
+            const parseJsonField = (field) => {
+                if (!field) return null;
+                if (typeof field === 'object') return field;
+                
+                try {
+                    return JSON.parse(field);
+                } catch (e) {
+                    return field; // Return as is if not valid JSON
+                }
+            };
+            
             React.useEffect(() => {
                 fetchLogs(pagination.page, pagination.per_page);
             }, [pagination.page, pagination.per_page]);
@@ -819,7 +837,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <h5 className="mb-0">Webhook Logs</h5>
                             <button 
                                 className="btn btn-secondary btn-sm" 
-                                onClick={fetchLogs}
+                                onClick={() => fetchLogs(pagination.page, pagination.per_page)}
                                 disabled={isLoading}
                                 title="Refresh logs"
                             >
@@ -836,7 +854,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <thead>
                                         <tr>
                                             <th className="w-200 text-nowrap">Timestamp (UTC)</th>
-                                            <th>Payload</th>
+                                            <th>Information</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -855,14 +873,76 @@ document.addEventListener('DOMContentLoaded', function() {
                                                 >
                                                     <td className="text-nowrap w-200">{new Date(log.timestamp).toLocaleString()}</td>
                                                     <td>
-                                                        {expandedRows.has(log.timestamp) ? (
-                                                            <pre className="mb-0 payload-expanded">
-                                                                {JSON.stringify(log.payload, null, 2)}
-                                                            </pre>
-                                                        ) : (
-                                                            <pre className="mb-0 payload-collapsed text-truncate">
-                                                                {JSON.stringify(log.payload)}
-                                                            </pre>
+                                                        {/* Basic Info (Always Visible) */}
+                                                        <div className="d-flex justify-content-between">
+                                                            <div>
+                                                                <span className={`badge ${log.action?.toLowerCase() === 'buy' ? 'bg-success' : 'bg-danger'} me-2`}>
+                                                                    {/* Capitalize action regardless of source */}
+                                                                    {log.action ? log.action.toUpperCase() : 'UNKNOWN'}
+                                                                </span>
+                                                                <strong>{log.ticker || ''}</strong>
+                                                                {log.message && <span className="ms-2 text-muted">{log.message}</span>}
+                                                            </div>
+                                                            <div>
+                                                                {log.status && (
+                                                                    <span className={`badge ${
+                                                                        log.status.toLowerCase() === 'success' ? 'bg-success' : 
+                                                                        log.status.toLowerCase() === 'error' ? 'bg-danger' :
+                                                                        log.status.toLowerCase() === 'filled' ? 'bg-primary' : 'bg-secondary'
+                                                                    }`}>
+                                                                        {/* Title case the status */}
+                                                                        {log.status.charAt(0).toUpperCase() + log.status.slice(1).toLowerCase()}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* Expanded Details */}
+                                                        {expandedRows.has(log.timestamp) && (
+                                                            <div className="mt-3">
+                                                                {/* Payload Section */}
+                                                                <div className="mb-3">
+                                                                    <h6 className="mb-2">Webhook Payload:</h6>
+                                                                    <pre className="bg-light p-2 rounded small mb-0">
+                                                                        {JSON.stringify(log.payload, null, 2)}
+                                                                    </pre>
+                                                                </div>
+                                                                
+                                                                {/* Order Information Section */}
+                                                                {log.order_id && (
+                                                                    <div className="mb-0 p-2 bg-light border rounded">
+                                                                        <h6 className="mb-2">Execution Details:</h6>
+                                                                        <table className="table table-sm mb-0">
+                                                                            <tbody>
+                                                                                <tr>
+                                                                                    <th className="w-25">Order ID:</th>
+                                                                                    <td>{log.order_id}</td>
+                                                                                </tr>
+                                                                                <tr>
+                                                                                    <th>Status:</th>
+                                                                                    <td>{log.status || 'Unknown'}</td>
+                                                                                </tr>
+                                                                                <tr>
+                                                                                    <th>Client Order ID:</th>
+                                                                                    <td>{log.client_order_id}</td>
+                                                                                </tr>
+                                                                                {log.raw_response && (
+                                                                                    <tr>
+                                                                                        <th>Exchange Response:</th>
+                                                                                        <td>
+                                                                                            <pre className="small mb-0">
+                                                                                                {typeof log.raw_response === 'string' 
+                                                                                                    ? log.raw_response 
+                                                                                                    : JSON.stringify(parseJsonField(log.raw_response), null, 2)}
+                                                                                            </pre>
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                )}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </td>
                                                 </tr>

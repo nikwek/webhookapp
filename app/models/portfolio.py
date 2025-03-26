@@ -1,6 +1,7 @@
 # app/models/portfolio.py
 from app import db
 from datetime import datetime, timezone
+from app.models.exchange_credentials import ExchangeCredentials  # Add this import
 
 class Portfolio(db.Model):
     __tablename__ = 'portfolios'
@@ -11,6 +12,7 @@ class Portfolio(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     exchange = db.Column(db.String(50), default='coinbase', nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    invalid_credentials = db.Column(db.Boolean, default=False)
     
     # Add the relationship
     user = db.relationship('User', backref=db.backref('portfolios', lazy=True))
@@ -28,16 +30,22 @@ class Portfolio(db.Model):
             exchange='coinbase'
         ).first())
     
-    # In app/models/portfolio.py
-
-def has_valid_credentials(self, user_id=None):
-    """Check if this portfolio has valid Coinbase credentials"""
-    query = ExchangeCredentials.query.filter_by(
-        portfolio_id=self.id,
-        exchange='coinbase'
-    )
-    
-    if user_id:
-        query = query.filter_by(user_id=user_id)
+    def has_valid_credentials(self, user_id=None):
+        """Check if this portfolio has valid Coinbase credentials"""
+        if self.invalid_credentials:
+            return False
+            
+        query = ExchangeCredentials.query.filter_by(
+            portfolio_id=self.id,
+            exchange='coinbase'
+        )
         
-    return query.count() > 0
+        if user_id:
+            query = query.filter_by(user_id=user_id)
+            
+        return query.count() > 0
+        
+    def reset_invalid_flag(self):
+        """Reset the invalid_credentials flag when new credentials are added"""
+        self.invalid_credentials = False
+        db.session.commit()

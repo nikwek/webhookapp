@@ -11,6 +11,10 @@ from app.forms import CoinbaseAPIKeyForm
 from app.services.account_service import AccountService
 from app import db
 import coinbase.rest
+import logging
+
+# Add the logger that's missing
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('dashboard', __name__)
 
@@ -18,7 +22,7 @@ bp = Blueprint('dashboard', __name__)
 @bp.route('/dashboard')
 @login_required
 def dashboard():
-    """Render the dashboard page for non-admin users."""
+    """Render the dashboard page for non-admin users with improved handling of invalid credentials."""
     if current_user.has_role('admin'):
         return redirect(url_for('admin.users'))
 
@@ -27,10 +31,24 @@ def dashboard():
     # Get automations
     db_automations = Automation.query.filter_by(user_id=user_id).all()
     
-    # Get portfolios
-    portfolios = {p.id: p for p in Portfolio.query.filter_by(user_id=user_id).all()}
+    # Get portfolios and verify their access
+    all_portfolios = Portfolio.query.filter_by(user_id=user_id).all()
     
-    # Convert to dictionaries for template
+    # Create a dictionary of verified portfolios
+    portfolios = {}
+    for p in all_portfolios:
+        portfolios[p.id] = p
+        
+        # Check if portfolio has credentials
+        has_credentials = ExchangeCredentials.query.filter_by(
+            portfolio_id=p.id,
+            exchange='coinbase'
+        ).first() is not None
+        
+        # Store credential status on portfolio object
+        p.has_credentials = has_credentials
+    
+    # Convert automations to dictionaries for template
     automations = []
     for automation in db_automations:
         automation_dict = {
@@ -41,13 +59,28 @@ def dashboard():
             'trading_pair': automation.trading_pair,
             'webhook_url': f"{request.url_root.rstrip('/')}/webhook?automation_id={automation.automation_id}",
             'portfolio_name': None,
-            'portfolio_value': None
+            'portfolio_value': None,
+            'portfolio_status': 'disconnected'  # Default status
         }
         
         if automation.portfolio_id and automation.portfolio_id in portfolios:
             portfolio = portfolios[automation.portfolio_id]
             automation_dict['portfolio_name'] = portfolio.name
-            automation_dict['portfolio_value'] = AccountService.get_portfolio_value(user_id, portfolio.id)
+            
+            if hasattr(portfolio, 'has_credentials') and portfolio.has_credentials:
+                if portfolio.invalid_credentials:
+                    automation_dict['portfolio_status'] = 'invalid'
+                else:
+                    # Only try to get portfolio value if credentials exist and aren't marked invalid
+                    try:
+                        portfolio_value = AccountService.get_portfolio_value(user_id, portfolio.id)
+                        automation_dict['portfolio_value'] = portfolio_value
+                        automation_dict['portfolio_status'] = 'connected' if portfolio_value > 0 else 'empty'
+                    except Exception as e:
+                        logger.error(f"Error getting portfolio value: {str(e)}")
+                        automation_dict['portfolio_status'] = 'error'
+            else:
+                automation_dict['portfolio_status'] = 'disconnected'
         
         automations.append(automation_dict)
 
@@ -119,7 +152,7 @@ def clear_logs():
         db.session.commit()
         return jsonify({"success": True})
     except Exception as e:
-        print(f"Error clearing logs: {e}")
+        logger.error(f"Error clearing logs: {e}")
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 

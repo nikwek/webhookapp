@@ -182,38 +182,63 @@ def get_coinbase_portfolios(user_id):
 def new_automation():
     return render_template('automation.html', automation=None)
 
+
 @bp.route('/automation/<automation_id>', methods=['GET'])
 @api_login_required
 def view_automation(automation_id):
     automation = get_user_automation(automation_id)
     if not automation:
         return render_template('404.html'), 404
-    
+
     # Get portfolio information if connected
     portfolio = None
+    portfolio_status = 'disconnected'
+
     if automation.portfolio_id:
         portfolio = Portfolio.query.get(automation.portfolio_id)
-        
-        # Check if portfolio has valid credentials
-        has_valid_credentials = False
+
         if portfolio:
+            # Check if portfolio has valid credentials
             credentials = ExchangeCredentials.query.filter_by(
                 portfolio_id=portfolio.id,
                 exchange='coinbase'
             ).first()
+            
             has_valid_credentials = credentials is not None
             portfolio.has_valid_credentials = has_valid_credentials
             
-            # Only try to get portfolio value if credentials exist
             if has_valid_credentials:
-                portfolio.value = AccountService.get_portfolio_value(current_user.id, portfolio.id)
+                # Check if portfolio access is still valid
+                if portfolio.invalid_credentials:
+                    portfolio_status = 'invalid'
+                else:
+                    # Verify portfolio access
+                    try:
+                        # First try to get portfolio value
+                        portfolio_value = AccountService.get_portfolio_value(current_user.id, portfolio.id)
+                        if portfolio_value > 0:
+                            portfolio_status = 'connected'
+                            portfolio.value = portfolio_value
+                        else:
+                            # If value is 0, verify access directly
+                            if CoinbaseService.verify_portfolio_access(current_user.id, portfolio.id):
+                                portfolio_status = 'empty'
+                            else:
+                                portfolio_status = 'invalid'
+                                portfolio.invalid_credentials = True
+                                db.session.commit()
+                    except Exception as e:
+                        logger.error(f"Error verifying portfolio access: {str(e)}")
+                        portfolio_status = 'error'
+            else:
+                portfolio_status = 'disconnected'
     
-    # For portfolio selection - only needed if no portfolio is connected yet
+    # For portfolio selection - only needed if no portfolio is connected or if credentials are invalid
     portfolios = []
     selected_portfolio = None
     show_api_form = False
     
-    if not portfolio:
+    if not portfolio or portfolio_status == 'invalid':
         # Fetch portfolios from Coinbase
         portfolios = get_coinbase_portfolios(current_user.id)
         
@@ -241,6 +266,7 @@ def view_automation(automation_id):
         'automation.html', 
         automation=automation,
         portfolio=portfolio,
+        portfolio_status=portfolio_status,
         portfolios=portfolios,
         selected_portfolio=selected_portfolio,
         show_api_form=show_api_form,
@@ -404,7 +430,7 @@ def select_portfolio(automation_id):
     
     return redirect(url_for('automation.view_automation', automation_id=automation_id))
 
-@bp.route('/automation/<automation_id>/save-api-keys', methods=['POST'])
+@bp.route('/<automation_id>/save-api-keys', methods=['POST'])
 @api_login_required
 def save_api_keys(automation_id):
     automation = get_user_automation(automation_id)
@@ -446,6 +472,10 @@ def save_api_keys(automation_id):
         
         # Update automation to link to portfolio
         automation.portfolio_id = portfolio.id
+        
+        # ADD THIS: Reset invalid credentials flag on the portfolio
+        if portfolio.invalid_credentials:
+            portfolio.reset_invalid_flag()  # This calls the method that resets the flag and commits
         
         db.session.commit()
         
@@ -576,16 +606,34 @@ def update_automation_status(automation_id):
 @api_login_required
 def delete_automation(automation_id):
     try:
+        # Get the automation and verify ownership
         automation = get_user_automation(automation_id)
         if not automation:
-            return jsonify({"error": "Automation not found"}), 404
+            logger.warning(f"Deletion attempt for non-existent automation: {automation_id}")
+            return jsonify({"error": "Automation not found", "success": False}), 404
             
+        logger.info(f"Deleting automation {automation_id} ({automation.name})")
+        
+        # 1. Delete related webhook logs first
+        logs_count = WebhookLog.query.filter_by(automation_id=automation_id).delete()
+        logger.info(f"Deleted {logs_count} webhook logs for automation {automation_id}")
+        
+        # 2. Delete or update related exchange credentials
+        creds = ExchangeCredentials.query.filter_by(automation_id=automation.id).all()
+        for cred in creds:
+            logger.info(f"Deleting credential {cred.id} for automation {automation_id}")
+            db.session.delete(cred)
+        
+        # 3. Finally delete the automation itself
         db.session.delete(automation)
         db.session.commit()
+        
+        logger.info(f"Successfully deleted automation {automation_id}")
         return jsonify({"success": True})
     except Exception as e:
+        logger.error(f"Error deleting automation {automation_id}: {str(e)}", exc_info=True)
         db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "success": False}), 500
     
 @bp.route('/automation/<automation_id>/logs')
 @api_login_required

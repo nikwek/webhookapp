@@ -1,5 +1,5 @@
 # app/__init__.py
-from flask import Flask, flash
+from flask import Flask, flash, jsonify,render_template, request
 from flask_security import user_authenticated,Security, SQLAlchemyUserDatastore
 from flask_security.forms import RegisterFormV2
 from flask_login import logout_user
@@ -123,10 +123,16 @@ def create_app(test_config=None):
         # Register error handlers
         @app.errorhandler(404)
         def page_not_found(e):
-            return jsonify({
-                'error': 'Resource not found',
-                'status_code': 404
-            }), 404
+            # Check if it's an API request or a browser request
+            if request.path.startswith('/api/') or request.headers.get('Content-Type') == 'application/json':
+                # API request - return JSON
+                return jsonify({
+                    "error": "Not Found",
+                    "message": str(e)
+                }), 404
+            else:
+                # Browser request - render template
+                return render_template('404.html'), 404
 
         @app.errorhandler(500)
         def internal_server_error(e):
@@ -175,7 +181,6 @@ def create_app(test_config=None):
         # Initialize Health Check System
         from app.utils.health_check import HealthCheck
 
-        # Initialize health check system
         health_check = HealthCheck.get_instance()
         health_check.start(app)
 

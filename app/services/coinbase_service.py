@@ -8,6 +8,7 @@ from app.utils.circuit_breaker import circuit_breaker
 import traceback
 import logging
 from app import db
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -236,38 +237,188 @@ class CoinbaseService:
                 logger.error("Failed to create Coinbase client")
                 return 0.0
             
-            # Get portfolio breakdown
-            breakdown = client.get_portfolio_breakdown(portfolio_uuid=portfolio_uuid, currency=currency)
-            
-            # Extract the value from the response
-            raw_response = str(breakdown)
-            if "'total_balance': {'value': '" in raw_response:
-                start_idx = raw_response.find("'total_balance': {'value': '") + len("'total_balance': {'value': '")
-                end_idx = raw_response.find("'", start_idx)
-                if start_idx > 0 and end_idx > start_idx:
-                    total_value_str = raw_response[start_idx:end_idx]
+            try:
+                # Get portfolio breakdown
+                breakdown = client.get_portfolio_breakdown(portfolio_uuid=portfolio_uuid, currency=currency)
+                
+                # Extract the value using proper object traversal, not string parsing
+                portfolio_value = 0.0
+                
+                # If breakdown is a dictionary
+                if isinstance(breakdown, dict):
+                    logger.debug(f"Breakdown is a dictionary with keys: {list(breakdown.keys())}")
+                    
+                    if 'breakdown' in breakdown:
+                        breakdown_data = breakdown['breakdown']
+                        
+                        if isinstance(breakdown_data, dict) and 'portfolio_balances' in breakdown_data:
+                            balances = breakdown_data['portfolio_balances']
+                            
+                            if isinstance(balances, dict) and 'total_balance' in balances:
+                                total_balance = balances['total_balance']
+                                
+                                if isinstance(total_balance, dict) and 'value' in total_balance:
+                                    try:
+                                        portfolio_value = float(total_balance['value'])
+                                        logger.info(f"Extracted portfolio value (dict): {portfolio_value}")
+                                        return portfolio_value
+                                    except (ValueError, TypeError) as e:
+                                        logger.error(f"Error converting portfolio value to float: {e}")
+                
+                # If breakdown is an object
+                elif hasattr(breakdown, 'breakdown'):
+                    logger.debug("Breakdown has a 'breakdown' attribute")
+                    breakdown_data = breakdown.breakdown
+                    
+                    if hasattr(breakdown_data, 'portfolio_balances'):
+                        balances = breakdown_data.portfolio_balances
+                        
+                        if hasattr(balances, 'total_balance'):
+                            total_balance = balances.total_balance
+                            
+                            if hasattr(total_balance, 'value'):
+                                try:
+                                    portfolio_value = float(total_balance.value)
+                                    logger.info(f"Extracted portfolio value (object): {portfolio_value}")
+                                    return portfolio_value
+                                except (ValueError, TypeError) as e:
+                                    logger.error(f"Error converting portfolio value to float: {e}")
+                
+                # Last resort - try string parsing but with better detection
+                raw_response = str(breakdown)
+                logger.debug(f"Attempting string parsing from: {raw_response[:200]}...")
+                
+                # More targeted string extraction
+                value_patterns = [
+                    "'total_balance': {'value': '",
+                    '"total_balance": {"value": "',
+                    "value='",
+                    'value="'
+                ]
+                
+                for pattern in value_patterns:
+                    if pattern in raw_response:
+                        start_idx = raw_response.find(pattern) + len(pattern)
+                        end_idx = raw_response.find("'", start_idx) if "'" in pattern else raw_response.find('"', start_idx)
+                        
+                        if start_idx > 0 and end_idx > start_idx:
+                            total_value_str = raw_response[start_idx:end_idx]
+                            try:
+                                portfolio_value = float(total_value_str)
+                                logger.info(f"Extracted portfolio value (string): {portfolio_value}")
+                                return portfolio_value
+                            except (ValueError, TypeError) as e:
+                                logger.error(f"Error converting string value to float: {total_value_str}")
+                
+                logger.warning(f"Could not extract total balance from portfolio breakdown")
+                
+                # Additional debug info
+                if hasattr(breakdown, '__dict__'):
+                    logger.debug(f"Breakdown __dict__: {breakdown.__dict__}")
+                
+                return 0.0
+                
+            except Exception as e:
+                error_message = str(e).lower()
+                
+                # Check for specific permission errors
+                if 'permission_denied' in error_message or 'access to portfolio' in error_message or any(str(code) in error_message for code in ['403', '401']):
+                    logger.warning(f"Access denied to portfolio {portfolio_uuid} ({portfolio.name}). The portfolio may have been deleted or permissions revoked.")
+                    
+                    # Flag the credential as invalid
+                    if creds:
+                        try:
+                            logger.info(f"Removing invalid credentials for portfolio {portfolio.name} (ID: {portfolio_id})")
+                            db.session.delete(creds)
+                            db.session.commit()
+                        except Exception as del_err:
+                            logger.error(f"Error deleting invalid credentials: {str(del_err)}")
+                            db.session.rollback()
+                    
+                    # Update portfolio status if needed
                     try:
-                        return float(total_value_str)
-                    except (ValueError, TypeError):
-                        logger.error(f"Could not convert total value to float: {total_value_str}")
-
-            logger.warning(f"Could not extract total balance from portfolio breakdown")
-            return 0.0
+                        portfolio.invalid_credentials = True
+                        db.session.commit()
+                    except:
+                        db.session.rollback()
+                    
+                    return 0.0
+                
+                # Re-raise other errors
+                raise
+                
         except Exception as e:
             logger.error(f"Error getting portfolio value from breakdown: {str(e)}", exc_info=True)
             return 0.0
+
+    # Mthod to check and clean up portfolios
+    @staticmethod
+    def verify_portfolio_access(user_id, portfolio_id):
+        """
+        Verify if a portfolio is still accessible with current credentials
+        
+        Args:
+            user_id (int): User ID
+            portfolio_id (int): Portfolio ID in our database
+            
+        Returns:
+            bool: True if portfolio is accessible, False otherwise
+        """
+        try:
+            # Get portfolio info
+            portfolio = Portfolio.query.get(portfolio_id)
+            if not portfolio:
+                return False
+                
+            # Get credentials
+            creds = ExchangeCredentials.query.filter_by(
+                user_id=user_id,
+                portfolio_id=portfolio_id,
+                exchange='coinbase'
+            ).first()
+            
+            if not creds:
+                return False
+                
+            # Try to create client
+            client = CoinbaseService.get_client_from_credentials(creds)
+            if not client:
+                return False
+                
+            # Test access with a lightweight call
+            client.get_portfolio_breakdown(portfolio_uuid=portfolio.portfolio_id)
+            
+            # If we get here, the portfolio is accessible
+            return True
+            
+        except Exception as e:
+            error_message = str(e).lower()
+            
+            # Check for specific permission errors
+            if 'permission_denied' in error_message or 'access to portfolio' in error_message or any(str(code) in error_message for code in ['403', '401']):
+                logger.warning(f"Access denied to portfolio {portfolio.portfolio_id} ({portfolio.name}). The portfolio may have been deleted or permissions revoked.")
+                
+                # Clean up invalid credentials
+                if creds:
+                    try:
+                        logger.info(f"Removing invalid credentials for portfolio {portfolio.name} (ID: {portfolio_id})")
+                        db.session.delete(creds)
+                        db.session.commit()
+                    except Exception as del_err:
+                        logger.error(f"Error deleting invalid credentials: {str(del_err)}")
+                        db.session.rollback()
+                
+                return False
+                
+            # For other types of errors, log but don't delete credentials
+            logger.error(f"Error verifying portfolio access: {str(e)}")
+            return False
 
     @staticmethod
     @circuit_breaker('coinbase_api')
     def get_client_from_credentials(credentials):
         """
-        Get a Coinbase client instance from credentials with immediate validation
-        
-        Args:
-            credentials: ExchangeCredentials object
-            
-        Returns:
-            RESTClient or None: Validated Coinbase client or None if credentials invalid
+        Get a Coinbase client instance from credentials with retry mechanism
         """
         try:
             if not credentials:
@@ -283,46 +434,54 @@ class CoinbaseService:
             
             client = RESTClient(api_key=api_key, api_secret=api_secret)
             
-            # Immediately validate with a simple API call
-            try:
-                # Use a lightweight API call to validate credentials
-                client.get_accounts()
-                
-                # If we get here, the credentials are valid
-                logger.debug(f"Successfully validated Coinbase API credentials for portfolio {credentials.portfolio_id}")
-                return client
-                
-            except Exception as e:
-                error_str = str(e).lower()
-                
-                # Check specifically for auth errors (401/403)
-                if 'unauthorized' in error_str or '401' in error_str or '403' in error_str:
-                    logger.warning(f"Invalid Coinbase API credentials detected for portfolio {credentials.portfolio_id}: {str(e)}")
+            # Retry configuration
+            max_retries = 3
+            retry_delay = 1  # seconds
+            
+            # Try validation with retries
+            for attempt in range(max_retries):
+                try:
+                    # Use a lightweight API call to validate credentials
+                    client.get_accounts()
                     
-                    # Delete the invalid credentials
-                    try:
-                        # Get portfolio name for better logging
+                    # If successful, check if portfolio was previously marked invalid and reset
+                    if credentials.portfolio_id:
                         portfolio = Portfolio.query.get(credentials.portfolio_id)
-                        portfolio_name = portfolio.name if portfolio else "Unknown"
-                        
-                        logger.info(f"Deleting invalid credentials for portfolio '{portfolio_name}' (ID: {credentials.portfolio_id})")
-                        db.session.delete(credentials)
-                        db.session.commit()
-                        
-                        # You could add a notification here if you have a notification system
-                        # notify_user(credentials.user_id, f"Your Coinbase API credentials for portfolio '{portfolio_name}' are no longer valid and have been removed.")
-                        
-                    except Exception as del_err:
-                        logger.error(f"Error deleting invalid credentials: {str(del_err)}")
-                        db.session.rollback()
+                        if portfolio and portfolio.invalid_credentials:
+                            portfolio.invalid_credentials = False
+                            db.session.commit()
+                            logger.info(f"Reset invalid flag for portfolio {portfolio.id} after successful validation")
                     
-                    return None
-                
-                # For other types of errors (network issues, rate limits, etc.),
-                # log but don't delete credentials as they might be temporary
-                logger.error(f"Error validating Coinbase credentials (non-auth): {str(e)}")
-                raise  # Let caller handle non-auth errors
-                
+                    logger.debug(f"Successfully validated Coinbase API credentials on attempt {attempt+1}")
+                    return client
+                    
+                except Exception as e:
+                    error_str = str(e).lower()
+                    
+                    # Check specifically for auth errors (401/403)
+                    if 'unauthorized' in error_str or '401' in error_str or '403' in error_str or 'invalid signature' in error_str:
+                        logger.warning(f"Invalid Coinbase API credentials detected: {str(e)}")
+                        
+                        # Handle invalid credentials
+                        if credentials.portfolio_id:
+                            portfolio = Portfolio.query.get(credentials.portfolio_id)
+                            if portfolio:
+                                portfolio.invalid_credentials = True
+                                db.session.commit()
+                        
+                        return None
+                    
+                    # For other errors, retry if we have attempts left
+                    if attempt < max_retries - 1:
+                        logger.warning(f"API validation attempt {attempt+1} failed, retrying in {retry_delay}s: {str(e)}")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        logger.error(f"API validation failed after {max_retries} attempts: {str(e)}")
+                        # For non-auth errors after all retries, return the client anyway
+                        # This allows operations to continue despite temporary API issues
+                        return client
+                    
         except Exception as e:
             logger.error(f"Error creating Coinbase client from credentials: {str(e)}", exc_info=True)
             return None

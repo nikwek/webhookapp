@@ -71,11 +71,10 @@
                             <div>
                                 <p class="mb-1"><strong>Portfolio:</strong> {{ portfolio.name }}</p>
                                 <p class="mb-1"><strong>Exchange:</strong> {{ portfolio.exchange|capitalize }}</p>
-                                {% if portfolio.has_valid_credentials == false %}
+                                {% if portfolio.has_valid_credentials == false or portfolio_status == 'invalid' %}
                                 <div class="alert alert-warning mt-2">
                                     <i class="fas fa-exclamation-triangle me-2"></i>
                                     <strong>API Keys Missing or Invalid:</strong> Your Coinbase API keys for this portfolio are no longer valid.
-                                    <a href="{{ url_for('automation.save_api_keys', automation_id=automation.automation_id) }}" class="btn btn-sm btn-primary ms-2">Update API Keys</a>
                                 </div>
                                 {% elif portfolio.value is defined and portfolio.value is not none %}
                                 <p class="mb-0">

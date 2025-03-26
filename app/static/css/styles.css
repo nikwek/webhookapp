@@ -78,3 +78,11 @@
 .alert-dismissible .btn-close {
     padding: 0.75rem 1rem;
 }
+
+.scrollable-pre {
+    max-height: 200px;
+    overflow: auto;
+    background-color: #f8f9fa;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+  }

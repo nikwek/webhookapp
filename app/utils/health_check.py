@@ -5,6 +5,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from functools import wraps
+from sqlalchemy import text
 from app import db
 from app.utils.circuit_breaker import CircuitBreaker
 
@@ -99,9 +100,12 @@ class HealthCheck:
     def check_database_health(self):
         """Check database connectivity and performance"""
         try:
+            # Import SQLAlchemy text function
+            from sqlalchemy import text
+            
             # Simple query to test database connectivity
             start_time = time.time()
-            db.session.execute("SELECT 1")
+            db.session.execute(text("SELECT 1"))
             response_time = time.time() - start_time
             
             # Update service status
@@ -161,10 +165,13 @@ class HealthCheck:
         """Try to recover database connection"""
         logger.info("Attempting database recovery...")
         try:
+            # Import SQLAlchemy text function
+            from sqlalchemy import text
+            
             # Close and reopen connection
             db.session.remove()
             # Test if it worked
-            db.session.execute("SELECT 1")
+            db.session.execute(text("SELECT 1"))
             logger.info("Database recovery successful")
             
             # Update service status

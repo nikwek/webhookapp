@@ -19,6 +19,9 @@ bp = Blueprint('webhook', __name__)
 @limiter.limit("60/minute", key_func=lambda: request.args.get('automation_id'))
 @csrf.exempt 
 def webhook():
+    if request.content_length > 10 * 1024:  # 10KB limit
+        return jsonify({'error': 'Payload too large'}), 413
+    
     automation_id = request.args.get('automation_id')
     logger.info(f"Received webhook for automation_id: {automation_id}")
     

@@ -1,7 +1,8 @@
 # app/__init__.py
-from flask import Flask, flash, jsonify,render_template, request
-from flask_security import user_authenticated,Security, SQLAlchemyUserDatastore
-from flask_security.forms import RegisterFormV2
+# Update this import at the top of the file:
+from flask import Flask, flash, jsonify, render_template, request
+from flask_security import user_authenticated, Security, SQLAlchemyUserDatastore
+from flask_security.forms import RegisterFormV2, LoginForm
 from flask_login import logout_user
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text 
@@ -13,6 +14,8 @@ from config import get_config
 import os
 import logging
 from datetime import datetime, timezone
+from app.forms.custom_login_form import CustomLoginForm
+
 
 # Initialize extensions
 db = SQLAlchemy()
@@ -25,7 +28,6 @@ sess = Session()
 
 # Check if account is suspended 
 def check_if_account_is_suspended(app, user, **kwargs):
-    import logging
     logger = logging.getLogger(__name__)
     
     logger.info(f"Checking if user {user.email} is suspended: {user.is_suspended}")
@@ -38,7 +40,9 @@ def check_if_account_is_suspended(app, user, **kwargs):
 
 def create_app(test_config=None):
     app = Flask(__name__)
-    
+
+    logging.getLogger('flask_security').setLevel(logging.DEBUG)  # debugging flash messages
+
     if test_config is None:
         app.config.from_object(get_config())
     else:
@@ -82,11 +86,20 @@ def create_app(test_config=None):
             db.create_all()
             
         # Setup Flask-Security
+        app.config['SECURITY_FLASH_MESSAGES'] = True
         user_datastore = SQLAlchemyUserDatastore(db, User, Role)
         security.init_app(
             app,
             user_datastore,
-            register_form=RegisterFormV2
+            register_form=RegisterFormV2,
+            login_form=CustomLoginForm,
+            flash_messages=True
+        )
+
+        # Configure login redirect
+        app.config.update(
+            SECURITY_POST_LOGIN_VIEW='/login-redirect',
+            SECURITY_POST_REGISTER_VIEW='/dashboard',
         )
 
         @user_authenticated.connect_via(app)
@@ -163,11 +176,6 @@ def create_app(test_config=None):
             # In debug mode, let the default handlers deal with it
             raise e
 
-        # Configure login redirect
-        app.config.update(
-            SECURITY_POST_LOGIN_VIEW='/login-redirect',
-        )
-        
         # Initialize database
         db.create_all()
 

@@ -10,8 +10,16 @@
                 <h3 class="text-center">Login</h3>
             </div>
             <div class="card-body">
+                <!-- Authentication error alert - This will be shown/hidden via JavaScript -->
+                <div id="auth-error" class="alert alert-danger alert-dismissible fade show" role="alert" style="display: none;">
+                    <span id="auth-error-message">Authentication failed. Please check your credentials.</span>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                
+                <!-- Standard flash messages -->
                 {% include "security/_messages.html" %}
-                <form action="{{ url_for_security('login') }}" method="POST" name="login_user_form">
+                
+                <form action="{{ url_for_security('login') }}" method="POST" name="login_user_form" id="login-form">
                     {{ login_user_form.hidden_tag() }}
                     <div class="mb-3">
                         {{ login_user_form.email.label(class_="form-label") }}
@@ -37,4 +45,52 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Get flash messages
+    const flashMessages = document.querySelectorAll('.alert');
+    const hasFlashMessages = flashMessages.length > 0;
+    
+    // Check if this is a post-login error case
+    const form = document.getElementById('login-form');
+    const emailField = document.querySelector('input[name="email"]');
+    
+    // Only show JS error if no flash messages are present
+    if (form && emailField && emailField.value && window.location.href.includes('/login') && !hasFlashMessages) {
+        // Show explicit error message
+        const errorDiv = document.getElementById('auth-error');
+        if (errorDiv) {
+            errorDiv.style.display = 'block';
+            const errorMsg = document.getElementById('auth-error-message');
+            if (errorMsg) {
+                errorMsg.textContent = "Invalid email or password. Please try again.";
+            }
+        }
+    }
+    
+    // Add form validation
+    if (form) {
+        form.addEventListener('submit', function(event) {
+            const emailInput = document.querySelector('input[name="email"]');
+            const passwordInput = document.querySelector('input[name="password"]');
+            
+            if (!emailInput.value || !passwordInput.value) {
+                event.preventDefault();
+                
+                const errorDiv = document.getElementById('auth-error');
+                if (errorDiv) {
+                    errorDiv.style.display = 'block';
+                    const errorMsg = document.getElementById('auth-error-message');
+                    if (errorMsg) {
+                        errorMsg.textContent = "Please enter both email and password.";
+                    }
+                }
+                
+                return false;
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

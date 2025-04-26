@@ -36,6 +36,10 @@ class Config:
     SECURITY_CSRF_IGNORE_UNAUTH_ENDPOINTS = True
     SECURITY_PASSWORD_CONFIRM_REQUIRED = True
     WTF_CSRF_CHECK_DEFAULT = False
+    SECURITY_FLASH_MESSAGES = True
+    SECURITY_MSG_USER_DOES_NOT_EXIST = ("We couldn't find an account with that email. Need to create an account?", "error")
+    SECURITY_MSG_INVALID_PASSWORD = ("Invalid password. Forgot your password?", "error")
+    SECURITY_MSG_LOGIN_EXPIRED = ("Your login has expired. Please log in again.", "error")
 
     # Security redirects
     SECURITY_POST_LOGIN_VIEW = '/login-redirect'

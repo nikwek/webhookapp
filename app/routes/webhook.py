@@ -1,21 +1,22 @@
 # app/routes/webhook.py
-from flask import Blueprint, request, jsonify, Response, send_from_directory
+from flask import Blueprint, request, jsonify, send_from_directory
 from flask_security import login_required, current_user
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from app.models.webhook import WebhookLog
 from app.models.automation import Automation
 from app.services.webhook_processor import EnhancedWebhookProcessor as WebhookProcessor
 from app import db, csrf
 from datetime import datetime, timezone
-import json
-import time
 import os
 import logging
 
 logger = logging.getLogger(__name__)
-
+limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day", "50 per hour"])
 bp = Blueprint('webhook', __name__)
 
 @bp.route('/webhook', methods=['POST'])
+@limiter.limit("60/minute", key_func=lambda: request.args.get('automation_id'))
 @csrf.exempt 
 def webhook():
     automation_id = request.args.get('automation_id')

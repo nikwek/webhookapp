@@ -32,4 +32,9 @@ class User(db.Model, UserMixin):
     last_activity = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     roles = db.relationship('Role', secondary=roles_users,
                           backref=db.backref('users', lazy='dynamic'))
+    # Two-factor authentication fields
+    tf_primary_method = db.Column(db.String(64), nullable=True)
+    tf_totp_secret = db.Column(db.String(255), nullable=True)
+    tf_phone_number = db.Column(db.String(128), nullable=True)
+    tf_recovery_codes = db.Column(db.Text, nullable=True)
 

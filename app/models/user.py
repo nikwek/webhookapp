@@ -30,6 +30,12 @@ class User(db.Model, UserMixin):
     is_suspended = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_activity = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    # Two-Factor Authentication fields (match existing DB columns)
+    tf_primary_method = db.Column(db.String(64))
+    tf_totp_secret = db.Column(db.String(255))
+    tf_phone_number = db.Column(db.String(128))
+    tf_recovery_codes = db.Column(db.Text)
+
     roles = db.relationship('Role', secondary=roles_users,
                           backref=db.backref('users', lazy='dynamic'))
-

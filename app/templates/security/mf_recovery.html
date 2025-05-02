@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "security/_macros.html" as sec %}
+
+{% block title %}Account Recovery{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card shadow-sm">
+        <div class="card-header bg-warning text-dark">
+          <h5 class="mb-0">Lost your 2-Factor Device?</h5>
+        </div>
+        <div class="card-body">
+          <p class="mb-4">You can regain access by entering one of your recovery codes or requesting a rescue email.</p>
+
+          {# Flash messages #}
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                  {{ message }}
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+
+          <form action="{{ url_for_security('two_factor_rescue') }}" method="POST" class="mb-4">
+            {{ two_factor_rescue_form.hidden_tag() }}
+            <div class="mb-3">
+              <label class="form-label">Recovery code</label>
+              {{ sec.render_field(two_factor_rescue_form.code, class_='form-control', placeholder='xxxxxxxx') }}
+            </div>
+            <div class="d-grid">
+              <button type="submit" class="btn btn-success">Submit Code</button>
+            </div>
+          </form>
+
+          {% if two_factor_rescue_mail_available %}
+            <hr>
+            <form action="{{ url_for_security('two_factor_rescue') }}" method="POST">
+              {{ two_factor_rescue_form.hidden_tag() }}
+              <input type="hidden" name="rescue" value="email">
+              <div class="d-grid">
+                <button class="btn btn-outline-secondary">Send Rescue Email</button>
+              </div>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Reset Two-Factor Authentication</h2>
+<p>If you’ve lost access to your authenticator app, you can reset 2FA.</p>
+<form method="POST">
+    {{ csrf_token() }}
+    <button class="btn btn-danger">Reset 2FA</button>
+</form>
+{% endblock %}

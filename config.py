@@ -41,6 +41,20 @@ class Config:
     SECURITY_MSG_INVALID_PASSWORD = ("Invalid password. Forgot your password?", "error")
     SECURITY_MSG_LOGIN_EXPIRED = ("Your login has expired. Please log in again.", "error")
 
+    # Two-factor settings
+    SECURITY_TWO_FACTOR = True
+    SECURITY_TOTP_SECRETS = {
+        "1": os.environ.get("SECURITY_TWO_FACTOR_SECRET_KEY")
+    }
+    SECURITY_TOTP_ISSUER = "WebhookApp"
+    SECURITY_TWO_FACTOR_ENABLED_METHODS = ["totp"]  # only Google-Auth style
+    SECURITY_TWO_FACTOR_REQUIRED = False            # user may opt-in
+    SECURITY_TWO_FACTOR_RESCUE_MAIL = True          # allow e-mail rescue
+    SECURITY_TWO_FACTOR_VALIDITY = 120              # seconds
+    SECURITY_TWO_FACTOR_REG_VALIDITY = 3600
+    SECURITY_TWO_FACTOR_QR_VERSION = 1
+    SECURITY_TWO_FACTOR_QR_QUALITY = 1
+
     # Security redirects
     SECURITY_POST_LOGIN_VIEW = '/login-redirect'
     SECURITY_POST_LOGOUT_VIEW = '/login'

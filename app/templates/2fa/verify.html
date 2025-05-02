@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0">Verify Two-Factor Authentication</h5>
+        </div>
+        <div class="card-body text-center">
+          <h6 class="mb-3">Scan this QR code with Google Authenticator</h6>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?data={{ qr_url|urlencode }}&size=180x180" alt="QR Code" class="mb-3">
+          <p class="mb-4">Or enter this secret manually:<br><strong>{{ secret }}</strong></p>
+
+          <form method="POST" class="text-start">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+              <label class="form-label">Enter 6-digit code</label>
+              <input name="code" maxlength="6" class="form-control form-control-lg text-center" required>
+            </div>
+            <div class="d-grid">
+              <button class="btn btn-success">Verify</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

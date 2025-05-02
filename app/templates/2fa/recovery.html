@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<!-- Recovery Codes Page -->
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0">Two-Factor Recovery Codes</h5>
+        </div>
+        <div class="card-body">
+          <p class="mb-3">Save these codes somewhere safe. <strong>Each code can be used once</strong> to access your account if you lose your authenticator device.</p>
+          <ul class="list-group">
+            {% for c in codes %}
+              <li class="list-group-item d-flex justify-content-between align-items-center">
+                <code class="fw-semibold">{{ c }}</code>
+              </li>
+            {% endfor %}
+          </ul>
+          <div class="text-end mt-4">
+            <a href="{{ url_for('dashboard.settings') }}" class="btn btn-primary">Done</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

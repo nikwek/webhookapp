@@ -136,6 +136,10 @@ def create_app(test_config=None):
         from app.routes.auth import bp as auth_bp
         app.register_blueprint(auth_bp)
 
+        # Register two factor blueprint
+        from app.routes.two_factor import bp as two_factor_bp
+        app.register_blueprint(two_factor_bp)
+
         # Register error handlers
         @app.errorhandler(404)
         def page_not_found(e):

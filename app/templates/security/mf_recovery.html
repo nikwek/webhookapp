@@ -26,21 +26,21 @@
             {% endif %}
           {% endwith %}
 
-          <form action="{{ url_for_security('two_factor_rescue') }}" method="POST" class="mb-4">
-            {{ two_factor_rescue_form.hidden_tag() }}
+          <form action="{{ url_for_security('mf_recovery') }}" method="POST" class="mb-4">
+            {{ mf_recovery_form.hidden_tag() }}
             <div class="mb-3">
               <label class="form-label">Recovery code</label>
-              {{ sec.render_field(two_factor_rescue_form.code, class_='form-control', placeholder='xxxxxxxx') }}
+              {{ sec.render_field(mf_recovery_form.code, class_='form-control', placeholder='xxxxxxxx') }}
             </div>
             <div class="d-grid">
               <button type="submit" class="btn btn-success">Submit Code</button>
             </div>
           </form>
 
-          {% if two_factor_rescue_mail_available %}
+          {% if rescue_mail %}
             <hr>
             <form action="{{ url_for_security('two_factor_rescue') }}" method="POST">
-              {{ two_factor_rescue_form.hidden_tag() }}
+              {{ mf_recovery_form.hidden_tag() }}
               <input type="hidden" name="rescue" value="email">
               <div class="d-grid">
                 <button class="btn btn-outline-secondary">Send Rescue Email</button>

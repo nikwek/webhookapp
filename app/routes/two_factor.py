@@ -2,6 +2,7 @@
 from flask import (Blueprint, render_template, redirect, url_for, flash,
                    request, current_app)
 from flask_security import (login_required, current_user, utils as fs_utils)
+from sqlalchemy import inspect, text
 import pyotp, secrets, json
 from app import db
 from passlib.totp import TOTP
@@ -28,7 +29,16 @@ def setup_2fa():
         # user clicked “Continue” on first step
         secret = _generate_totp_secret(current_user)
         recovery = [secrets.token_hex(4) for _ in range(10)]
-        current_user.tf_recovery_codes = json.dumps(recovery)
+        # Ensure DB has column to store FS recovery codes
+        insp = inspect(db.engine)
+        if "mf_recovery_codes" not in [c["name"] for c in insp.get_columns("users")]:
+            db.session.execute(text("ALTER TABLE users ADD COLUMN mf_recovery_codes TEXT"))
+        # Use Flask-Security-Too built-in helper to create and store hashed recovery codes
+        security_mgr = current_app.extensions["security"]
+        recovery = security_mgr._mf_recovery_codes_util.create_recovery_codes(current_user)
+
+        # recovery is a list of raw strings – we’ll show these to the user after setup
+
         db.session.commit()
         return redirect(url_for(".verify_2fa"))
     return render_template("2fa/setup.html")
@@ -81,7 +91,8 @@ def disable_2fa():
 @bp.route("/recovery-2fa")
 @login_required
 def recovery_codes():
-    codes = json.loads(current_user.tf_recovery_codes or "[]")
+    security_mgr = current_app.extensions["security"]
+    codes = security_mgr._mf_recovery_codes_util.get_recovery_codes(current_user)
     return render_template("2fa/recovery.html", codes=codes)
 
 

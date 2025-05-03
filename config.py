@@ -54,6 +54,8 @@ class Config:
     SECURITY_TWO_FACTOR_REG_VALIDITY = 3600
     SECURITY_TWO_FACTOR_QR_VERSION = 1
     SECURITY_TWO_FACTOR_QR_QUALITY = 1
+    # Enable recovery-code endpoints
+    SECURITY_MULTI_FACTOR_RECOVERY_CODES = True
 
     # Security redirects
     SECURITY_POST_LOGIN_VIEW = '/login-redirect'

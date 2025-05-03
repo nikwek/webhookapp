@@ -1,5 +1,7 @@
 # app/models/user.py
 from flask_security import UserMixin, RoleMixin
+from flask_security.datastore import AsaList
+from sqlalchemy.ext.mutable import MutableList
 from app import db
 from datetime import datetime, timezone
 
@@ -36,6 +38,8 @@ class User(db.Model, UserMixin):
     tf_totp_secret = db.Column(db.String(255))
     tf_phone_number = db.Column(db.String(128))
     tf_recovery_codes = db.Column(db.Text)
+    # Flask-Security managed recovery codes (hashed list)
+    mf_recovery_codes = db.Column(MutableList.as_mutable(AsaList()), nullable=True)
 
     roles = db.relationship('Role', secondary=roles_users,
                           backref=db.backref('users', lazy='dynamic'))

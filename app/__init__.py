@@ -14,6 +14,7 @@ from app.forms.custom_login_form import CustomLoginForm
 import os
 import logging
 
+logger = logging.getLogger(__name__)
 
 # Initialize extensions
 db = SQLAlchemy()
@@ -26,7 +27,6 @@ sess = Session()
 
 # Check if account is suspended 
 def check_if_account_is_suspended(app, user, **kwargs):
-    logger = logging.getLogger(__name__)
 
     logger.info(f"Checking if user {user.email} is suspended: {user.is_suspended}")
 

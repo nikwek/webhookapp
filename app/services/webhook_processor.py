@@ -4,17 +4,17 @@ from app.models.automation import Automation
 from app.models.exchange_credentials import ExchangeCredentials
 from app.models.webhook import WebhookLog
 from app.models.portfolio import Portfolio
-from app.services.coinbase_service import CoinbaseService
+from app.services.exchange_service import ExchangeService
 from app.services.account_service import AccountService
 from datetime import datetime, timezone, timedelta
 from app import db
 from flask import current_app
-from coinbase.rest import RESTClient
 import logging
 import uuid
 import math
 import json
 import hashlib
+import time
 from sqlalchemy import and_, func
 from app.utils.circuit_breaker import circuit_breaker
 
@@ -170,14 +170,14 @@ class EnhancedWebhookProcessor:
                     "message": f"Invalid trading pair format: {trading_pair}. Expected format: BTC-USD"
                 }
             
-            # Execute the trade with Coinbase API
-            trade_result = self.execute_trade(
+            # Execute the trade using the exchange service
+            trade_result = ExchangeService.execute_trade(
                 credentials=credentials,
                 portfolio=portfolio,
                 trading_pair=trading_pair,
                 action=action,
                 payload=payload,
-                client_order_id=client_order_id  # Pass client_order_id to execute_trade
+                client_order_id=client_order_id
             )
             
             # Update the log entry with the trade result
@@ -241,207 +241,23 @@ class EnhancedWebhookProcessor:
                 "client_order_id": client_order_id,
                 "message": f"Error processing webhook: {str(e)}"
             }
-    
-    @circuit_breaker('coinbase_api', failure_threshold=3, recovery_timeout=60)
-    def execute_trade(self, credentials, portfolio, trading_pair, action, payload, client_order_id):
-        """
-        Execute a trade on Coinbase with circuit breaker protection
-        
-        Args:
-            credentials: The ExchangeCredentials object
-            portfolio: The Portfolio object
-            trading_pair: Trading pair string (e.g. 'BTC-USD')
-            action: 'buy' or 'sell'
-            payload: Original webhook payload
-            client_order_id: Generated UUID for this order
             
-        Returns:
-            dict: Result of the trade execution
-        """
-        max_retries = 3
-        retry_count = 0
-        base_delay = 1  # second
-        
-        while retry_count < max_retries:
-            try:
-                logger.info(f"Executing {action} order for {trading_pair} in portfolio {portfolio.name} (attempt {retry_count+1}/{max_retries})")
-                
-                # Create Coinbase client
-                client = RESTClient(
-                    api_key=credentials.api_key,
-                    api_secret=credentials.decrypt_secret()
-                )
-                
-                if not client:
-                    logger.error("Failed to create Coinbase client")
-                    return {
-                        "success": False,
-                        "message": "Failed to create Coinbase client",
-                        "client_order_id": client_order_id
-                    }
-                
-                # Get the portfolio UUID and split trading pair
-                portfolio_uuid = portfolio.portfolio_id
-                base_currency, quote_currency = trading_pair.split('-')
-                target_currency = quote_currency if action == 'buy' else base_currency
-                
-                # Get accounts from Coinbase API
-                accounts_response = client.get_accounts()
-                
-                # Convert response to dictionary
-                if hasattr(accounts_response, "to_dict"):
-                    accounts_response = accounts_response.to_dict()
-                else:
-                    if hasattr(accounts_response, 'accounts'):
-                        accounts = accounts_response.accounts
-                    elif isinstance(accounts_response, dict) and 'accounts' in accounts_response:
-                        accounts = accounts_response['accounts']
-                    else:
-                        logger.error("Cannot extract accounts from response")
-                        raise ValueError("Failed to extract account information")
-                
-                accounts = accounts_response.get('accounts', [])
-                logger.info(f"Looking for {target_currency} account in portfolio {portfolio_uuid}")
-                logger.info(f"Found {len(accounts)} accounts")
-                
-                # Find account with matching currency
-                target_account = None
-                target_balance = 0.0
-                
-                for account in accounts:
-                    currency = account.get('currency')
-                    if currency == target_currency:
-                        account_uuid = account.get('uuid')
-                        account_portfolio = account.get('retail_portfolio_id')
-                        available_balance = account.get('available_balance', {})
-                        balance_str = available_balance.get('value', '0')
-                        
-                        try:
-                            balance = float(balance_str)
-                            logger.info(f"Found {currency} account: {account_uuid} with balance: {balance}")
-                            
-                            if account_portfolio == portfolio_uuid:
-                                target_account = account_uuid
-                                target_balance = balance
-                                logger.info(f"Account matches portfolio {portfolio_uuid}")
-                                break
-                            elif target_account is None:
-                                target_account = account_uuid
-                                target_balance = balance
-                                logger.info(f"Account doesn't match portfolio, using as fallback")
-                        except (ValueError, TypeError) as e:
-                            logger.warning(f"Could not convert balance '{balance_str}' to float: {e}")
-                
-                if not target_account:
-                    return {
-                        "success": False,
-                        "message": f"No {target_currency} account found"
-                    }
-                
-                if target_balance <= 0:
-                    return {
-                        "success": False,
-                        "message": f"Insufficient balance ({target_balance} {target_currency}) for {action} order"
-                    }
-                
-                # Determine order size and configuration
-                if action == 'buy':
-                    order_size = math.floor(target_balance)  # coinbase rejects order with decimals
-                    order_configuration = {
-                        "market_market_ioc": {
-                            "quote_size": str(order_size)
-                        }
-                    }
-                    side = "BUY"
-                else:
-                    order_size = target_balance
-                    order_configuration = {
-                        "market_market_ioc": {
-                            "base_size": str(order_size)
-                        }
-                    }
-                    side = "SELL"
-                
-                # Send order to Coinbase
-                logger.info(f"Sending order to Coinbase: client_order_id={client_order_id}, product_id={trading_pair}, side={side}")
-                
-                order_response = client.create_order(
-                    client_order_id=client_order_id,
-                    product_id=trading_pair,
-                    side=side,
-                    order_configuration=order_configuration
-                )
-                
-                # Better response parsing
-                response_dict = (
-                    order_response.to_dict() 
-                    if hasattr(order_response, 'to_dict') 
-                    else order_response if isinstance(order_response, dict) 
-                    else {}
-                )
-                
-                # Extract success info from response
-                success_response = response_dict.get('success_response', {})
-                success = response_dict.get('success', False)
-                coinbase_trade = "Filled" if success else "Rejected"
-                order_id = success_response.get('order_id')
-                product_id = success_response.get('product_id')
-                side = success_response.get('side')
-                message = f"Status: {coinbase_trade} | Order ID: {success_response.get('order_id', 'Unknown')}"
-                
-                logger.info(f"Order executed. Response: {response_dict}")
-                
-                # Return successful response
-                return {
-                    "trade_executed": bool(order_id),
-                    "order_id": order_id,
-                    "client_order_id": client_order_id,
-                    "message": message,
-                    "size": order_size,
-                    "trading_pair": trading_pair,
-                    "trade_status": "success" if order_id else "error",
-                    "raw_response": str(response_dict)
-                }
-                
-            except Exception as e:
-                retry_count += 1
-                error_type = str(e).lower()
-                
-                # Check if error is retryable
-                retryable = (
-                    'timeout' in error_type or 
-                    'connection' in error_type or 
-                    'rate limit' in error_type or
-                    'network' in error_type or
-                    'socket' in error_type or
-                    'availability' in error_type
-                )
-                
-                if retry_count < max_retries and retryable:
-                    # Use exponential backoff for retries
-                    delay = base_delay * (2 ** (retry_count - 1))
-                    logger.warning(f"Retryable error: {str(e)}. Retrying in {delay} seconds...")
-                    time.sleep(delay)
-                else:
-                    # Non-retryable error or max retries reached
-                    logger.error(f"Error in execute_trade: {str(e)}", exc_info=True)
-                    
-                    response_dict = {}
-                    if hasattr(e, 'response'):
-                        try:
-                            error_response = e.response.json()
-                            message = error_response.get('message', str(e))
-                            response_dict = error_response
-                        except:
-                            response_dict = {"error": str(e)}
-                    else:
-                        message = str(e)
-                        response_dict = {"error": str(e)}
-                    
-                    return {
-                        "trade_executed": False,
-                        "message": f"Error: {message}",
-                        "client_order_id": client_order_id,
-                        "trade_status": "error",
-                        "raw_response": str(response_dict)
-                    }
+            # Error handling for API responses
+            if hasattr(e, 'response'):
+                try:
+                    error_response = e.response.json()
+                    message = error_response.get('message', str(e))
+                    response_dict = error_response
+                except:
+                    response_dict = {"error": str(e)}
+            else:
+                message = str(e)
+                response_dict = {"error": str(e)}
+            
+            return {
+                "trade_executed": False,
+                "message": f"Error: {message}",
+                "client_order_id": client_order_id,
+                "trade_status": "error",
+                "raw_response": str(response_dict)
+            }

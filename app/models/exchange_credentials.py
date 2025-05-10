@@ -54,11 +54,11 @@ class ExchangeCredentials(db.Model):
         return decrypted_secret
 
     @classmethod
-    def get_user_default_credentials(cls, user_id):
-        """Get the default Coinbase credentials for a user"""
+    def get_user_default_credentials(cls, user_id, exchange='coinbase'):
+        """Get the default credentials for a user for a specific exchange"""
         return cls.query.filter_by(
             user_id=user_id,
-            exchange='coinbase',
+            exchange=exchange,
             portfolio_name='default',
             is_default=True
         ).first()

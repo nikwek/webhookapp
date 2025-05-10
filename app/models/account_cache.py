@@ -1,14 +1,18 @@
 from app import db
 from datetime import datetime, timezone
 from sqlalchemy.dialects.postgresql import JSONB
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AccountCache(db.Model):
-    """Cache for Coinbase account data"""
+    """Cache for exchange account data"""
     __tablename__ = 'account_caches'
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     portfolio_id = db.Column(db.Integer, db.ForeignKey('portfolios.id'))
+    exchange = db.Column(db.String(50), default='coinbase')  # Exchange identifier
     
     # Account identifiers
     account_id = db.Column(db.String(255), nullable=False)
@@ -80,8 +84,8 @@ class AccountCache(db.Model):
         }
     
     @classmethod
-    def create_from_coinbase_account(cls, account_data, user_id, portfolio_id=None):
-        """Create account cache from Coinbase account data"""
+    def create_from_exchange_account(cls, account_data, user_id, portfolio_id=None, exchange='coinbase'):
+        """Create account cache from exchange account data"""
         try:
             # Check if account_data is None
             if account_data is None:
@@ -96,8 +100,8 @@ class AccountCache(db.Model):
                     import json
                     account_data = json.loads(account_data)
                     logger.debug("Parsed account data from string")
-                except:
-                    logger.error(f"Could not parse account string: {account_data[:100]}")
+                except Exception as e:
+                    logger.error(f"Could not parse account string: {account_data[:100]}, error: {str(e)}")
                     return None
                 
             # Handle different possible data structures
@@ -114,6 +118,7 @@ class AccountCache(db.Model):
                 return cls(
                     user_id=user_id,
                     portfolio_id=portfolio_id,
+                    exchange=exchange,
                     account_id=account_data.get('uuid') or account_data.get('id') or 'unknown',
                     name=account_data.get('name', 'Unnamed Account'),
                     is_primary=account_data.get('primary', False),

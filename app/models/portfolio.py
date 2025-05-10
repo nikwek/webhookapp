@@ -27,17 +27,17 @@ class Portfolio(db.Model):
         """Check if portfolio has any active automation connections"""
         return bool(ExchangeCredentials.query.filter_by(
             portfolio_id=self.id,
-            exchange='coinbase'
+            exchange=self.exchange
         ).first())
     
     def has_valid_credentials(self, user_id=None):
-        """Check if this portfolio has valid Coinbase credentials"""
+        """Check if this portfolio has valid credentials for its exchange"""
         if self.invalid_credentials:
             return False
             
         query = ExchangeCredentials.query.filter_by(
             portfolio_id=self.id,
-            exchange='coinbase'
+            exchange=self.exchange
         )
         
         if user_id:

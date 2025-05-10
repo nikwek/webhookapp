@@ -11,6 +11,7 @@ from flask_mail import Mail
 from flask_session import Session
 from config import get_config
 from app.forms.custom_login_form import CustomLoginForm
+from datetime import datetime
 import os
 import logging
 
@@ -185,6 +186,11 @@ def create_app(test_config=None):
 
         # Initialize database
         db.create_all()
+        
+        # Initialize exchange adapters
+        from app.exchanges.init_exchanges import initialize_exchange_adapters
+        registered_exchanges = initialize_exchange_adapters()
+        app.logger.info(f"Initialized exchange adapters: {registered_exchanges}")
 
         # Configure SSL for the app if enabled
         if app.config.get('SSL_ENABLED', False) or os.environ.get('GUNICORN_SSL', False):

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Confirm Email{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0">Email Confirmation</h5>
+        </div>
+        <div class="card-body">
+          <p class="mb-4">Your email address has not yet been confirmed. Please check your email for confirmation instructions or request a new confirmation email below.</p>
+          
+          {# Flash messages #}
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                  {{ message }}
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+          
+          <form action="{{ url_for_security('send_confirmation') }}" method="POST" class="mb-4">
+            {{ send_confirmation_form.hidden_tag() }}
+            <div class="mb-3">
+              <label class="form-label">Email</label>
+              {{ send_confirmation_form.email(class_='form-control', placeholder='Your email address') }}
+            </div>
+            <div class="d-grid">
+              <button type="submit" class="btn btn-primary">Send Confirmation Email</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

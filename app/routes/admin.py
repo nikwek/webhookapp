@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, session, render_template, redirect, url_fo
 from app.models.user import User, Role
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
-from sqlalchemy import func
+from sqlalchemy import func, text
 from app import db
 from functools import wraps
 from datetime import datetime, timezone

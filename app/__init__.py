@@ -41,7 +41,12 @@ def check_if_account_is_suspended(app, user, **kwargs):
 def create_app(test_config=None):
     app = Flask(__name__)
 
-    logging.getLogger('flask_security').setLevel(logging.DEBUG)  # debugging flash messages
+    # Set Flask-Security to INFO level instead of DEBUG to reduce verbosity
+    logging.getLogger('flask_security').setLevel(logging.INFO)
+    
+    # Reduce smtplib logging verbosity
+    logging.getLogger('mail').setLevel(logging.INFO)
+    logging.getLogger('smtplib').setLevel(logging.WARNING)
 
     if test_config is None:
         app.config.from_object(get_config())

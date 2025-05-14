@@ -37,9 +37,16 @@ class Config:
     SECURITY_PASSWORD_CONFIRM_REQUIRED = True
     WTF_CSRF_CHECK_DEFAULT = False
     SECURITY_FLASH_MESSAGES = True
+    # Custom error messages
     SECURITY_MSG_USER_DOES_NOT_EXIST = ("We couldn't find an account with that email. Need to create an account?", "error")
     SECURITY_MSG_INVALID_PASSWORD = ("Invalid password. Forgot your password?", "error")
     SECURITY_MSG_LOGIN_EXPIRED = ("Your login has expired. Please log in again.", "error")
+    SECURITY_MSG_TWO_FACTOR_INVALID_TOKEN = ("Invalid authentication code. Please try again.", "error") 
+    SECURITY_MSG_TWO_FACTOR_METHOD_NOT_AVAILABLE = ("Requested method not available.", "error")
+    SECURITY_MSG_TWO_FACTOR_PERMISSION_DENIED = ("Permission denied.", "error")
+    
+    # Template path configurations
+    SECURITY_TWO_FACTOR_VERIFY_CODE_TEMPLATE = "security/two_factor_verify_code.html"
 
     # Two-factor settings
     SECURITY_TWO_FACTOR = True

@@ -1,16 +1,17 @@
 # app/__init__.py
-from flask import Flask, flash, jsonify, render_template, request
+from flask import Flask, flash, jsonify, render_template, request, session
 from flask_security import user_authenticated, Security, SQLAlchemyUserDatastore
 from flask_security.forms import RegisterFormV2
 from flask_login import logout_user
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import inspect, text 
+from sqlalchemy import inspect, text
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
 from flask_mail import Mail
 from flask_session import Session
 from config import get_config
 from app.forms.custom_login_form import CustomLoginForm
+from app.forms.custom_2fa_form import Custom2FACodeForm
 from datetime import datetime
 import os
 import logging
@@ -102,8 +103,20 @@ def create_app(test_config=None):
             user_datastore,
             register_form=RegisterFormV2,
             login_form=CustomLoginForm,
+            two_factor_verify_code_form=Custom2FACodeForm,
             flash_messages=True
         )
+        
+        # Simple logger for 2FA events
+        @app.before_request
+        def log_2fa_requests():
+            """Basic logging for 2FA requests"""
+            if request.endpoint and 'two_factor' in request.endpoint and request.method == 'POST':
+                code = request.form.get('code', '')
+                masked_code = '*' * len(code) if code else 'empty'
+                app.logger.debug(f"2FA request: {request.endpoint} | Code: {masked_code}")
+                
+                # Our custom form will handle validation errors and flash appropriate messages
 
         # Configure login redirect
         app.config.update(

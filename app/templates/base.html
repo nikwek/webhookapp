@@ -57,26 +57,31 @@
                 </div>
             </div>
         </nav>
-        <!-- Alert messages -->
+        <!-- Alert messages - avoid duplicates on security pages that handle their own flashes -->
         <div class="container mt-3">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        {% set alert_class = {
-                            'message': 'info',
-                            'error': 'danger',
-                            'warning': 'warning',
-                            'info': 'info',
-                            'success': 'success',
-                            'auth_expired': 'warning'
-                        }.get(category, 'info') %}
-                        <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="alert">
-                            {{ message }}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
+            {% set security_endpoints = ['security.two_factor_verify_code', 'security.two_factor_token_validation', 'security.mf_recovery'] %}
+            {% set is_security_page = request.endpoint in security_endpoints %}
+            
+            {% if not is_security_page %}
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            {% set alert_class = {
+                                'message': 'info',
+                                'error': 'danger',
+                                'warning': 'warning',
+                                'info': 'info',
+                                'success': 'success',
+                                'auth_expired': 'warning'
+                            }.get(category, 'info') %}
+                            <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+            {% endif %}
         </div>
 
         <div class="container mt-4">

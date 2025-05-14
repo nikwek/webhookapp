@@ -24,10 +24,18 @@
           {% endwith %}
 
           <form action="{{ url_for_security('two_factor_token_validation') }}" method="POST">
-            {{ two_factor_verify_code_form.hidden_tag() }}
+            {{ two_factor_verify_code_form.hidden_tag() if two_factor_verify_code_form else csrf_token() }}
+            
             <div class="mb-3">
-              {{ sec.render_field(two_factor_verify_code_form.code, class_='form-control form-control-lg', placeholder='123456') }}
+              {% if two_factor_verify_code_form %}
+                {{ sec.render_field(two_factor_verify_code_form.code, class_='form-control form-control-lg', placeholder='123456') }}
+              {% else %}
+                <label for="code" class="form-label">Authentication Code</label>
+                <input type="text" name="code" id="code" class="form-control form-control-lg" placeholder="123456" required autocomplete="off" inputmode="numeric" pattern="[0-9]*" maxlength="6">
+                <small class="text-muted">Enter the 6-digit code from your authenticator app</small>
+              {% endif %}
             </div>
+            
             <div class="d-grid mb-2">
               <button type="submit" class="btn btn-primary">Verify</button>
             </div>

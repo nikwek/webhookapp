@@ -1,13 +1,11 @@
 # app/routes/admin.py
-from flask import Blueprint, jsonify, session, render_template, redirect, url_for, request, current_app
-from app.models.user import User, Role
+from flask import Blueprint, jsonify, render_template, redirect, url_for, request, current_app
+from app.models.user import User
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
-from sqlalchemy import func, text
+from sqlalchemy import func
 from app import db
-from functools import wraps
-from datetime import datetime, timezone
-from flask_security import roles_required, login_required
+from flask_security import roles_required, current_user
 
 bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -49,13 +47,29 @@ def users():
 @bp.route('/automations')
 @roles_required('admin')
 def automations():
-    # Join with explicit conditions
-    automations = db.session.query(Automation, User).\
-        join(User, Automation.user_id == User.id).all()
+    search = request.args.get('search', '')
+    
+    # Start with a query that joins Automation with User
+    query = db.session.query(Automation, User).join(User, Automation.user_id == User.id)
+    
+    # Apply search filter if provided
+    if search:
+        # Search by automation name, ID, or user email
+        query = query.filter(
+            db.or_(
+                Automation.name.ilike(f'%{search}%'),
+                Automation.automation_id.ilike(f'%{search}%'),
+                User.email.ilike(f'%{search}%')
+            )
+        )
+    
+    # Execute the query
+    results = query.all()
+    current_app.logger.info(f"Found {len(results)} automations for admin page")
     
     # Process results to include user information
     formatted_automations = []
-    for automation, user in automations:
+    for automation, user in results:
         automation.user = user  # Attach user object
         formatted_automations.append(automation)
     
@@ -96,38 +110,43 @@ def suspend_user(user_id):
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/api/user/<int:user_id>/delete', methods=['POST'])
-@roles_required('admin') 
+@roles_required('admin')
 def delete_user(user_id):
     try:
         user = User.query.get_or_404(user_id)
         
         # Get automation IDs directly from the Automation table
-        automation_ids = [a.automation_id for a in Automation.query.filter_by(user_id=user.id).all()]
+        automations = Automation.query.filter_by(user_id=user.id).all()
+        automation_ids = [a.automation_id for a in automations]
         
-        # Delete webhook logs first
+        # 1. Delete webhook logs first
         if automation_ids:
             WebhookLog.query.filter(WebhookLog.automation_id.in_(automation_ids)).delete(synchronize_session='fetch')
         
-        # Delete user's automations
+        # 2. Delete account caches
+        from app.models.account_cache import AccountCache
+        AccountCache.query.filter_by(user_id=user.id).delete()
+        
+        # 3. Delete exchange credentials (before portfolios and automations to avoid FK constraint issues)
+        from app.models.exchange_credentials import ExchangeCredentials
+        ExchangeCredentials.query.filter_by(user_id=user.id).delete()
+        
+        # 4. Delete user's automations
         Automation.query.filter_by(user_id=user.id).delete()
         
-        # Delete user's portfolios (if the relationship exists)
+        # 5. Delete user's portfolios (if the relationship exists)
         if hasattr(user, 'portfolios'):
             for portfolio in user.portfolios:
                 db.session.delete(portfolio)
         
-        # Delete user's exchange credentials (if the relationship exists)
-        if hasattr(user, 'exchange_credentials'):
-            for cred in user.exchange_credentials:
-                db.session.delete(cred)
-        
-        # Remove user from roles
+        # 6. Clear the user's roles
         user.roles = []
         
-        # Finally delete the user
+        # 7. Finally delete the user
         db.session.delete(user)
         db.session.commit()
         
+        current_app.logger.info(f"User {user_id} deleted successfully")
         return jsonify({"success": True})
     except Exception as e:
         db.session.rollback()
@@ -171,18 +190,25 @@ def purge_automation_logs(automation_id):
 @roles_required('admin')
 def delete_automation(automation_id):
     try:
-        # First delete all logs for this automation
+        # First fetch the automation
         automation = Automation.query.get(automation_id)
         if not automation:
             return jsonify({"error": "Automation not found"}), 404
-            
+        
+        # 1. Delete all logs for this automation
         WebhookLog.query.filter_by(automation_id=automation.automation_id).delete()
         
-        # Then delete the automation
+        # 2. Delete associated exchange credentials
+        from app.models.exchange_credentials import ExchangeCredentials
+        ExchangeCredentials.query.filter_by(automation_id=automation.id).delete()
+        
+        # 3. Then delete the automation itself
         db.session.delete(automation)
         db.session.commit()
+        current_app.logger.info(f"Automation {automation_id} deleted successfully")
         return jsonify({"success": True})
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"Error deleting automation: {str(e)}")
         return jsonify({"error": str(e)}), 500
     

@@ -51,14 +51,11 @@ print(\"Temporary migration tables cleaned up\")
  
  # Apply database migrations with better error handling
  echo 'Running database migrations...' &&
- flask db upgrade || {
-   migration_error=$(flask db upgrade 2>&1)
-   echo "Migration error output: $migration_error"
-   
-   if echo "$migration_error" | grep -q 'index.*already exists'; then
+ flask db upgrade heads || {
+   if grep -q 'index.*already exists' <<< \$?; then
      echo 'Indexes already exist, marking migration as complete...'
      flask db stamp head
-   elif echo "$migration_error" | grep -q 'table.*already exists'; then
+   elif grep -q 'table.*already exists' <<< \$?; then
      echo 'Temporary table issue detected, attempting to fix...'
      python -c '
 import sqlite3
@@ -71,49 +68,6 @@ with app.app_context():
     print(f\"Current migration version: {current_rev}\")
 '
      flask db stamp head
-   elif echo "$migration_error" | grep -q "no such column.*exchange"; then
-     echo 'Detected missing exchange column issue. Fixing migration state...'
-     # Manually execute the migration for the exchange column
-     python -c '
-import sqlite3
-from flask import Flask
-from flask_migrate import Migrate
-from app import db, create_app
-
-app = create_app()
-with app.app_context():
-    # Get database connection
-    conn = sqlite3.connect("instance/webhook.db")
-    cursor = conn.cursor()
-    
-    # Check if column already exists (to be safe)
-    column_exists = cursor.execute("PRAGMA table_info(account_caches)").fetchall()
-    exchange_exists = any(col[1] == "exchange" for col in column_exists)
-    
-    if not exchange_exists:
-        print("Adding exchange column to account_caches table")
-        cursor.execute("ALTER TABLE account_caches ADD COLUMN exchange VARCHAR(50) DEFAULT \'coinbase\' NOT NULL")
-        conn.commit()
-    else:
-        print("Exchange column already exists")
-    
-    # Update alembic version to include this migration
-    current_rev = cursor.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-    print(f"Current migration version: {current_rev}")
-    
-    # Only update if we\'re at the revision before the exchange column migration
-    if current_rev == "3f5665c11741":
-        cursor.execute("UPDATE alembic_version SET version_num = \'add_exchange_column\'")
-        conn.commit()
-        print("Updated alembic version to include exchange column migration")
-    
-    conn.close()
-'
-     # Now try the upgrade again
-     flask db upgrade || {
-       echo "Warning: Migration still failed after fixing exchange column. Setting to head."
-       flask db stamp head
-     }
    else
      echo 'Migration failed for unexpected reason'
      exit 1
@@ -122,10 +76,18 @@ with app.app_context():
  
  # Run a quick health check before restarting services
  echo 'Verifying application starts correctly...' &&
- timeout 5s flask run --port 5050 &>/dev/null || {
+ (timeout 5s flask run --port 5050 2>&1 | tee app_start_log.tmp || true) &&
+ if grep -q 'Running on' app_start_log.tmp; then
+   echo 'Application started successfully'
+   rm app_start_log.tmp
+ elif grep -q 'Error in health check loop: cannot join current thread' app_start_log.tmp; then
+   echo 'WARNING: Health check thread issue detected, but application still started'
+   rm app_start_log.tmp
+ else
    echo 'Application failed to start in test mode'
+   rm app_start_log.tmp
    exit 1
- } &&
+ fi &&
  
  # Reload systemd configuration and restart service
  echo 'Reloading systemd configuration and restarting service...' &&

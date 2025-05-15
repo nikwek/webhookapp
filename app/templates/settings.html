@@ -7,103 +7,48 @@
     <h2>Settings</h2>
     
     <div class="row">
-        <!-- Coinbase API Keys Section -->
-        <div class="col-md-6 mb-4">
+        <!-- Exchange API Keys Section -->
+        <div class="col-md-8 mx-auto mb-4">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h4 class="mb-0">Coinbase API Keys</h4>
-                    <span class="badge {% if has_coinbase_keys %}bg-success{% else %}bg-danger{% endif %}">
-                        {% if has_coinbase_keys %}Connected{% else %}Not Connected{% endif %}
-                    </span>
+                    <h4 class="mb-0">Exchange API Keys</h4>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-circle" data-bs-toggle="modal" data-bs-target="#addExchangeModal">
+                        <i class="fas fa-plus"></i>
+                    </button>
                 </div>
                 <div class="card-body">
-                    <div class="alert alert-info">
-                        <h5>How to get your API Keys:</h5>
-                        <ol>
-                            <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a></li>
-                            <li>Click "New API Key"</li>
-                            <li>Give the API key a nickname (e.g., "Amazing Automation")</li>
-                            <li>Set Portfolio to <strong>"Default"</strong></li>
-                            <li>Check the View (read-only) box and nothing else</li>
-                            <li>Set an IP whitelist if desired (optional)</li>
-                            <li>Click "Create API Key" and you'll see your API Key and API Secret</li>
-                            <li>Copy and paste both values below (and maybe save them in a secure place as you won't be able to see the API Secret again)</li>
-                        </ol>
-                        <p>These API keys allow us to retrieve a list of portfolios.</p>
+                    {% if has_coinbase_keys %}
+                    <!-- List of connected exchanges -->
+                    <div class="list-group">
+                        <div class="list-group-item d-flex justify-content-between align-items-center" data-exchange="coinbase">
+                            <div class="d-flex align-items-center">
+                                <img src="{{ url_for('static', filename='images/exchanges/coinbase.svg') }}" alt="Coinbase" width="24" height="24" class="me-3">
+                                <span>Coinbase</span>
+                            </div>
+                            <div>
+                                <span class="badge bg-success me-2">Connected</span>
+                                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editExchangeModal" data-exchange="coinbase">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    
-                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        
-                        <div class="mb-3">
-                            {{ form.api_key.label(class="form-label") }}
-                            {{ form.api_key(class="form-control") }}
-                            {% if form.api_key.errors %}
-                                <div class="invalid-feedback d-block">
-                                    {% for error in form.api_key.errors %}
-                                        {{ error }}
-                                    {% endfor %}
-                                </div>
-                            {% endif %}
-                        </div>
-                        
-                        <div class="mb-3">
-                            {{ form.api_secret.label(class="form-label") }}
-                            {{ form.api_secret(class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
-                            {% if form.api_secret.errors %}
-                                <div class="invalid-feedback d-block">
-                                    {% for error in form.api_secret.errors %}
-                                        {{ error }}
-                                    {% endfor %}
-                                </div>
-                            {% endif %}
-                        </div>
-                        
-                        <div class="d-flex gap-2">
-                            {{ form.submit(class="btn btn-primary") }}
-                            
-                            {% if has_coinbase_keys %}
-                            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteApiKeysModal">
-                                Delete API Keys
-                            </button>
-                            {% endif %}
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Password Change Section -->
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">
-                    <h4>Change Password</h4>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="{{ url_for_security('change_password') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <div class="mb-3">
-                            <label for="password" class="form-label">Current Password</label>
-                            <input type="password" class="form-control" id="password" name="password" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="new_password" class="form-label">New Password</label>
-                            <input type="password" class="form-control" id="new_password" name="new_password" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="new_password_confirm" class="form-label">Confirm New Password</label>
-                            <input type="password" class="form-control" id="new_password_confirm" name="new_password_confirm" required>
-                        </div>
-                        <div class="d-grid">
-                            <button type="submit" class="btn btn-primary">Update Password</button>
-                        </div>
-                    </form>
+                    {% else %}
+                    <!-- Empty state for no connected exchanges -->
+                    <div class="text-center py-4">
+                        <i class="fas fa-exchange-alt fa-3x mb-3 text-muted"></i>
+                        <p class="mb-3">No exchanges connected yet.</p>
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addExchangeModal">
+                            <i class="fas fa-plus me-2"></i> Add Exchange
+                        </button>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
 
         <!-- Two-Factor Authentication Section -->
-        <div class="col-md-6 mb-4">
+        <div class="col-md-8 mx-auto mb-4">
           <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
               <h4 class="mb-0">Two-Factor Authentication</h4>
@@ -130,10 +75,199 @@
           </div>
         </div>
         
+        <!-- Password Change Section -->
+        <div class="col-md-8 mx-auto mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Change Password</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for_security('change_password') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Current Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="new_password" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="new_password" name="new_password" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="new_password_confirm" class="form-label">Confirm New Password</label>
+                            <input type="password" class="form-control" id="new_password_confirm" name="new_password_confirm" required>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Update Password</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
     </div>
 </div>
 
-{% if has_coinbase_keys %}
+<!-- Add Exchange Modal -->
+<div class="modal fade" id="addExchangeModal" tabindex="-1" aria-labelledby="addExchangeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addExchangeModalLabel">Add Exchange</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Exchange selection screen -->
+                <div id="exchange-selection" class="text-center">
+                    <p class="mb-4">Select an exchange to connect:</p>
+                    <div class="d-flex justify-content-center gap-4 mb-3">
+                        <div class="exchange-option p-3 border rounded text-center" onclick="showExchangeForm('coinbase')">
+                            <img src="{{ url_for('static', filename='images/exchanges/coinbase.svg') }}" alt="Coinbase" width="64" height="64" class="mb-2">
+                            <p class="mb-0">Coinbase</p>
+                        </div>
+                        <!-- Add more exchanges here in the future -->
+                    </div>
+                </div>
+                
+                <!-- Coinbase API form (initially hidden) -->
+                <div id="coinbase-form" class="exchange-form" style="display: none;">
+                    <div class="d-flex align-items-center mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary me-3" onclick="showExchangeSelection()">
+                            <i class="fas fa-arrow-left"></i>
+                        </button>
+                        <h5 class="mb-0">Coinbase API Keys</h5>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <h5>How to get your API Keys:</h5>
+                        <ol>
+                            <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a></li>
+                            <li>Click "New API Key"</li>
+                            <li>Give the API key a nickname (e.g., "Amazing Automation")</li>
+                            <li>Set Portfolio to <strong>"Default"</strong></li>
+                            <li>Check the View (read-only) box and nothing else</li>
+                            <li>Set an IP whitelist if desired (optional)</li>
+                            <li>Click "Create API Key" and you'll see your API Key and API Secret</li>
+                            <li>Copy and paste both values below (and maybe save them in a secure place as you won't be able to see the API Secret again)</li>
+                        </ol>
+                        <p>These API keys allow us to retrieve a list of portfolios.</p>
+                    </div>
+                    
+                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="exchange" value="coinbase">
+                        
+                        <div class="mb-3">
+                            {{ form.api_key.label(class="form-label") }}
+                            {{ form.api_key(class="form-control") }}
+                            {% if form.api_key.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.api_key.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.api_secret.label(class="form-label") }}
+                            {{ form.api_secret(class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
+                            {% if form.api_secret.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.api_secret.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="d-flex justify-content-end">
+                            <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+                            {{ form.submit(class="btn btn-primary") }}
+                        </div>
+                    </form>
+                </div>
+                <!-- Add more exchange forms here in the future -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Exchange Modal -->
+<div class="modal fade" id="editExchangeModal" tabindex="-1" aria-labelledby="editExchangeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editExchangeModalLabel">Edit Exchange API Keys</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Coinbase API form -->
+                <div id="edit-coinbase-form" class="edit-exchange-form">
+                    <div class="d-flex align-items-center mb-3">
+                        <img src="{{ url_for('static', filename='images/exchanges/coinbase.svg') }}" alt="Coinbase" width="32" height="32" class="me-3">
+                        <h5 class="mb-0">Coinbase API Keys</h5>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <h5>How to get your API Keys:</h5>
+                        <ol>
+                            <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a></li>
+                            <li>Click "New API Key"</li>
+                            <li>Give the API key a nickname (e.g., "Amazing Automation")</li>
+                            <li>Set Portfolio to <strong>"Default"</strong></li>
+                            <li>Check the View (read-only) box and nothing else</li>
+                            <li>Set an IP whitelist if desired (optional)</li>
+                            <li>Click "Create API Key" and you'll see your API Key and API Secret</li>
+                            <li>Copy and paste both values below (and maybe save them in a secure place as you won't be able to see the API Secret again)</li>
+                        </ol>
+                        <p>These API keys allow us to retrieve a list of portfolios.</p>
+                    </div>
+                    
+                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="exchange" value="coinbase">
+                        <input type="hidden" name="update" value="true">
+                        
+                        <div class="mb-3">
+                            {{ form.api_key.label(class="form-label") }}
+                            {{ form.api_key(class="form-control") }}
+                            {% if form.api_key.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.api_key.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.api_secret.label(class="form-label") }}
+                            {{ form.api_secret(class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
+                            {% if form.api_secret.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.api_secret.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteApiKeysModal">
+                                Delete API Keys
+                            </button>
+                            <div>
+                                <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+                                {{ form.submit(class="btn btn-primary") }}
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Delete API Keys Modal -->
 <div class="modal fade" id="deleteApiKeysModal" tabindex="-1" aria-labelledby="deleteApiKeysModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -143,17 +277,65 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                Are you sure you want to delete your Coinbase API keys? This action cannot be undone.
+                Are you sure you want to delete your exchange API keys? This action cannot be undone.
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <form method="POST" action="{{ url_for('dashboard.delete_coinbase_api_keys') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" id="delete-exchange" name="exchange" value="coinbase">
                     <button type="submit" class="btn btn-danger">Delete API Keys</button>
                 </form>
             </div>
         </div>
     </div>
 </div>
-{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    // Handle exchange selection and form display
+    function showExchangeForm(exchange) {
+        // Hide exchange selection
+        document.getElementById('exchange-selection').style.display = 'none';
+        
+        // Show the selected exchange form
+        document.getElementById(exchange + '-form').style.display = 'block';
+    }
+    
+    function showExchangeSelection() {
+        // Hide all exchange forms
+        const exchangeForms = document.querySelectorAll('.exchange-form');
+        exchangeForms.forEach(form => {
+            form.style.display = 'none';
+        });
+        
+        // Show exchange selection
+        document.getElementById('exchange-selection').style.display = 'block';
+    }
+    
+    // Handle edit exchange modal
+    document.addEventListener('DOMContentLoaded', function() {
+        // Show appropriate exchange form in edit modal
+        const editModal = document.getElementById('editExchangeModal');
+        if (editModal) {
+            editModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const exchange = button.getAttribute('data-exchange');
+                
+                // Show corresponding edit form
+                const editForms = document.querySelectorAll('.edit-exchange-form');
+                editForms.forEach(form => {
+                    form.style.display = 'none';
+                });
+                
+                document.getElementById('edit-' + exchange + '-form').style.display = 'block';
+                
+                // Set exchange in delete form
+                document.getElementById('delete-exchange').value = exchange;
+            });
+        }
+    });
+</script>
 {% endblock %}

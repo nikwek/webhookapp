@@ -104,7 +104,7 @@
                         <!-- Step 1: Portfolio Selection Section -->
                         <div id="portfolio-selection-section" {% if show_api_form %}class="d-none"{% endif %}>
                             <p class="text-muted mb-3">
-                                Connect your Coinbase portfolio to this automation to execute trades.
+                                Connect your exchange portfolio to this automation to execute trades.
                             </p>
                             
                             {% if portfolios %}
@@ -116,13 +116,13 @@
                                         <option value="">-- Select a portfolio --</option>
                                         {% for portfolio in portfolios %}
                                             {% if portfolio.name.lower() != 'default' %}
-                                                <option value="{{ portfolio.id }}">{{ portfolio.name }}</option>
+                                                <option value="{{ portfolio.id }}">{{ portfolio.exchange | title }} - {{ portfolio.name }}</option>
                                             {% endif %}
                                         {% endfor %}
                                     </select>
                                 </div>
                                 <div class="d-flex justify-content-between align-items-center">
-                                    <button type="button" id="createPortfolioBtn" class="btn btn-outline-secondary">
+                                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#createPortfolioModal">
                                         <i class="fas fa-plus-circle me-1"></i> Create New Portfolio
                                     </button>
                                     <div>
@@ -136,11 +136,11 @@
                             {% else %}
                             <div class="alert alert-warning">
                                 <h6>No portfolios found</h6>
-                                <p>We couldn't find any portfolios associated with your Coinbase account. This could be because:</p>
+                                <p>We couldn't find any portfolios associated with your connected exchanges. This could be because:</p>
                                 <ul>
-                                    <li>You haven't set up your default Coinbase API credentials yet</li>
+                                    <li>You haven't connected any exchanges yet</li>
                                     <li>Your API credentials don't have permission to view portfolios</li>
-                                    <li>You don't have any portfolios set up on Coinbase</li>
+                                    <li>You don't have any portfolios set up on your exchanges</li>
                                 </ul>
                                 <div class="mt-3">
                                     <a href="{{ url_for('dashboard.settings') }}" class="btn btn-primary me-2">Setup API Credentials</a>
@@ -163,17 +163,51 @@
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body">
-                                        <form id="createPortfolioForm">
-                                            <div class="mb-3">
-                                                <label for="portfolioName" class="form-label">Portfolio Name</label>
-                                                <input type="text" class="form-control" id="portfolioName" required>
-                                                <div class="form-text">Choose a name for your trading portfolio</div>
+                                        <!-- Exchange Selection Screen -->
+                                        <div id="exchange-selection-screen">
+                                            <p class="mb-3">Select the exchange for your new portfolio:</p>
+                                            <div class="d-flex flex-wrap justify-content-center gap-3 mb-3">
+                                                {% if has_coinbase_keys %}
+                                                <div class="exchange-option p-3 border rounded text-center" onclick="selectExchangeForPortfolio('coinbase')">
+                                                    <img src="{{ url_for('static', filename='images/exchanges/coinbase.svg') }}" alt="Coinbase" width="64" height="64" class="mb-2">
+                                                    <p class="mb-0">Coinbase</p>
+                                                </div>
+                                                {% endif %}
+                                                <!-- More exchanges will be added here automatically as they are connected -->
                                             </div>
-                                        </form>
-                                    </div>
-                                    <div class="modal-footer">
-                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                        <button type="submit" form="createPortfolioForm" class="btn btn-primary">Create</button>
+                                            
+                                            {% if not has_coinbase_keys %}
+                                            <div class="alert alert-warning">
+                                                <p class="mb-0">You need to connect an exchange first before creating a portfolio.</p>
+                                                <a href="{{ url_for('dashboard.settings') }}" class="btn btn-primary mt-2">Connect Exchange</a>
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                        
+                                        <!-- Portfolio Creation Form (Initially Hidden) -->
+                                        <div id="portfolio-creation-form" style="display: none;">
+                                            <div class="d-flex align-items-center mb-3">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary me-3" onclick="showExchangeSelectionForPortfolio()">
+                                                    <i class="fas fa-arrow-left"></i>
+                                                </button>
+                                                <div class="d-flex align-items-center">
+                                                    <img id="selected-exchange-icon" src="" alt="Exchange" width="24" height="24" class="me-2">
+                                                    <h6 class="mb-0" id="selected-exchange-name"></h6>
+                                                </div>
+                                            </div>
+                                            <form id="createPortfolioForm">
+                                                <input type="hidden" id="selectedExchange" name="exchange">
+                                                <div class="mb-3">
+                                                    <label for="portfolioName" class="form-label">Portfolio Name</label>
+                                                    <input type="text" class="form-control" id="portfolioName" required>
+                                                    <div class="form-text">Choose a name for your trading portfolio</div>
+                                                </div>
+                                                <div class="d-flex justify-content-end">
+                                                    <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+                                                    <button type="submit" class="btn btn-primary">Create</button>
+                                                </div>
+                                            </form>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -181,20 +215,31 @@
                         
                         <!-- API Key Form Section -->
                         <div id="api-key-form-section" {% if not show_api_form %}class="d-none"{% endif %}>
-                            <h5 class="mb-3">Connect API Keys for {{ selected_portfolio.name }}</h5>
+                            <h5 class="mb-3">Connect API Keys for {{ selected_portfolio.name if selected_portfolio else 'Portfolio' }}</h5>
                             
                             <div class="alert alert-info mb-4">
-                                <h6 class="fw-bold">How to get your API Keys:</h6>
+                                {% if selected_portfolio and selected_portfolio.exchange and selected_portfolio.exchange.lower() == 'coinbase' %}
+                                <h6 class="fw-bold">How to get your Coinbase API Keys:</h6>
                                 <ol>
                                     <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a></li>
                                     <li>Click "New API Key"</li>
                                     <li>Give the API key a nickname (e.g., "{{ automation.name }}")</li>
-                                    <li>Under Portfolio, select "{{ selected_portfolio.name }}"</li>
+                                    <li>Under Portfolio, select "{{ selected_portfolio.name if selected_portfolio else 'Default' }}"</li>
                                     <li>Check the ✅ View (read-only), and the ✅ Trade (execute trades on your behalf) boxes</li>
                                     <li>Set an IP whitelist if desired (optional)</li>
                                     <li>Click "Create API Key" and you'll see your API Key and API Secret</li>
                                     <li>Copy and paste both values below (you won't be able to see the API Secret again)</li>
                                 </ol>
+                                {% else %}
+                                <h6 class="fw-bold">How to get your {{ selected_portfolio.exchange | default('Exchange') | title }} API Keys:</h6>
+                                <p>Please follow the API key generation instructions for your specific exchange.</p>
+                                <p>Make sure to:</p>
+                                <ul>
+                                    <li>Select the "{{ selected_portfolio.name if selected_portfolio else 'Default' }}" portfolio if applicable</li>
+                                    <li>Enable both read and trade permissions for the API key</li>
+                                    <li>Copy both the API Key and API Secret before leaving the exchange's API settings page</li>
+                                </ul>
+                                {% endif %}
                             </div>
                             
                             <form method="POST" action="{{ url_for('automation.save_api_keys', automation_id=automation.automation_id) }}">
@@ -486,6 +531,32 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         
+        // Multi-exchange portfolio creation functions
+        window.selectExchangeForPortfolio = function(exchange) {
+            // Set the exchange in the hidden input
+            document.getElementById('selectedExchange').value = exchange;
+            
+            // Update the exchange name and icon
+            const exchangeName = document.getElementById('selected-exchange-name');
+            const exchangeIcon = document.getElementById('selected-exchange-icon');
+            
+            if (exchange === 'coinbase') {
+                exchangeName.textContent = 'Coinbase Portfolio';
+                exchangeIcon.src = "{{ url_for('static', filename='images/exchanges/coinbase.svg') }}";
+            }
+            // Add more exchanges here as needed
+            
+            // Hide exchange selection, show portfolio form
+            document.getElementById('exchange-selection-screen').style.display = 'none';
+            document.getElementById('portfolio-creation-form').style.display = 'block';
+        };
+        
+        window.showExchangeSelectionForPortfolio = function() {
+            // Hide portfolio form, show exchange selection
+            document.getElementById('exchange-selection-screen').style.display = 'block';
+            document.getElementById('portfolio-creation-form').style.display = 'none';
+        };
+        
         // Create Portfolio button handler - Direct approach without using modal
         if (createPortfolioBtn) {
             createPortfolioBtn.addEventListener('click', function(e) {
@@ -542,55 +613,56 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.preventDefault();
                 
                 const portfolioName = document.getElementById('portfolioName').value.trim();
+                const selectedExchange = document.getElementById('selectedExchange').value;
+                
                 if (!portfolioName) {
                     alert('Please enter a portfolio name');
                     return;
                 }
                 
+                if (!selectedExchange) {
+                    alert('Please select an exchange');
+                    return;
+                }
+                
                 try {
-                    const response = await fetch(`/automation/${automationId}/create-portfolio`, {
+                    // Use existing endpoint for portfolio creation
+                    const endpoint = `/automation/${automationId}/create-portfolio`;
+                    
+                    const response = await fetch(endpoint, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRFToken': csrfToken
                         },
-                        body: JSON.stringify({ name: portfolioName })
+                        body: JSON.stringify({ name: portfolioName, exchange: selectedExchange })
                     });
+                    
+                    if (!response.ok) throw new Error('Failed to create portfolio');
                     
                     const data = await response.json();
                     
-                    if (data.error) throw new Error(data.error);
+                    // Add the new portfolio to the dropdown
+                    const portfolioSelect = document.getElementById('portfolio_id');
+                    const option = document.createElement('option');
+                    option.value = data.id;
+                    option.textContent = `${selectedExchange.charAt(0).toUpperCase() + selectedExchange.slice(1)} - ${data.name}`;
+                    portfolioSelect.appendChild(option);
                     
-                    if (data.needs_manual_setup) {
-                        if (confirm('You need to create a portfolio manually on Coinbase. Would you like to open Coinbase now?')) {
-                            window.open('https://www.coinbase.com/advanced-portfolio', '_blank');
-                        }
-                        return;
-                    }
+                    // Select the new portfolio
+                    portfolioSelect.value = data.id;
                     
-                    if (data.success) {
-                        // Try to hide the modal
-                        try {
-                            if (createPortfolioModal && typeof bootstrap !== 'undefined') {
-                                const modal = bootstrap.Modal.getInstance(createPortfolioModal);
-                                if (modal) modal.hide();
-                            }
-                        } catch (error) {
-                            console.warn('Could not close modal:', error);
-                        }
-                        
-                        const select = document.getElementById('portfolio_id');
-                        if (select) {
-                            const option = new Option(data.portfolio.name, data.portfolio.id);
-                            select.add(option);
-                            select.value = data.portfolio.id;
-                        }
-                        
-                        alert(`Portfolio "${data.portfolio.name}" created successfully!`);
+                    // Show success message
+                    showPortfolioInstructions(`${selectedExchange.charAt(0).toUpperCase() + selectedExchange.slice(1)} portfolio "${data.name}" created successfully! Please continue with your automation setup.`, true);
+                    
+                    // Close the modal
+                    if (createPortfolioModal && typeof bootstrap !== 'undefined') {
+                        const modal = bootstrap.Modal.getInstance(createPortfolioModal);
+                        if (modal) modal.hide();
                     }
                 } catch (error) {
-                    console.error('Error creating portfolio:', error);
-                    alert('Error creating portfolio: ' + error.message);
+                    console.error(`Error creating ${selectedExchange} portfolio:`, error);
+                    alert(`Error creating portfolio: ${error.message}`);
                 }
             });
         }

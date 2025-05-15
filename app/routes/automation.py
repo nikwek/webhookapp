@@ -150,7 +150,8 @@ def get_coinbase_portfolios(user_id):
                 db_portfolio = Portfolio(
                     portfolio_id=portfolio_id,
                     name=portfolio_name,
-                    user_id=user_id
+                    user_id=user_id,
+                    exchange='coinbase'  # Add the exchange information
                 )
                 db.session.add(db_portfolio)
                 db.session.commit()
@@ -159,7 +160,8 @@ def get_coinbase_portfolios(user_id):
             
             portfolios.append({
                 'id': db_portfolio.id,
-                'name': db_portfolio.name
+                'name': db_portfolio.name,
+                'exchange': 'coinbase'  # Add the exchange information
             })
             
         logger.info(f"Returning {len(portfolios)} portfolios")
@@ -261,6 +263,12 @@ def view_automation(automation_id):
         webhook_url = f"{current_app.config['APPLICATION_URL'].rstrip('/')}/webhook?automation_id={automation.automation_id}" if automation else None
     else:
         webhook_url = f"{request.url_root}webhook?automation_id={automation.automation_id}" if automation else None
+        
+    # Check if user has Coinbase API keys for the exchange selection modal
+    has_coinbase_keys = ExchangeCredentials.query.filter_by(
+        user_id=current_user.id,
+        exchange='coinbase'
+    ).first() is not None
 
     return render_template(
         'automation.html', 
@@ -270,7 +278,8 @@ def view_automation(automation_id):
         portfolios=portfolios,
         selected_portfolio=selected_portfolio,
         show_api_form=show_api_form,
-        webhook_url=webhook_url 
+        webhook_url=webhook_url,
+        has_coinbase_keys=has_coinbase_keys
     )
 
 
@@ -281,18 +290,23 @@ def create_portfolio(automation_id):
         logger.info(f"Starting portfolio creation for automation {automation_id}")
         data = request.get_json()
         portfolio_name = data.get('name')
+        exchange = data.get('exchange', 'coinbase')  # Default to coinbase if not specified
         
-        logger.info(f"Portfolio name from request: {portfolio_name}")
+        logger.info(f"Portfolio name from request: {portfolio_name}, exchange: {exchange}")
         
         if not portfolio_name:
             logger.error("Missing portfolio name in request")
             return jsonify({"error": "Portfolio name is required"}), 400
             
+        if not exchange:
+            logger.error("Missing exchange in request")
+            return jsonify({"error": "Exchange is required"}), 400
+            
         # Try to find existing trading credentials (non-default)
-        logger.info(f"Searching for trading credentials for user {current_user.id}")
+        logger.info(f"Searching for trading credentials for user {current_user.id} for exchange {exchange}")
         trading_creds = ExchangeCredentials.query.filter(
             ExchangeCredentials.user_id == current_user.id,
-            ExchangeCredentials.exchange == 'coinbase',
+            ExchangeCredentials.exchange == exchange,
             ExchangeCredentials.portfolio_name != 'default',
             ExchangeCredentials.is_default.is_(False)
         ).first()
@@ -303,7 +317,7 @@ def create_portfolio(automation_id):
         else:
             default_creds = ExchangeCredentials.query.filter(
                 ExchangeCredentials.user_id == current_user.id,
-                ExchangeCredentials.exchange == 'coinbase',
+                ExchangeCredentials.exchange == exchange,
                 ExchangeCredentials.portfolio_name == 'default'
             ).first()
             
@@ -328,12 +342,19 @@ def create_portfolio(automation_id):
             
         # If we have trading credentials, attempt to create portfolio
         logger.info(f"Using trading credentials for {trading_creds.portfolio_name} to create portfolio")
-        client = RESTClient(api_key=trading_creds.api_key, 
-                          api_secret=trading_creds.decrypt_secret())
         
-        logger.info(f"Calling Coinbase API to create portfolio: {portfolio_name}")
-        response = client.create_portfolio(name=portfolio_name)
-        logger.info(f"Create portfolio API response: {response}")
+        # Different API clients for different exchanges
+        if exchange == 'coinbase':
+            client = RESTClient(api_key=trading_creds.api_key, 
+                               api_secret=trading_creds.decrypt_secret())
+            
+            logger.info(f"Calling Coinbase API to create portfolio: {portfolio_name}")
+            response = client.create_portfolio(name=portfolio_name)
+            logger.info(f"Create portfolio API response: {response}")
+        else:
+            # For future exchanges, add their API client code here
+            logger.error(f"Exchange {exchange} not supported for portfolio creation yet")
+            return jsonify({"error": f"Exchange {exchange} not supported for portfolio creation yet"}), 400
         
         # Handle the response correctly based on its structure
         portfolio_uuid = None
@@ -392,7 +413,7 @@ def create_portfolio(automation_id):
             portfolio_id=portfolio_uuid,
             name=portfolio_name,
             user_id=current_user.id,
-            exchange='coinbase'
+            exchange=exchange  # Use the dynamic exchange parameter
         )
         db.session.add(portfolio)
         db.session.commit()

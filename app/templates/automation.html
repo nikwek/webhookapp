@@ -937,15 +937,21 @@ document.addEventListener('DOMContentLoaded', function() {
                                             </tr>
                                         ) : (
                                             logs.map((log) => (
-                                                <tr 
-                                                    key={log.timestamp}
-                                                    onClick={() => toggleRow(log.timestamp)}
-                                                    className="webhook-log-row cursor-pointer"
-                                                >
-                                                    <td className="text-nowrap w-200">{new Date(log.timestamp).toLocaleString()}</td>
+                                                <tr key={log.timestamp} className="webhook-log-row">
+                                                    <td className="text-nowrap w-200">
+                                                        <div 
+                                                            className="cursor-pointer"
+                                                            onClick={() => toggleRow(log.timestamp)}
+                                                        >
+                                                            {new Date(log.timestamp).toLocaleString()}
+                                                        </div>
+                                                    </td>
                                                     <td>
                                                         {/* Basic Info (Always Visible) */}
-                                                        <div className="d-flex justify-content-between">
+                                                        <div 
+                                                            className="d-flex justify-content-between cursor-pointer" 
+                                                            onClick={() => toggleRow(log.timestamp)}
+                                                        >
                                                             <div>
                                                                 <span className={`badge ${log.action?.toLowerCase() === 'buy' ? 'bg-success' : 'bg-danger'} me-2`}>
                                                                     {/* Capitalize action regardless of source */}
@@ -1003,7 +1009,28 @@ document.addEventListener('DOMContentLoaded', function() {
                                                                                         <td>
                                                                                             <pre className="small mb-0">
                                                                                                 {typeof log.raw_response === 'string' 
-                                                                                                    ? log.raw_response 
+                                                                                                    ? (() => {
+                                                                                                        try {
+                                                                                                            // Function to convert Python-style dict string to JSON
+                                                                                                            const convertPythonDictToJson = (str) => {
+                                                                                                                // Replace single quotes with double quotes
+                                                                                                                let jsonStr = str.replace(/'/g, '"');
+                                                                                                                // Fix boolean values (True/False to true/false)
+                                                                                                                jsonStr = jsonStr.replace(/True/g, 'true').replace(/False/g, 'false');
+                                                                                                                // Fix None to null
+                                                                                                                jsonStr = jsonStr.replace(/None/g, 'null');
+                                                                                                                return jsonStr;
+                                                                                                            };
+                                                                                                            
+                                                                                                            // Convert Python dict to JSON and parse it
+                                                                                                            const jsonString = convertPythonDictToJson(log.raw_response);
+                                                                                                            const parsedJson = JSON.parse(jsonString);
+                                                                                                            return JSON.stringify(parsedJson, null, 2);
+                                                                                                        } catch (e) {
+                                                                                                            // If parsing fails, return the original string
+                                                                                                            return log.raw_response;
+                                                                                                        }
+                                                                                                    })()
                                                                                                     : JSON.stringify(parseJsonField(log.raw_response), null, 2)}
                                                                                             </pre>
                                                                                         </td>

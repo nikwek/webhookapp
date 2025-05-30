@@ -18,6 +18,7 @@ class ExchangeCredentials(db.Model):
     portfolio_name = db.Column(db.String(100), nullable=False)
     api_key = db.Column(db.String(255), nullable=False)
     api_secret = db.Column(db.String(255), nullable=False)
+    passphrase = db.Column(db.String(255), nullable=True)  # For exchanges that require a passphrase (like Coinbase)
     is_default = db.Column(db.Boolean, default=False)  # Flag for read-only default credentials
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -28,12 +29,13 @@ class ExchangeCredentials(db.Model):
     portfolio = db.relationship('Portfolio', backref=db.backref('credentials', lazy=True))
     
     def __init__(self, user_id, exchange, portfolio_name, api_key, api_secret, 
-                 automation_id=None, portfolio_id=None, is_default=False):
+                 automation_id=None, portfolio_id=None, is_default=False, passphrase=None):
         self.user_id = user_id
         self.exchange = exchange
         self.portfolio_name = portfolio_name
         self.api_key = api_key
         self.api_secret = self.encrypt_secret(api_secret)
+        self.passphrase = passphrase  # Store passphrase for exchanges that need it
         self.automation_id = automation_id
         self.portfolio_id = portfolio_id
         self.is_default = is_default

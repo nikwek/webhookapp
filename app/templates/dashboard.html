@@ -15,6 +15,53 @@
         </div>
     </div>
     {% endif %}
+    
+    <!-- Exchanges Section -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="exchanges-container">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0">Exchanges</h4>
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table mb-0">
+                            <thead>
+                                <tr>
+                                    <th class="exchange-name">Exchange</th>
+                                    <th class="total-value">Total $ Value</th>
+                                    <th class="strategies">Investment Strategies</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if exchanges and exchanges|length > 0 %}
+                                    {% for exchange in exchanges %}
+                                    <tr>
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                <img src="{{ url_for('static', filename='images/exchanges/' ~ exchange.logo) }}" alt="{{ exchange.name }}" width="24" height="24" class="me-2">
+                                                <span>{{ exchange.name }}</span>
+                                            </div>
+                                        </td>
+                                        <td class="total-value">${{ exchange.total_dollar_value }}</td>
+                                        <td class="strategies">{{ exchange.investment_strategy_count }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="3" class="text-center py-4">
+                                            No exchanges set up. Add an exchange in the Settings page.
+                                        </td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <div class="row">
         <div class="col-md-12">
             <div class="automations-container mb-4">

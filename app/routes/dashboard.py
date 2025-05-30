@@ -214,9 +214,16 @@ def settings():
         except Exception as e:
             flash(f'Error validating Coinbase API keys: {str(e)}', 'danger')
     
-    return render_template('settings.html', 
-                          form=form, 
-                          has_coinbase_keys=bool(coinbase_creds))
+    # Gather credentials for all exchanges for display in template
+    user_creds = ExchangeCredentials.query.filter_by(user_id=current_user.id).all()
+    exchange_creds_map = {c.exchange: c for c in user_creds}
+
+    return render_template(
+        'settings.html',
+        form=form,
+        exchange_credentials=exchange_creds_map,
+        has_coinbase_keys=bool(exchange_creds_map.get('coinbase'))
+    )
 
 
 @bp.route('/settings/coinbase/delete', methods=['POST'])
@@ -234,4 +241,35 @@ def delete_coinbase_api_keys():
         db.session.commit()
         flash('Coinbase API keys deleted successfully!', 'success')
     
+    return redirect(url_for('dashboard.settings'))
+
+
+# ------------------------------------------------------------------
+# Generic delete API keys endpoint (works for any exchange)
+# ------------------------------------------------------------------
+
+@bp.route('/settings/api-keys/delete', methods=['POST'])
+@login_required
+def delete_api_keys():
+    """Delete API keys for the exchange provided in the form."""
+    from flask import request  # local import to avoid circular issues
+
+    exchange = request.form.get('exchange')
+    if not exchange:
+        flash('Exchange not specified', 'danger')
+        return redirect(url_for('dashboard.settings'))
+
+    creds = ExchangeCredentials.query.filter_by(
+        user_id=current_user.id,
+        exchange=exchange,
+        portfolio_name='default',
+    ).first()
+
+    if creds:
+        db.session.delete(creds)
+        db.session.commit()
+        flash(f'{exchange.capitalize()} API keys deleted successfully!', 'success')
+    else:
+        flash('No credentials found', 'warning')
+
     return redirect(url_for('dashboard.settings'))

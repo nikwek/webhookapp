@@ -11,8 +11,7 @@ from typing import Dict, List, Any, Tuple
 import traceback
 import logging
 import math
-import os
-from datetime import datetime, timezone
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +25,11 @@ class CoinbaseAdapter(ExchangeAdapter):
     def get_name(cls) -> str:
         """Return the name of the exchange"""
         return 'coinbase'
+
+    @classmethod
+    def get_display_name(cls) -> str:
+        """Return the user-facing display name of the exchange"""
+        return 'Coinbase'
 
     @classmethod
     def get_client(cls, user_id: int, portfolio_name: str = 'default'):
@@ -475,7 +479,7 @@ class CoinbaseAdapter(ExchangeAdapter):
                             elif target_account is None:
                                 target_account = account_uuid
                                 target_balance = balance
-                                logger.info(f"Account doesn't match portfolio, using as fallback")
+                                logger.info("Account doesn't match portfolio, using as fallback")
                         except (ValueError, TypeError) as e:
                             logger.warning(f"Could not convert balance '{balance_str}' to float: {e}")
                 
@@ -532,7 +536,7 @@ class CoinbaseAdapter(ExchangeAdapter):
                 success = response_dict.get('success', False)
                 coinbase_trade = "Filled" if success else "Rejected"
                 order_id = success_response.get('order_id')
-                product_id = success_response.get('product_id')
+                # product_id = success_response.get('product_id') # Commented out as unused
                 side = success_response.get('side')
                 message = f"Status: {coinbase_trade} | Order ID: {success_response.get('order_id', 'Unknown')}"
                 
@@ -585,7 +589,7 @@ class CoinbaseAdapter(ExchangeAdapter):
             client = RESTClient(api_key=api_key, api_secret=api_secret)
             
             # Test API call
-            response = client.get_products()
+            client.get_products()  # Test call, response not used
             
             # If we got here, keys are valid
             return True, "API keys validated successfully"

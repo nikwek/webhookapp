@@ -17,37 +17,33 @@
                     </button>
                 </div>
                 <div class="card-body">
-                    {% if exchange_credentials.get('coinbase') or exchange_credentials.get('coinbase-ccxt') %}
+                    {% set connected_exchanges_list = [] %} 
+                    {% for ex_adapter_cls in available_exchange_adapters %} 
+                        {% if exchange_credentials.get(ex_adapter_cls.get_name()) %} 
+                            {% set _ = connected_exchanges_list.append(ex_adapter_cls) %} 
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if connected_exchanges_list %} 
                     <!-- List of connected exchanges -->
                     <div class="list-group">
-                        {% if exchange_credentials.get('coinbase') %}
-                        <div class="list-group-item d-flex justify-content-between align-items-center" data-exchange="coinbase">
+                        {% for ex_adapter_cls in connected_exchanges_list %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center" data-exchange="{{ ex_adapter_cls.get_name() }}">
                             <div class="d-flex align-items-center">
-                                <img src="{{ url_for('static', filename='images/exchanges/coinbase.svg') }}" alt="Coinbase" width="24" height="24" class="me-3">
-                                <span>Coinbase</span>
+                                <img src="{{ url_for('static', filename='images/exchanges/' + ex_adapter_cls.get_name() + '.svg') }}" alt="{{ ex_adapter_cls.get_display_name() or ex_adapter_cls.get_name()|capitalize }}" width="24" height="24" class="me-3">
+                                <span>{{ ex_adapter_cls.get_display_name() or ex_adapter_cls.get_name()|capitalize }}</span>
                             </div>
                             <div>
                                 <span class="badge bg-success me-2">Connected</span>
-                                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editExchangeModal" data-exchange="coinbase">
+                                <button class="btn btn-sm btn-outline-secondary me-1" data-bs-toggle="modal" data-bs-target="#editExchangeModal" data-exchange="{{ ex_adapter_cls.get_name() }}" data-api-key="{{ exchange_credentials.get(ex_adapter_cls.get_name()).api_key }}" title="Edit API Keys">
                                     <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteApiKeysModal" data-exchange-name="{{ ex_adapter_cls.get_display_name() or ex_adapter_cls.get_name()|capitalize }}" data-exchange-value="{{ ex_adapter_cls.get_name() }}" title="Delete API Keys">
+                                    <i class="fas fa-trash-alt"></i>
                                 </button>
                             </div>
                         </div>
-                        {% endif %}
-                        {% if exchange_credentials.get('coinbase-ccxt') %}
-                        <div class="list-group-item d-flex justify-content-between align-items-center" data-exchange="coinbase-ccxt">
-                            <div class="d-flex align-items-center">
-                                <img src="{{ url_for('static', filename='images/exchanges/coinbase_ccxt.svg') }}" alt="Coinbase CCXT" width="24" height="24" class="me-3">
-                                <span>Coinbase CCXT</span>
-                            </div>
-                            <div>
-                                <span class="badge bg-success me-2">Connected</span>
-                                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editExchangeModal" data-exchange="coinbase-ccxt">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                            </div>
-                        </div>
-                        {% endif %}
+                        {% endfor %}
                     </div>
                     {% else %}
                     <!-- Empty state for no connected exchanges -->
@@ -135,16 +131,18 @@
                 <!-- Exchange selection screen -->
                 <div id="exchange-selection" class="text-center">
                     <p class="mb-4">Select an exchange to connect:</p>
-                    <div class="d-flex justify-content-center gap-4 mb-3">
-                        <div class="exchange-option p-3 border rounded text-center" onclick="showExchangeForm('coinbase')">
-                            <img src="{{ url_for('static', filename='images/exchanges/coinbase.svg') }}" alt="Coinbase" width="64" height="64" class="mb-2">
-                            <p class="mb-0">Coinbase</p>
-                        </div>
-                        <div class="exchange-option p-3 border rounded text-center" onclick="showExchangeForm('coinbase-ccxt')">
-                            <img src="{{ url_for('static', filename='images/exchanges/coinbase_ccxt.svg') }}" alt="Coinbase CCXT" width="64" height="64" class="mb-2">
-                            <p class="mb-0">Coinbase CCXT</p>
-                        </div>
-                        <!-- Add more exchanges here in the future -->
+                    <div class="d-flex justify-content-center flex-wrap gap-4 mb-3">
+                        {% if available_exchange_adapters %}
+                            {% for ex_adapter_cls in available_exchange_adapters %}
+                            <div class="exchange-option p-3 border rounded text-center" onclick="showExchangeForm('{{ ex_adapter_cls.get_name() }}')" style="cursor: pointer; width: 120px;">
+                                <img src="{{ url_for('static', filename='images/exchanges/' + ex_adapter_cls.get_name() + '.svg') }}" alt="{{ ex_adapter_cls.get_name() | capitalize }}" width="64" height="64" class="mb-2"
+                                     onerror="this.style.display='none'; this.parentElement.insertAdjacentHTML('afterbegin', '<div style=\'width:64px; height:64px; background-color:#f0f0f0; display:flex; align-items:center; justify-content:center; margin-left:auto; margin-right:auto; margin-bottom:0.5rem; border-radius:4px;\'><i class=\'fas fa-image fa-2x text-muted\'></i></div>');">
+                                <p class="mb-0">{{ ex_adapter_cls.get_name() | capitalize }}</p>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <p>No exchange adapters configured.</p>
+                        {% endif %}
                     </div>
                 </div>
                 
@@ -173,12 +171,13 @@
                     </div>
                     
                     <form method="POST" action="{{ url_for('dashboard.settings') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        {{ form.csrf_token }}
                         <input type="hidden" name="exchange" value="coinbase">
+                        <input type="hidden" name="form_name" value="coinbase_native_form">
                         
                         <div class="mb-3">
                             {{ form.api_key.label(class="form-label") }}
-                            {{ form.api_key(class="form-control") }}
+                            {{ form.api_key(id="add_coinbase-api_key", class="form-control") }}
                             {% if form.api_key.errors %}
                                 <div class="invalid-feedback d-block">
                                     {% for error in form.api_key.errors %}
@@ -190,7 +189,7 @@
                         
                         <div class="mb-3">
                             {{ form.api_secret.label(class="form-label") }}
-                            {{ form.api_secret(class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
+                            {{ form.api_secret(id="add_coinbase-api_secret", class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
                             {% if form.api_secret.errors %}
                                 <div class="invalid-feedback d-block">
                                     {% for error in form.api_secret.errors %}
@@ -202,7 +201,7 @@
                         
                         <div class="d-flex justify-content-end">
                             <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
-                            {{ form.submit(class="btn btn-primary") }}
+                            {{ form.submit(id="add_coinbase-submit", class="btn btn-primary", value="Save API Keys") }}
                         </div>
                     </form>
                 </div>
@@ -217,30 +216,40 @@
                     </div>
                     
                     <div class="alert alert-info">
-                        <h5>How to get your API Keys:</h5>
+                        <h5>How to get your Coinbase Advanced Trading API Keys:</h5>
                         <ol>
-                            <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a></li>
-                            <li>Click "New API Key"</li>
-                            <li>Give the API key a nickname (e.g., "Amazing Automation")</li>
-                            <li>Set Portfolio to <strong>"Default"</strong></li>
-                            <li>Check the View (read-only) box and nothing else</li>
-                            <li>Set an IP whitelist if desired (optional)</li>
-                            <li>Click "Create API Key" and you'll see your API Key and API Secret</li>
-                            <li>Copy and paste both values below (and maybe save them in a secure place as you won't be able to see the API Secret again)</li>
+                            <li>Log in to your Coinbase account.</li>
+                            <li>Navigate to your profile settings, then select the <strong>API</strong> section.</li>
+                            <li>Ensure you are on the <strong>Trading API</strong> tab (not the "Coinbase Sign-In API" or other legacy tabs).</li>
+                            <li>Click on <strong>"+ New API Key"</strong>.</li>
+                            <li>Select the portfolios you want this API key to access.</li>
+                            <li>Grant the following permissions:
+                                <ul>
+                                    <li><code>wallet:accounts:read</code> (to read account balances)</li>
+                                    <li><code>wallet:orders:read</code> (to read orders)</li>
+                                    <li><code>wallet:orders:create</code> (to create orders)</li>
+                                    <li><code>wallet:fills:read</code> (to read trade history)</li>
+                                    <li><em>(Optional)</em> <code>wallet:transactions:read</code> (for transaction history)</li>
+                                    <li><em>(Optional)</em> <code>wallet:buys:create</code>, <code>wallet:buys:read</code>, <code>wallet:sells:create</code>, <code>wallet:sells:read</code> (for buy/sell operations)</li>
+                                </ul>
+                            </li>
+                            <li>You may be prompted for 2-factor authentication.</li>
+                            <li>Coinbase will display your <strong>API Key</strong> and <strong>API Secret</strong>. Copy both immediately and store them securely, as the API Secret will not be shown again.</li>
                         </ol>
-                        <p>These API keys allow us to retrieve a list of portfolios.</p>
+                        <p>These API keys are for Coinbase Advanced Trading and are used by the CCXT integration.</p>
                     </div>
                     
                     <form method="POST" action="{{ url_for('dashboard.settings') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        {{ ccxt_form.csrf_token }}
                         <input type="hidden" name="exchange" value="coinbase-ccxt">
+                        <input type="hidden" name="form_name" value="ccxt_form">
                         
                         <div class="mb-3">
-                            {{ form.api_key.label(class="form-label") }}
-                            {{ form.api_key(class="form-control") }}
-                            {% if form.api_key.errors %}
+                            {{ ccxt_form.api_key.label(class="form-label") }}
+                            {{ ccxt_form.api_key(id="add_coinbase_ccxt-api_key", class="form-control") }}
+                            {% if ccxt_form.api_key.errors %}
                                 <div class="invalid-feedback d-block">
-                                    {% for error in form.api_key.errors %}
+                                    {% for error in ccxt_form.api_key.errors %}
                                         {{ error }}
                                     {% endfor %}
                                 </div>
@@ -248,11 +257,11 @@
                         </div>
                         
                         <div class="mb-3">
-                            {{ form.api_secret.label(class="form-label") }}
-                            {{ form.api_secret(class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
-                            {% if form.api_secret.errors %}
+                            {{ ccxt_form.api_secret.label(class="form-label") }}
+                            {{ ccxt_form.api_secret(id="add_coinbase_ccxt-api_secret", class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
+                            {% if ccxt_form.api_secret.errors %}
                                 <div class="invalid-feedback d-block">
-                                    {% for error in form.api_secret.errors %}
+                                    {% for error in ccxt_form.api_secret.errors %}
                                         {{ error }}
                                     {% endfor %}
                                 </div>
@@ -261,10 +270,156 @@
                         
                         <div class="d-flex justify-content-end">
                             <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
-                            {{ form.submit(class="btn btn-primary") }}
+                            {{ ccxt_form.submit(id="add_coinbase_ccxt-submit", class="btn btn-primary", value="Save API Keys") }}
                         </div>
                     </form>
                 </div>
+                <!-- Binance API form (initially hidden) -->
+                <div id="binance-form" class="exchange-form" style="display: none;">
+                    <div class="d-flex align-items-center mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary me-3" onclick="showExchangeSelection()">
+                            <i class="fas fa-arrow-left"></i>
+                        </button>
+                        <h5 class="mb-0">Binance API Keys</h5>
+                    </div>
+                    <div class="alert alert-info">
+                        <!-- TODO: Update this text with Binance-specific instructions -->
+                        <h5>How to get your API Keys:</h5>
+                        <ol>
+                            <li>Log in to your Binance account.</li>
+                            <li>Navigate to API Management.</li>
+                            <li>Create a new API key. Ensure 'Enable Reading' is checked. For trading features, 'Enable Spot & Margin Trading' might be needed.</li>
+                            <li>Copy your API Key and Secret Key. Store the Secret Key securely as it won't be shown again.</li>
+                        </ol>
+                        <p>These API keys allow us to connect to your Binance account.</p>
+                    </div>
+                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
+                        {{ ccxt_form.csrf_token }}
+                        <input type="hidden" name="exchange" value="binance">
+                        <input type="hidden" name="form_name" value="ccxt_form">
+                        <div class="mb-3">
+                            {{ ccxt_form.api_key.label(class="form-label") }}
+                            {{ ccxt_form.api_key(id="add_binance-api_key", class="form-control") }}
+                            {% if ccxt_form.api_key.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in ccxt_form.api_key.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            {{ ccxt_form.api_secret.label(class="form-label") }}
+                            {{ ccxt_form.api_secret(id="add_binance-api_secret", class="form-control") }}
+                            {% if ccxt_form.api_secret.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in ccxt_form.api_secret.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex justify-content-end">
+                            <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+                            {{ ccxt_form.submit(id="add_binance-submit", class="btn btn-primary", value="Save API Keys") }}
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Kraken API form (initially hidden) -->
+                <div id="kraken-form" class="exchange-form" style="display: none;">
+                    <div class="d-flex align-items-center mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary me-3" onclick="showExchangeSelection()">
+                            <i class="fas fa-arrow-left"></i>
+                        </button>
+                        <h5 class="mb-0">Kraken API Keys</h5>
+                    </div>
+                    <div class="alert alert-info">
+                        <!-- TODO: Update this text with Kraken-specific instructions -->
+                        <h5>How to get your API Keys:</h5>
+                        <ol>
+                            <li>Log in to your Kraken account.</li>
+                            <li>Navigate to Security > API.</li>
+                            <li>Click 'Add Key'. Grant necessary permissions (e.g., 'Query Funds', 'Query Open Orders & Trades').</li>
+                            <li>Copy your API Key and Private Key. Store the Private Key securely.</li>
+                        </ol>
+                        <p>These API keys allow us to connect to your Kraken account.</p>
+                    </div>
+                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
+                        {{ ccxt_form.csrf_token }}
+                        <input type="hidden" name="exchange" value="kraken">
+                        <input type="hidden" name="form_name" value="ccxt_form">
+                        <div class="mb-3">
+                            {{ ccxt_form.api_key.label(class="form-label") }}
+                            {{ ccxt_form.api_key(id="add_kraken-api_key", class="form-control") }}
+                            {% if ccxt_form.api_key.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in ccxt_form.api_key.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            {{ ccxt_form.api_secret.label(class="form-label") }}
+                            {{ ccxt_form.api_secret(id="add_kraken-api_secret", class="form-control") }}
+                            {% if ccxt_form.api_secret.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in ccxt_form.api_secret.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex justify-content-end">
+                            <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+                            {{ ccxt_form.submit(id="add_kraken-submit", class="btn btn-primary", value="Save API Keys") }}
+                        </div>
+                    </form>
+                </div>
+
+                <!-- KuCoin API form (initially hidden) -->
+                <div id="kucoin-form" class="exchange-form" style="display: none;">
+                    <div class="d-flex align-items-center mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary me-3" onclick="showExchangeSelection()">
+                            <i class="fas fa-arrow-left"></i>
+                        </button>
+                        <h5 class="mb-0">KuCoin API Keys</h5>
+                    </div>
+                    <div class="alert alert-info">
+                        <!-- TODO: Update this text with KuCoin-specific instructions -->
+                        <h5>How to get your API Keys:</h5>
+                        <ol>
+                            <li>Log in to your KuCoin account.</li>
+                            <li>Navigate to API Management.</li>
+                            <li>Click 'Create API'. Grant 'General' permissions for read-only access. For trading, add 'Trade' permission.</li>
+                            <li>Set an API Passphrase. Remember this passphrase.</li>
+                            <li>Copy your Key and Secret. Store the Secret securely.</li>
+                        </ol>
+                        <p>These API keys allow us to connect to your KuCoin account. You will also need to enter your API Passphrase if applicable.</p>
+                    </div>
+                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
+                        {{ ccxt_form.csrf_token }}
+                        <input type="hidden" name="exchange" value="kucoin">
+                        <input type="hidden" name="form_name" value="ccxt_form">
+                        <div class="mb-3">
+                            {{ ccxt_form.api_key.label(class="form-label") }}
+                            {{ ccxt_form.api_key(id="add_kucoin-api_key", class="form-control") }}
+                            {% if ccxt_form.api_key.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in ccxt_form.api_key.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            {{ ccxt_form.api_secret.label(class="form-label") }}
+                            {{ ccxt_form.api_secret(id="add_kucoin-api_secret", class="form-control") }}
+                            {% if ccxt_form.api_secret.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in ccxt_form.api_secret.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        <!-- Note: KuCoin might require a passphrase field in CcxtApiKeyForm in the future -->
+                        <div class="d-flex justify-content-end">
+                            <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+                            {{ ccxt_form.submit(id="add_kucoin-submit", class="btn btn-primary", value="Save API Keys") }}
+                        </div>
+                    </form>
+                </div>
+
                 <!-- Add more exchange forms here in the future -->
             </div>
         </div>
@@ -281,7 +436,7 @@
             </div>
             <div class="modal-body">
                 <!-- Coinbase API form -->
-                <div id="edit-coinbase-form" class="edit-exchange-form">
+                <div id="edit-coinbase-form" class="edit-exchange-form" style="display: none;">
                     <div class="d-flex align-items-center mb-3">
                         <img src="{{ url_for('static', filename='images/exchanges/coinbase.svg') }}" alt="Coinbase" width="32" height="32" class="me-3">
                         <h5 class="mb-0">Coinbase API Keys</h5>
@@ -303,13 +458,14 @@
                     </div>
                     
                     <form method="POST" action="{{ url_for('dashboard.settings') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        {{ form.csrf_token }}
                         <input type="hidden" name="exchange" value="coinbase">
+                        <input type="hidden" name="form_name" value="coinbase_native_form">
                         <input type="hidden" name="update" value="true">
                         
                         <div class="mb-3">
                             {{ form.api_key.label(class="form-label") }}
-                            {{ form.api_key(class="form-control") }}
+                            {{ form.api_key(id="edit_coinbase-api_key", class="form-control") }}
                             {% if form.api_key.errors %}
                                 <div class="invalid-feedback d-block">
                                     {% for error in form.api_key.errors %}
@@ -321,7 +477,7 @@
                         
                         <div class="mb-3">
                             {{ form.api_secret.label(class="form-label") }}
-                            {{ form.api_secret(class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
+                            {{ form.api_secret(id="edit_coinbase-api_secret", class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
                             {% if form.api_secret.errors %}
                                 <div class="invalid-feedback d-block">
                                     {% for error in form.api_secret.errors %}
@@ -337,16 +493,70 @@
                             </button>
                             <div>
                                 <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
-                                {{ form.submit(class="btn btn-primary") }}
+                                {{ form.submit(id="edit_coinbase-submit", class="btn btn-primary", value="Save Changes") }}
                             </div>
                         </div>
                     </form>
                 </div>
                 
+                <!-- Generic CCXT API form (initially hidden, populated by JS) -->
+                <div id="edit-generic-ccxt-form" class="edit-exchange-form" style="display: none;">
+                    <div class="d-flex align-items-center mb-3">
+                        <img id="edit-generic-ccxt-logo" src="" alt="Exchange Logo" width="32" height="32" class="me-3">
+                        <h5 class="mb-0" id="edit-generic-ccxt-title">Edit API Keys</h5>
+                    </div>
+                    <div class="alert alert-info">
+                        <h5>How to get your API Keys:</h5>
+                        <p>Please refer to your exchange's documentation for specific instructions on generating API keys. Ensure the keys have the necessary permissions for reading account balances and executing trades if you intend to use trading features.</p>
+                        <p>Commonly required permissions include:</p>
+                        <ul>
+                            <li><strong>Read Access:</strong> For balance checking, order history, etc. (e.g., <code>wallet:accounts:read</code>, <code>wallet:user:read</code>)</li>
+                            <li><strong>Trading Access:</strong> For placing orders (e.g., <code>wallet:orders:create</code>, <code>wallet:orders:read</code>, <code>trade</code>)</li>
+                        </ul>
+                        <p><strong>Important:</strong> Store your API Secret and any Passphrase securely. They will not be shown again by the exchange.</p>
+                    </div>
+                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
+                        {{ ccxt_form.csrf_token }}
+                        <input type="hidden" id="edit-generic-ccxt-exchange-name" name="exchange" value="">
+                        <input type="hidden" name="form_name" value="ccxt_form">
+                        <input type="hidden" name="update" value="true">
+                        
+                        <div class="mb-3">
+                            {{ ccxt_form.api_key.label(class="form-label") }}
+                            {{ ccxt_form.api_key(id="edit_generic_ccxt-api_key", class="form-control") }}
+                            {% if ccxt_form.api_key.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in ccxt_form.api_key.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ ccxt_form.api_secret.label(class="form-label") }}
+                            {{ ccxt_form.api_secret(id="edit_generic_ccxt-api_secret", class="form-control", placeholder="Enter new secret to update, or leave blank to keep existing.") }}
+                            {% if ccxt_form.api_secret.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in ccxt_form.api_secret.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteApiKeysModal">
+                                Delete API Keys
+                            </button>
+                            <div>
+                                <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+                                {{ ccxt_form.submit(id="edit_generic_ccxt-submit", class="btn btn-primary", value="Save API Keys") }}
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
                 <!-- Coinbase CCXT API form -->
                 <div id="edit-coinbase-ccxt-form" class="edit-exchange-form" style="display: none;">
                     <div class="d-flex align-items-center mb-3">
-                        <img src="{{ url_for('static', filename='images/exchanges/coinbase_ccxt.svg') }}" alt="Coinbase CCXT" width="32" height="32" class="me-3">
+                        <img src="{{ url_for('static', filename='images/exchanges/coinbase-ccxt.svg') }}" alt="Coinbase CCXT" width="32" height="32" class="me-3">
                         <h5 class="mb-0">Coinbase CCXT API Keys</h5>
                     </div>
                     
@@ -366,16 +576,17 @@
                     </div>
                     
                     <form method="POST" action="{{ url_for('dashboard.settings') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        {{ ccxt_form.csrf_token }}
                         <input type="hidden" name="exchange" value="coinbase-ccxt">
                         <input type="hidden" name="update" value="true">
+                        <input type="hidden" name="form_name" value="ccxt_form"> <!-- Added to ensure correct backend processing -->
                         
                         <div class="mb-3">
-                            {{ form.api_key.label(class="form-label") }}
-                            {{ form.api_key(class="form-control") }}
-                            {% if form.api_key.errors %}
+                            {{ ccxt_form.api_key.label(class="form-label") }}
+                            {{ ccxt_form.api_key(id="edit_coinbase_ccxt-api_key", class="form-control") }}
+                            {% if ccxt_form.api_key.errors %}
                                 <div class="invalid-feedback d-block">
-                                    {% for error in form.api_key.errors %}
+                                    {% for error in ccxt_form.api_key.errors %}
                                         {{ error }}
                                     {% endfor %}
                                 </div>
@@ -383,11 +594,11 @@
                         </div>
                         
                         <div class="mb-3">
-                            {{ form.api_secret.label(class="form-label") }}
-                            {{ form.api_secret(class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
-                            {% if form.api_secret.errors %}
+                            {{ ccxt_form.api_secret.label(class="form-label") }}
+                            {{ ccxt_form.api_secret(id="edit_coinbase_ccxt-api_secret", class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
+                            {% if ccxt_form.api_secret.errors %}
                                 <div class="invalid-feedback d-block">
-                                    {% for error in form.api_secret.errors %}
+                                    {% for error in ccxt_form.api_secret.errors %}
                                         {{ error }}
                                     {% endfor %}
                                 </div>
@@ -400,7 +611,7 @@
                             </button>
                             <div>
                                 <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
-                                {{ form.submit(class="btn btn-primary") }}
+                                {{ ccxt_form.submit(id="edit_coinbase_ccxt-submit", class="btn btn-primary", value="Save Changes") }}
                             </div>
                         </div>
                     </form>
@@ -461,24 +672,63 @@
     document.addEventListener('DOMContentLoaded', function() {
         // Show appropriate exchange form in edit modal
         const editModal = document.getElementById('editExchangeModal');
-        const deleteExchangeInput = document.getElementById('delete-exchange');
         if (editModal) {
             editModal.addEventListener('show.bs.modal', function(event) {
                 const button = event.relatedTarget;
                 const exchange = button.getAttribute('data-exchange');
-                
+                const apiKey = button.getAttribute('data-api-key');
+                const exchangeDisplayName = button.closest('.list-group-item').querySelector('span:not(.badge)').textContent.trim() || (exchange.charAt(0).toUpperCase() + exchange.slice(1));
+
                 // Hide all forms first
-                document.querySelectorAll('.edit-exchange-form').forEach(form => {
-                    form.style.display = 'none';
-                });
-                
-                // Show the selected exchange form
-                const selectedForm = document.getElementById(`edit-${exchange}-form`);
-                if (selectedForm) {
-                    selectedForm.style.display = 'block';
+                const forms = editModal.querySelectorAll('.edit-exchange-form');
+                forms.forEach(form => form.style.display = 'none');
+
+                let targetForm;
+
+                if (exchange === 'coinbase-ccxt') {
+                    targetForm = document.getElementById('edit-coinbase-ccxt-form');
+                    if (targetForm) {
+                        const apiKeyInput = document.getElementById('edit_coinbase_ccxt-api_key');
+                        if (apiKeyInput && apiKey) apiKeyInput.value = apiKey;
+                        // Clear passphrase and secret for CCXT forms as they are write-once or not always applicable for edit
+                        const apiSecretInput = document.getElementById('edit_coinbase_ccxt-api_secret');
+                        if (apiSecretInput) apiSecretInput.value = ''; 
+                        const passphraseInput = document.getElementById('edit_coinbase_ccxt-passphrase');
+                        if (passphraseInput) passphraseInput.value = ''; 
+                    }
+                } else if (exchange === 'coinbase') {
+                    targetForm = document.getElementById('edit-coinbase-form');
+                    if (targetForm) {
+                        const apiKeyInput = document.getElementById('edit_coinbase-api_key');
+                        if (apiKeyInput && apiKey) apiKeyInput.value = apiKey;
+                        const apiSecretInput = document.getElementById('edit_coinbase-api_secret');
+                        if (apiSecretInput) apiSecretInput.value = ''; // Clear secret
+                    }
+                } else {
+                    // Fallback to generic CCXT form for other exchanges (e.g., kraken, binance)
+                    targetForm = document.getElementById('edit-generic-ccxt-form');
+                    if (targetForm) {
+                        document.getElementById('edit-generic-ccxt-title').textContent = `Edit ${exchangeDisplayName} API Keys`;
+                        document.getElementById('edit-generic-ccxt-logo').src = `/static/images/exchanges/${exchange}.svg`;
+                        document.getElementById('edit-generic-ccxt-exchange-name').value = exchange;
+                        const apiKeyInput = document.getElementById('edit_generic_ccxt-api_key');
+                        if (apiKeyInput && apiKey) apiKeyInput.value = apiKey;
+                        // Clear passphrase and secret for generic CCXT form
+                        const apiSecretInput = document.getElementById('edit_generic_ccxt-api_secret');
+                        if (apiSecretInput) apiSecretInput.value = '';
+                        // Note: Generic CCXT form does not have a passphrase field by default in this example
+                        // If it did, it would be: document.getElementById('edit_generic_ccxt-passphrase').value = '';
+                    }
                 }
-                
-                // Set the exchange value for the delete form
+
+                if (targetForm) {
+                    targetForm.style.display = 'block';
+                } else {
+                    console.warn(`Edit form for ${exchange} could not be found or initialized.`);
+                }
+
+                // Update delete modal's hidden input
+                const deleteExchangeInput = document.getElementById('delete-exchange');
                 if (deleteExchangeInput) {
                     deleteExchangeInput.value = exchange;
                 }

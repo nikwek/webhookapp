@@ -23,6 +23,7 @@ def initialize_exchange_adapters():
         "binance",
         "kraken",
         "kucoin",
+        "coinbase-ccxt",
     ]
 
     # 1. Register the native Coinbase adapter (non-ccxt)
@@ -38,7 +39,9 @@ def initialize_exchange_adapters():
         cfg_exchanges = current_app.config["CCXT_EXCHANGES"]
     env_exchanges = os.getenv("CCXT_EXCHANGES", "")
     if env_exchanges:
-        cfg_exchanges = [e.strip() for e in env_exchanges.split(",") if e.strip()]
+        cfg_exchanges = [  # noqa: E501
+            e.strip() for e in env_exchanges.split(",") if e.strip()
+        ]
 
     exchange_ids = cfg_exchanges or DEFAULT_CCXT_EXCHANGES
 
@@ -52,9 +55,13 @@ def initialize_exchange_adapters():
             )
             ExchangeRegistry.register(AdapterCls)
         except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to register CCXT adapter for %s: %s", exch_id, exc)
+            logger.error(  # noqa: E501
+                "Failed to register CCXT adapter for %s: %s", exch_id, exc
+            )
 
     # Log final registry
     registered_exchanges = ExchangeRegistry.get_all_exchanges()
-    logger.info("Registered exchange adapters: %s", ", ".join(registered_exchanges))
+    logger.info(  # noqa: E501
+        "Registered exchange adapters: %s", ", ".join(registered_exchanges)
+    )
     return registered_exchanges

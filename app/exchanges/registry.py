@@ -38,3 +38,8 @@ class ExchangeRegistry:
         if not cls._adapters:
             return None
         return next(iter(cls._adapters.keys()))
+
+    @classmethod
+    def get_all_adapter_classes(cls) -> List[Type[ExchangeAdapter]]:
+        """Get a list of all registered exchange adapter classes."""
+        return list(cls._adapters.values())

@@ -1,5 +1,5 @@
 # app/__init__.py
-from flask import Flask, flash, jsonify, render_template, request, session
+from flask import Flask, flash, jsonify, render_template, request
 from flask_security import user_authenticated, Security, SQLAlchemyUserDatastore
 from flask_security.forms import RegisterFormV2
 from flask_login import logout_user
@@ -82,10 +82,6 @@ def create_app(test_config=None):
         try:
             # Import models
             from app.models.user import User, Role
-            from app.models.automation import Automation
-            from app.models.webhook import WebhookLog
-            from app.models.exchange_credentials import ExchangeCredentials
-            from app.models.account_cache import AccountCache
 
             # Check if database needs to be created using inspect
             inspector = inspect(db.engine)
@@ -150,10 +146,6 @@ def create_app(test_config=None):
         app.register_blueprint(webhook.bp)
         app.register_blueprint(admin.bp)
         app.register_blueprint(automation.bp)
-
-        # Register coinbase blueprint
-        from app.routes.coinbase import bp as coinbase_bp
-        app.register_blueprint(coinbase_bp)
 
         # Import debug blueprint here (after app is created) to avoid circular imports
         from app.routes.debug import debug as debug_blueprint

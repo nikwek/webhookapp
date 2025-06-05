@@ -5,18 +5,12 @@ from app.models.exchange_credentials import ExchangeCredentials
 from app.models.webhook import WebhookLog
 from app.models.portfolio import Portfolio
 from app.services.exchange_service import ExchangeService
-from app.services.account_service import AccountService
 from datetime import datetime, timezone, timedelta
 from app import db
-from flask import current_app
 import logging
 import uuid
-import math
 import json
 import hashlib
-import time
-from sqlalchemy import and_, func
-from app.utils.circuit_breaker import circuit_breaker
 
 logger = logging.getLogger(__name__)
 

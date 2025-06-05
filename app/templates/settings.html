@@ -17,28 +17,23 @@
                     </button>
                 </div>
                 <div class="card-body">
-                    {% set connected_exchanges_list = [] %} 
-                    {% for ex_adapter_cls in available_exchange_adapters %} 
-                        {% if exchange_credentials.get(ex_adapter_cls.get_name()) %} 
-                            {% set _ = connected_exchanges_list.append(ex_adapter_cls) %} 
-                        {% endif %}
-                    {% endfor %}
-
-                    {% if connected_exchanges_list %} 
+                    {% if connected_exchanges %} 
                     <!-- List of connected exchanges -->
                     <div class="list-group">
-                        {% for ex_adapter_cls in connected_exchanges_list %}
-                        <div class="list-group-item d-flex justify-content-between align-items-center" data-exchange="{{ ex_adapter_cls.get_name() }}">
+                        {% for ex_data in connected_exchanges %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center" data-exchange="{{ ex_data.name }}">
                             <div class="d-flex align-items-center">
-                                <img src="{{ url_for('static', filename='images/exchanges/' + ex_adapter_cls.get_name() + '.svg') }}" alt="{{ ex_adapter_cls.get_display_name() or ex_adapter_cls.get_name()|capitalize }}" width="24" height="24" class="me-3">
-                                <span>{{ ex_adapter_cls.get_display_name() or ex_adapter_cls.get_name()|capitalize }}</span>
+                                <img src="{{ url_for('static', filename='images/exchanges/' + ex_data.logo) }}" alt="{{ ex_data.display_name }}" width="24" height="24" class="me-3">
+                                <span>{{ ex_data.display_name }}</span>
                             </div>
                             <div>
                                 <span class="badge bg-success me-2">Connected</span>
-                                <button class="btn btn-sm btn-outline-secondary me-1" data-bs-toggle="modal" data-bs-target="#editExchangeModal" data-exchange="{{ ex_adapter_cls.get_name() }}" data-api-key="{{ exchange_credentials.get(ex_adapter_cls.get_name()).api_key }}" title="Edit API Keys">
+                                {# Ensure user_creds_map and the specific exchange entry exist before trying to access api_key #}
+                                {% set cred = user_creds_map.get(ex_data.name) %}
+                                <button class="btn btn-sm btn-outline-secondary me-1" data-bs-toggle="modal" data-bs-target="#editExchangeModal" data-exchange="{{ ex_data.name }}" data-api-key="{{ cred.api_key if cred else '' }}" title="Edit API Keys">
                                     <i class="fas fa-edit"></i>
                                 </button>
-                                <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteApiKeysModal" data-exchange-name="{{ ex_adapter_cls.get_display_name() or ex_adapter_cls.get_name()|capitalize }}" data-exchange-value="{{ ex_adapter_cls.get_name() }}" title="Delete API Keys">
+                                <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteApiKeysModal" data-exchange-name="{{ ex_data.display_name }}" data-exchange-value="{{ ex_data.name }}" title="Delete API Keys">
                                     <i class="fas fa-trash-alt"></i>
                                 </button>
                             </div>
@@ -146,8 +141,10 @@
                     </div>
                 </div>
                 
-                <!-- Coinbase API form (initially hidden) -->
-                <div id="coinbase-form" class="exchange-form" style="display: none;">
+                <!-- Native Coinbase form removed -->
+                
+                <!-- Coinbase CCXT API form (initially hidden) -->
+                <div id="coinbase-ccxt-form" class="exchange-form" style="display: none;">
                     <div class="d-flex align-items-center mb-3">
                         <button type="button" class="btn btn-sm btn-outline-secondary me-3" onclick="showExchangeSelection()">
                             <i class="fas fa-arrow-left"></i>
@@ -156,87 +153,22 @@
                     </div>
                     
                     <div class="alert alert-info">
-                        <h5>How to get your API Keys:</h5>
+                        <h5>How to get your Coinbase API Keys:</h5>
                         <ol>
-                            <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a></li>
-                            <li>Click "New API Key"</li>
-                            <li>Give the API key a nickname (e.g., "Amazing Automation")</li>
-                            <li>Set Portfolio to <strong>"Default"</strong></li>
-                            <li>Check the View (read-only) box and nothing else</li>
-                            <li>Set an IP whitelist if desired (optional)</li>
-                            <li>Click "Create API Key" and you'll see your API Key and API Secret</li>
-                            <li>Copy and paste both values below (and maybe save them in a secure place as you won't be able to see the API Secret again)</li>
-                        </ol>
-                        <p>These API keys allow us to retrieve a list of portfolios.</p>
-                    </div>
-                    
-                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
-                        {{ form.csrf_token }}
-                        <input type="hidden" name="exchange" value="coinbase">
-                        <input type="hidden" name="form_name" value="coinbase_native_form">
-                        
-                        <div class="mb-3">
-                            {{ form.api_key.label(class="form-label") }}
-                            {{ form.api_key(id="add_coinbase-api_key", class="form-control") }}
-                            {% if form.api_key.errors %}
-                                <div class="invalid-feedback d-block">
-                                    {% for error in form.api_key.errors %}
-                                        {{ error }}
-                                    {% endfor %}
-                                </div>
-                            {% endif %}
-                        </div>
-                        
-                        <div class="mb-3">
-                            {{ form.api_secret.label(class="form-label") }}
-                            {{ form.api_secret(id="add_coinbase-api_secret", class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
-                            {% if form.api_secret.errors %}
-                                <div class="invalid-feedback d-block">
-                                    {% for error in form.api_secret.errors %}
-                                        {{ error }}
-                                    {% endfor %}
-                                </div>
-                            {% endif %}
-                        </div>
-                        
-                        <div class="d-flex justify-content-end">
-                            <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
-                            {{ form.submit(id="add_coinbase-submit", class="btn btn-primary", value="Save API Keys") }}
-                        </div>
-                    </form>
-                </div>
-                
-                <!-- Coinbase CCXT API form (initially hidden) -->
-                <div id="coinbase-ccxt-form" class="exchange-form" style="display: none;">
-                    <div class="d-flex align-items-center mb-3">
-                        <button type="button" class="btn btn-sm btn-outline-secondary me-3" onclick="showExchangeSelection()">
-                            <i class="fas fa-arrow-left"></i>
-                        </button>
-                        <h5 class="mb-0">Coinbase CCXT API Keys</h5>
-                    </div>
-                    
-                    <div class="alert alert-info">
-                        <h5>How to get your Coinbase Advanced Trading API Keys:</h5>
-                        <ol>
-                            <li>Log in to your Coinbase account.</li>
-                            <li>Navigate to your profile settings, then select the <strong>API</strong> section.</li>
-                            <li>Ensure you are on the <strong>Trading API</strong> tab (not the "Coinbase Sign-In API" or other legacy tabs).</li>
-                            <li>Click on <strong>"+ New API Key"</strong>.</li>
-                            <li>Select the portfolios you want this API key to access.</li>
-                            <li>Grant the following permissions:
+                            <li>Log in to your Coinbase account (make sure you are in Advanced mode).</li>
+                            <li>Click on the <strong>API</strong> icon in the menu.</li>
+                            <li>Click on <strong>"Create API Key"</strong>.</li>
+                            <li>Give the API key a name and select the <strong>Default</strong> portfolio.</li>
+                            <li>Grant all permissions:</li>
                                 <ul>
-                                    <li><code>wallet:accounts:read</code> (to read account balances)</li>
-                                    <li><code>wallet:orders:read</code> (to read orders)</li>
-                                    <li><code>wallet:orders:create</code> (to create orders)</li>
-                                    <li><code>wallet:fills:read</code> (to read trade history)</li>
-                                    <li><em>(Optional)</em> <code>wallet:transactions:read</code> (for transaction history)</li>
-                                    <li><em>(Optional)</em> <code>wallet:buys:create</code>, <code>wallet:buys:read</code>, <code>wallet:sells:create</code>, <code>wallet:sells:read</code> (for buy/sell operations)</li>
+                                    <li><code>View (read-only)</code></li>
+                                    <li><code>Trade (execute trades on your behalf)</code></li>
+                                    <li><code>Transfer (initiate transfer of funds)</code></li>
                                 </ul>
                             </li>
-                            <li>You may be prompted for 2-factor authentication.</li>
+                            <li>Click on <strong>Create and download</strong> You may be prompted for 2-factor authentication.</li>
                             <li>Coinbase will display your <strong>API Key</strong> and <strong>API Secret</strong>. Copy both immediately and store them securely, as the API Secret will not be shown again.</li>
                         </ol>
-                        <p>These API keys are for Coinbase Advanced Trading and are used by the CCXT integration.</p>
                     </div>
                     
                     <form method="POST" action="{{ url_for('dashboard.settings') }}">
@@ -435,69 +367,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <!-- Coinbase API form -->
-                <div id="edit-coinbase-form" class="edit-exchange-form" style="display: none;">
-                    <div class="d-flex align-items-center mb-3">
-                        <img src="{{ url_for('static', filename='images/exchanges/coinbase.svg') }}" alt="Coinbase" width="32" height="32" class="me-3">
-                        <h5 class="mb-0">Coinbase API Keys</h5>
-                    </div>
-                    
-                    <div class="alert alert-info">
-                        <h5>How to get your API Keys:</h5>
-                        <ol>
-                            <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a></li>
-                            <li>Click "New API Key"</li>
-                            <li>Give the API key a nickname (e.g., "Amazing Automation")</li>
-                            <li>Set Portfolio to <strong>"Default"</strong></li>
-                            <li>Check the View (read-only) box and nothing else</li>
-                            <li>Set an IP whitelist if desired (optional)</li>
-                            <li>Click "Create API Key" and you'll see your API Key and API Secret</li>
-                            <li>Copy and paste both values below (and maybe save them in a secure place as you won't be able to see the API Secret again)</li>
-                        </ol>
-                        <p>These API keys allow us to retrieve a list of portfolios.</p>
-                    </div>
-                    
-                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
-                        {{ form.csrf_token }}
-                        <input type="hidden" name="exchange" value="coinbase">
-                        <input type="hidden" name="form_name" value="coinbase_native_form">
-                        <input type="hidden" name="update" value="true">
-                        
-                        <div class="mb-3">
-                            {{ form.api_key.label(class="form-label") }}
-                            {{ form.api_key(id="edit_coinbase-api_key", class="form-control") }}
-                            {% if form.api_key.errors %}
-                                <div class="invalid-feedback d-block">
-                                    {% for error in form.api_key.errors %}
-                                        {{ error }}
-                                    {% endfor %}
-                                </div>
-                            {% endif %}
-                        </div>
-                        
-                        <div class="mb-3">
-                            {{ form.api_secret.label(class="form-label") }}
-                            {{ form.api_secret(id="edit_coinbase-api_secret", class="form-control", placeholder="-----BEGIN EC PRIVATE KEY-----\nYOUR PRIVATE KEY\n-----END EC PRIVATE KEY-----\n") }}
-                            {% if form.api_secret.errors %}
-                                <div class="invalid-feedback d-block">
-                                    {% for error in form.api_secret.errors %}
-                                        {{ error }}
-                                    {% endfor %}
-                                </div>
-                            {% endif %}
-                        </div>
-                        
-                        <div class="d-flex justify-content-between">
-                            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteApiKeysModal">
-                                Delete API Keys
-                            </button>
-                            <div>
-                                <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
-                                {{ form.submit(id="edit_coinbase-submit", class="btn btn-primary", value="Save Changes") }}
-                            </div>
-                        </div>
-                    </form>
-                </div>
+                                <!-- Native Coinbase edit form removed -->
                 
                 <!-- Generic CCXT API form (initially hidden, populated by JS) -->
                 <div id="edit-generic-ccxt-form" class="edit-exchange-form" style="display: none;">

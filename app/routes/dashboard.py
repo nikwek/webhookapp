@@ -1,19 +1,15 @@
-from datetime import datetime # Ensure datetime is imported for logging
+from datetime import datetime  # Ensure datetime is imported for logging
 from flask import (
     Blueprint, render_template, jsonify,
-    redirect, url_for, request, flash,
-    request
+    redirect, url_for, request, flash
 )
 from flask_security import login_required, current_user
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
 from app.models.exchange_credentials import ExchangeCredentials
-from app.models.portfolio import Portfolio
-from app.forms.api_key_form import CoinbaseAPIKeyForm, CcxtApiKeyForm
-from app.exchanges.coinbase_adapter import CoinbaseAdapter
+from app.forms.api_key_form import CcxtApiKeyForm
 from app.exchanges.ccxt_base_adapter import CcxtBaseAdapter
 from app.exchanges.registry import ExchangeRegistry
-from app.services.account_service import AccountService
 from typing import List, Dict, Any
 from app import db
 import logging
@@ -25,13 +21,10 @@ def flash_form_errors(form):
     """Flashes form errors to the user."""
     for field, errors in form.errors.items():
         for error in errors:
-            flash(f"Error in the {getattr(form, field).label.text} field - {error}", 'danger')
-
-
-
+            field_label = getattr(form, field).label.text
+            flash(f"Error in {field_label} field - {error}", 'danger')
 
 bp = Blueprint('dashboard', __name__)
-
 
 @bp.route('/dashboard')
 @login_required
@@ -49,19 +42,6 @@ def dashboard():
     # Get automations
     db_automations = Automation.query.filter_by(user_id=user_id).all()
 
-    # Get portfolios (used for automations linking to Coinbase Native portfolios)
-    all_user_portfolios = Portfolio.query.filter_by(user_id=user_id).all()
-
-    portfolios_map = {}
-    for p_model in all_user_portfolios:
-        portfolios_map[p_model.id] = p_model
-        # Check if this Portfolio model instance has Coinbase Native credentials
-        has_native_creds = ExchangeCredentials.query.filter_by(
-            portfolio_id=p_model.id,  # Links Portfolio.id
-            exchange=CoinbaseAdapter.get_name()  # For Coinbase native
-        ).first() is not None
-        p_model.has_credentials = has_native_creds
-
     automations_list = []
     for item in db_automations:
         url_root = request.url_root.rstrip('/')
@@ -73,38 +53,12 @@ def dashboard():
             'is_active': item.is_active,
             'trading_pair': item.trading_pair,
             'webhook_url': webhook_url,
-            'portfolio_name': None,
+            'portfolio_name': 'N/A (linking needs review)',  # Placeholder
             'portfolio_value': None,
-            'portfolio_status': 'disconnected'
+            'portfolio_status': 'unknown'  # Placeholder
         }
-
-        if item.portfolio_id and item.portfolio_id in portfolios_map:
-            linked_model = portfolios_map[item.portfolio_id]
-            automation_dict['portfolio_name'] = linked_model.name
-
-            if getattr(linked_model, 'has_credentials', False):
-                if getattr(linked_model, 'invalid_credentials', False):
-                    automation_dict['portfolio_status'] = 'invalid'
-                else:
-                    try:
-                        # Coinbase-specific via CoinbaseService
-                        value = AccountService.get_portfolio_value(
-                            user_id, linked_model.id
-                        )
-                        automation_dict['portfolio_value'] = value
-                        is_positive = value and float(value) > 0
-                        status = 'connected' if is_positive else 'empty'
-                        automation_dict['portfolio_status'] = status
-                    except Exception as e:
-                        logger.error(
-                            f"Error getting portfolio value for automation "
-                            f"{item.id} (portfolio {linked_model.id}): {e}",
-                            exc_info=True
-                        )
-                        automation_dict['portfolio_status'] = 'error'
-            else:
-                automation_dict['portfolio_status'] = 'disconnected'
-
+        # TODO: If automations need to link to CCXT exchanges, adapt the logic here.
+        # This might involve looking up ExchangeCredentials by a portfolio_id or another mechanism.
         automations_list.append(automation_dict)
 
     # --- New logic for Exchange Balances ---
@@ -122,7 +76,7 @@ def dashboard():
             continue
 
         logger.debug(f"Dashboard: ----- START Processing ex_name: {ex_name}, adapter_cls: {adapter_cls} -----")
-        
+
         _resolved_display_name = None
         if hasattr(adapter_cls, 'get_display_name'):
             logger.debug(f"Dashboard: adapter_cls '{adapter_cls.__name__}' for '{ex_name}' HAS get_display_name method.")
@@ -191,60 +145,6 @@ def dashboard():
                     )
                     pricing_errors.append({'asset': 'N/A', 'error': f'{e}'})
 
-        elif ex_name == CoinbaseAdapter.get_name():
-            cb_creds = [
-                c for c in all_creds if c.exchange == CoinbaseAdapter.get_name()
-                and c.portfolio_id is not None
-            ]
-            if not cb_creds:
-                logger.info(
-                    f"No Coinbase portfolio creds for user {user_id}"
-                )
-
-            for cred_item in cb_creds:
-                if hasattr(adapter_cls, 'get_portfolio_value'):
-                    try:
-                        logger.info(f"Dashboard: START get_portfolio_value for Coinbase portfolio {cred_item.portfolio_id} at {datetime.now()}") # Log start
-                        val_data = adapter_cls.get_portfolio_value(
-                            user_id=user_id,
-                            portfolio_id=cred_item.portfolio_id,
-                            currency="USD"
-                        )
-                        logger.info(f"Dashboard: END get_portfolio_value for Coinbase portfolio {cred_item.portfolio_id} at {datetime.now()}. Success: {val_data.get('success')}") # Log end
-                        if val_data.get('success'):
-                            total_value += float(val_data.get('value', 0.0))
-                        else:
-                            err_msg = val_data.get(
-                                'error', 'Unknown Coinbase error'
-                            )
-                            logger.warning(
-                                f"Could not get Coinbase portfolio value "
-                                f"{cred_item.portfolio_id} (user {user_id}): "
-                                f"{err_msg}"
-                            )
-                            asset_id = cred_item.portfolio_name or \
-                                cred_item.portfolio_id
-                            pricing_errors.append(
-                                {'asset': f'{asset_id}', 'error': err_msg}
-                            )
-                        processed_ok = True
-                    except Exception as e:
-                        logger.error(
-                            f"Error Coinbase portfolio value "
-                            f"{cred_item.portfolio_id} (user {user_id}): {e}",
-                            exc_info=True
-                        )
-                        asset_id = cred_item.portfolio_name or \
-                            cred_item.portfolio_id
-                        pricing_errors.append(
-                            {'asset': f'{asset_id}', 'error': f'{e}'}
-                        )
-        else:
-            logger.info(
-                f"Adapter for {ex_name} (user {user_id}) not recognized."
-            )
-            pricing_errors.append({'asset': 'N/A', 'error': 'Not supported'})
-
         if processed_ok or pricing_errors:
             connected_exchanges_display_data.append({
                 'name': ex_name, 
@@ -266,49 +166,6 @@ def dashboard():
         exchanges=connected_exchanges_display_data,
         has_any_exchange_keys=has_any_exchange_keys
     )
-
-
-@bp.route('/api/coinbase/portfolios')
-@login_required
-def get_coinbase_portfolios():
-    try:
-        # Get portfolios from database
-        db_portfolios = Portfolio.query.filter_by(
-            user_id=current_user.id
-        ).all()
-        
-        # Create portfolio data with connection status and value
-        portfolio_data = []
-        for p in db_portfolios:
-            # Check if portfolio has credentials
-            has_credentials = bool(ExchangeCredentials.query.filter_by(
-                portfolio_id=p.id,
-                exchange='coinbase'
-            ).first())
-            
-            # Get portfolio value if connected
-            portfolio_value = None
-            if has_credentials:
-                portfolio_value = AccountService.get_portfolio_value(current_user.id, p.id)
-            
-            portfolio_data.append({
-                'id': p.id,
-                'name': p.name,
-                'portfolio_id': p.portfolio_id,
-                'exchange': p.exchange,
-                'is_connected': has_credentials,
-                'value': portfolio_value
-            })
-        
-        return jsonify({
-            'has_credentials': True,
-            'portfolios': portfolio_data
-        })
-    except Exception as e:
-        return jsonify({
-            'has_credentials': False,
-            'error': str(e)
-        })
 
 
 @bp.route('/clear-logs', methods=['POST'])
@@ -333,174 +190,141 @@ def clear_logs():
 @login_required
 def settings():
     """Render the settings page and handle API key form submissions."""
-    coinbase_native_form = CoinbaseAPIKeyForm(prefix='cb_native')
     ccxt_form = CcxtApiKeyForm(prefix='ccxt')
 
     if request.method == 'POST':
-        logger.info("--- SETTINGS POST REQUEST ---")  
-        logger.info(f"Raw form data: {request.form.to_dict(flat=False)}")
+        logger.info("--- SETTINGS POST REQUEST ---")
+        raw_form_data_log = "Raw form data: %s"
+        logger.info(raw_form_data_log, request.form.to_dict(flat=False))
+        
         submitted_form_name = request.form.get('form_name')
-        logger.info(f"Submitted form_name: '{submitted_form_name}'")
+        logger.info("Submitted form_name: '%s'", submitted_form_name)
 
-        if submitted_form_name == 'coinbase_native_form':
-            logger.info("Attempting to validate coinbase_native_form")
-            if coinbase_native_form.validate_on_submit():
-                logger.info("coinbase_native_form validation SUCCESSFUL.")
-                api_key = coinbase_native_form.api_key.data
-                api_secret = coinbase_native_form.api_secret.data
-                try:
-                    is_valid, val_msg = CoinbaseAdapter.validate_api_keys(
-                        api_key, api_secret
-                    )
-                    if not is_valid:
-                        raise Exception(f"Coinbase key error: {val_msg}")
-                    logger.info("Coinbase API keys validated.")
-
-                    existing = ExchangeCredentials.query.filter_by(
-                        user_id=current_user.id, exchange='coinbase'
-                    ).first()
-                    if existing:
-                        existing.api_key = api_key
-                        existing.api_secret = existing.encrypt_secret(api_secret)
-                        existing.updated_at = db.func.now()
-                    else:
-                        is_default = not ExchangeCredentials.query.filter_by(
-                            user_id=current_user.id, is_default=True
-                        ).first()
-                        new = ExchangeCredentials(
-                            user_id=current_user.id, exchange='coinbase',
-                            api_key=api_key, portfolio_name='default',
-                            is_default=is_default
-                        )
-                        new.api_secret = new.encrypt_secret(api_secret)
-                        db.session.add(new)
-                    db.session.commit()
-                    flash('Coinbase API keys saved successfully!', 'success')
-                    return redirect(url_for('dashboard.settings'))
-                except Exception as e:
-                    db.session.rollback()
-                    logger.error(f"Error saving Coinbase keys: {e}", exc_info=True)
-                    flash(f'Error saving Coinbase API keys: {e}', 'danger')
-            else:
-                logger.warning(
-                    f"Native form validation FAILED: {coinbase_native_form.errors}"
-                )
-                flash_form_errors(coinbase_native_form)
-
-        elif submitted_form_name == 'ccxt_form':
-            exchange_id = request.form.get('exchange')
-            logger.info(f"Validating ccxt_form for exchange: {exchange_id}")
+        if submitted_form_name == 'ccxt_form':
+            form_exchange = request.form.get('exchange')
+            logger.info("Validating ccxt_form for exchange: %s", form_exchange)
             if ccxt_form.validate_on_submit():
-                logger.info(f"ccxt_form for {exchange_id} valid.")
+                logger.info("ccxt_form valid.")
                 api_key = ccxt_form.api_key.data
                 api_secret = ccxt_form.api_secret.data
-                password = getattr(ccxt_form, 'password', None)
-                password = password.data if password else None
-                uid = getattr(ccxt_form, 'uid', None)
-                uid = uid.data if uid else None
+                password_field = getattr(ccxt_form, 'password', None)
+                password = password_field.data if password_field else None
+                uid_field = getattr(ccxt_form, 'uid', None)
+                uid = uid_field.data if uid_field else None
 
-                adapter_cls = ExchangeRegistry.get_adapter(exchange_id)
+                adapter_cls = ExchangeRegistry.get_adapter(form_exchange)
                 if not adapter_cls:
-                    flash(f"Unknown exchange: {exchange_id}", 'danger')
+                    flash(f"Unknown exchange: {form_exchange}", 'danger')
                     return redirect(url_for('dashboard.settings'))
 
+                disp_name_try = "Unknown Exchange"
                 try:
+                    disp_name_try = adapter_cls.get_display_name()
                     is_valid, val_msg = adapter_cls.validate_api_keys(
                         api_key, api_secret, password=password, uid=uid
                     )
                     if not is_valid:
-                        disp_name = adapter_cls.get_display_name()
-                        raise Exception(f"{disp_name} key error: {val_msg}")
-                    logger.info(f"{adapter_cls.get_display_name()} API keys validated.")
+                        raise Exception(f"{disp_name_try} key error: {val_msg}")
+                    logger.info("%s API keys validated.", disp_name_try)
 
                     existing = ExchangeCredentials.query.filter_by(
-                        user_id=current_user.id, exchange=exchange_id
+                        user_id=current_user.id, exchange=form_exchange
                     ).first()
 
                     if existing:
                         existing.api_key = api_key
-                        existing.api_secret = existing.encrypt_secret(api_secret) # Re-encrypt on update
-                        existing.passphrase = password # Update passphrase (stored as is)
-                        # uid is not a field in ExchangeCredentials model
+                        existing.api_secret = existing.encrypt_secret(api_secret)
+                        existing.passphrase = password
                         existing.updated_at = db.func.now()
-                        logger.info(f"Updated credentials for {exchange_id}")
+                        logger.info("Updated credentials for %s", form_exchange)
                     else:
                         new = ExchangeCredentials(
                             user_id=current_user.id,
-                            exchange=exchange_id,
+                            exchange=form_exchange,
                             api_key=api_key,
-                            api_secret=api_secret,  # Pass to __init__ for encryption
-                            passphrase=password,    # Pass to __init__ (stored as is)
-                            portfolio_name='default'
+                            api_secret=api_secret,
+                            passphrase=password,
+                            portfolio_name='default' # Ensure this is appropriate
                         )
-                        # uid is not a field in ExchangeCredentials model
                         db.session.add(new)
-                        logger.info(f"Added new credentials for {exchange_id}")
+                        logger.info("Added new credentials for %s", form_exchange)
 
                     db.session.commit()
-                    disp_name = adapter_cls.get_display_name()
-                    flash(f'{disp_name} API keys saved!', 'success')
+                    flash(f'{disp_name_try} API keys saved!', 'success')
                     return redirect(url_for('dashboard.settings'))
                 except Exception as e:
                     db.session.rollback()
-                    disp_name = adapter_cls.get_display_name() if adapter_cls else exchange_id
-                    logger.error(f"Error saving {disp_name} keys: {e}", exc_info=True)
-                    flash(f'Error saving {disp_name} API keys: {e}', 'danger')
+                    # Use disp_name_try if adapter_cls was resolved, else fallback
+                    disp_name_catch = disp_name_try if adapter_cls else form_exchange
+                    logger.error("Error saving %s keys: %s", disp_name_catch, e, exc_info=True)
+                    flash(f'Error saving {disp_name_catch} API keys: {e}', 'danger')
             else:
-                logger.warning(
-                    f"ccxt_form for {exchange_id} FAILED: {ccxt_form.errors}"
-                )
+                logger.warning("ccxt_form FAILED: %s", ccxt_form.errors)
                 flash_form_errors(ccxt_form)
         else:
-            logger.warning(f"Unknown form_name: '{submitted_form_name}'")
+            logger.warning("Unknown form_name: '%s'", submitted_form_name)
             flash('Invalid form submission.', 'danger')
+        # Fall through to GET logic if POST doesn't redirect
 
-    user_creds = ExchangeCredentials.query.filter_by(user_id=current_user.id).all()
+    # --- GET Request Logic (or fall-through from POST) ---
+    user_id = current_user.id
+    user_creds = ExchangeCredentials.query.filter_by(user_id=user_id).all()
     exchange_creds_map = {cred.exchange: cred for cred in user_creds}
-    logger.info(
-        f"Settings GET: exchange_creds_map before passing to template: "
-        f"{ {k: v.id for k,v in exchange_creds_map.items()} }"
-    )
-    available_exchange_adapters = ExchangeRegistry.get_all_adapter_classes()
-    logger.info(
-        f"Settings GET: Names from available_exchange_adapters: "
-        f"{[adapter.get_name() for adapter in available_exchange_adapters]}"
-    )
+    
+    log_creds_map_str = "Settings GET: exchange_creds_map: %s"
+    logger.info(log_creds_map_str, {k: v.id for k, v in exchange_creds_map.items()})
 
-    # Pre-fill Coinbase native form if keys exist and not a POST submission that failed validation
-    if request.method == 'GET' and 'coinbase' in exchange_creds_map:
-        coinbase_native_form.api_key.data = exchange_creds_map['coinbase'].api_key
-        # Do not pre-fill secret
+    available_exchange_adapters = ExchangeRegistry.get_all_adapter_classes()
+    log_adapters_str = "Settings GET: Available adapter names: %s"
+    logger.info(log_adapters_str, [adapter.get_name() for adapter in available_exchange_adapters])
+
+    connected_exchanges_display_data: List[Dict[str, Any]] = []
+    unique_exchange_names_with_creds = sorted(list(set(cred.exchange for cred in user_creds)))
+
+    for ex_name_get in unique_exchange_names_with_creds:
+        adapter_cls_get = ExchangeRegistry.get_adapter(ex_name_get)
+        display_name_get = ex_name_get
+        logo_filename_get = f"{ex_name_get.lower()}.svg"
+
+        if adapter_cls_get:
+            try:
+                display_name_get = adapter_cls_get.get_display_name()
+            except AttributeError:
+                try:
+                    display_name_get = adapter_cls_get.get_name()
+                except AttributeError:
+                    logger.warning(
+                        "Settings: Adapter for %s has neither get_display_name nor get_name.", ex_name_get
+                    )
+            except Exception as e_disp_name_get:
+                logger.error("Settings: Error getting display name for %s: %s", ex_name_get, e_disp_name_get)
+            
+            if hasattr(adapter_cls_get, 'get_logo_filename'):
+                try:
+                    logo_filename_get = adapter_cls_get.get_logo_filename()
+                except Exception as e_logo_get:
+                    logger.warning(
+                        "Settings: Error getting logo for %s from adapter: %s. Using default.",
+                        ex_name_get, e_logo_get
+                    )
+        
+        connected_exchanges_display_data.append({
+            'name': ex_name_get,
+            'display_name': display_name_get,
+            'logo': logo_filename_get,
+        })
 
     return render_template(
         'settings.html',
-        coinbase_native_form=coinbase_native_form,
         ccxt_form=ccxt_form,
-        form=coinbase_native_form, 
+        connected_exchanges=connected_exchanges_display_data,
+        user_creds_map=exchange_creds_map,
         available_exchange_adapters=available_exchange_adapters,
-        exchange_credentials=exchange_creds_map,
-        has_coinbase_keys=bool(exchange_creds_map.get('coinbase')),
+        user=current_user
     )
 
 
 # ... (rest of the code remains the same)
-@bp.route('/settings/coinbase/delete', methods=['POST'])
-@login_required
-def delete_coinbase_api_keys():
-    """Delete Coinbase API keys"""
-    creds = ExchangeCredentials.query.filter_by(
-        user_id=current_user.id,
-        exchange='coinbase',
-        portfolio_name='default'
-    ).first()
-    
-    if creds:
-        db.session.delete(creds)
-        db.session.commit()
-        flash('Coinbase API keys deleted successfully!', 'success')
-    
-    return redirect(url_for('dashboard.settings'))
-
 
 # ------------------------------------------------------------------
 # Generic delete API keys endpoint (works for any exchange)

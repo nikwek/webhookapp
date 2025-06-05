@@ -1,7 +1,6 @@
 # app/exchanges/init_exchanges.py
 
 from app.exchanges.registry import ExchangeRegistry
-from app.exchanges.coinbase_adapter import CoinbaseAdapter
 from app.exchanges.ccxt_base_adapter import CcxtBaseAdapter
 import logging
 import os
@@ -25,9 +24,6 @@ def initialize_exchange_adapters():
         "kucoin",
         "coinbase-ccxt",
     ]
-
-    # 1. Register the native Coinbase adapter (non-ccxt)
-    ExchangeRegistry.register(CoinbaseAdapter)
 
     # 2. Dynamically generate and register CCXT adapters
     # ---------------------------------------------------

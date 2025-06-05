@@ -7,9 +7,8 @@ from app.models.automation import Automation
 from app.models.webhook import WebhookLog
 from app.models.portfolio import Portfolio
 from app.models.exchange_credentials import ExchangeCredentials
-from app.forms.portfolio_api_key_form import PortfolioAPIKeyForm
-from app.services.account_service import AccountService
-from app.services.coinbase_service import CoinbaseService
+from app.exchanges.registry import ExchangeRegistry
+from app.exchanges.base_adapter import InvalidApiKeyError, TemporaryExchangeError # Ensure these are correct exception classes
 from coinbase.rest import RESTClient
 from sqlalchemy import inspect
 import os
@@ -44,134 +43,6 @@ def get_user_automation(automation_id):
     ).first()
 
 
-def get_coinbase_portfolios(user_id):
-    """Helper function to get portfolios directly from Coinbase using the SDK"""
-    portfolios = []
-    
-    logger.info(f"Getting portfolios for user {user_id}")
-    
-    # Try to get any credentials for this user instead of just default ones
-    default_creds = ExchangeCredentials.query.filter_by(
-        user_id=user_id,
-        exchange='coinbase'
-    ).first()
-    
-    if not default_creds:
-        logger.warning(f"No API credentials found for user {user_id}")
-        flash("No API credentials found. Please set up your Coinbase API credentials first.", "warning")
-        return portfolios
-    
-    logger.info(f"Found credentials for user {user_id}: portfolio_name={default_creds.portfolio_name}, is_default={default_creds.is_default}")
-    
-    try:
-        # Get the API key and secret
-        api_key = default_creds.api_key
-        logger.info(f"Got API key: {api_key[:5]}...{api_key[-5:] if len(api_key) > 10 else ''}")
-        
-        api_secret = default_creds.decrypt_secret()
-        logger.info(f"Successfully decrypted API secret")
-        
-        # Initialize REST client
-        logger.info(f"Initializing Coinbase REST client")
-        client = RESTClient(api_key=api_key, api_secret=api_secret)
-        
-        # Get portfolios from Coinbase
-        logger.info(f"Fetching portfolios from Coinbase API")
-        response = client.get_portfolios()
-        
-        # Log the response type and structure
-        logger.info(f"API Response type: {type(response)}")
-        
-        # Handle the ListPortfoliosResponse object
-        if hasattr(response, 'portfolios'):
-            # If it's an object with a portfolios attribute
-            portfolios_list = response.portfolios
-            logger.info(f"Found {len(portfolios_list)} portfolios using .portfolios attribute")
-        elif isinstance(response, dict) and 'portfolios' in response:
-            # If it's a dictionary with portfolios key
-            portfolios_list = response['portfolios']
-            logger.info(f"Found {len(portfolios_list)} portfolios from response dictionary")
-        else:
-            # Try to convert the response to a dict if it's a custom object
-            try:
-                response_dict = vars(response)
-                if 'portfolios' in response_dict:
-                    portfolios_list = response_dict['portfolios']
-                    logger.info(f"Found {len(portfolios_list)} portfolios using vars(response)")
-                else:
-                    logger.warning(f"Could not find portfolios in response: {response_dict}")
-                    return portfolios
-            except Exception as e:
-                logger.warning(f"Error converting response to dict: {str(e)}")
-                if hasattr(response, '__dict__'):
-                    logger.info(f"Response __dict__: {response.__dict__}")
-                # Last resort: try to iterate over the response object directly
-                try:
-                    portfolios_list = list(response)
-                    logger.info(f"Treating response as iterable, found {len(portfolios_list)} items")
-                except Exception as e:
-                    logger.warning(f"Cannot iterate over response: {str(e)}")
-                    return portfolios
-        
-        # Process each portfolio
-        for p in portfolios_list:
-            
-            # Check if p is a dict or an object
-            if isinstance(p, dict):
-                portfolio_id = p.get('uuid')
-                portfolio_name = p.get('name')
-                deleted = p.get('deleted', False)
-            else:
-                # Try to access attributes
-                portfolio_id = getattr(p, 'uuid', None)
-                portfolio_name = getattr(p, 'name', None)
-                deleted = getattr(p, 'deleted', False)
-            
-            # Skip deleted portfolios
-            if deleted:
-                continue
-
-            # Log but include Default portfolio - we'll filter it at display time
-            if portfolio_name and portfolio_name.lower() == 'default':
-                logger.info(f"Found Default portfolio with ID: {portfolio_id}")
-                # We don't continue here because we want to include it in the DB for completeness
-                
-            if not portfolio_id or not portfolio_name:
-                continue
-                
-            # Check if portfolio exists in database
-            db_portfolio = Portfolio.query.filter_by(
-                user_id=user_id,
-                portfolio_id=portfolio_id
-            ).first()
-            
-            if not db_portfolio:
-                # Create new portfolio
-                db_portfolio = Portfolio(
-                    portfolio_id=portfolio_id,
-                    name=portfolio_name,
-                    user_id=user_id,
-                    exchange='coinbase'  # Add the exchange information
-                )
-                db.session.add(db_portfolio)
-                db.session.commit()
-            else:
-                logger.info(f"Found existing portfolio record with ID: {db_portfolio.id}")
-            
-            portfolios.append({
-                'id': db_portfolio.id,
-                'name': db_portfolio.name,
-                'exchange': 'coinbase'  # Add the exchange information
-            })
-            
-        logger.info(f"Returning {len(portfolios)} portfolios")
-                
-    except Exception as e:
-        logger.error(f"Error fetching portfolios from Coinbase: {str(e)}", exc_info=True)
-        flash(f"Error fetching portfolios: {str(e)}", "danger")
-    
-    return portfolios
-
 # @bp.route('/static/js/components/WebhookLogs.jsx')
 # def serve_component(filename):
 #     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -192,94 +63,101 @@ def view_automation(automation_id):
     if not automation:
         return render_template('404.html'), 404
 
-    # Get portfolio information if connected
     portfolio = None
-    portfolio_status = 'disconnected'
+    portfolio_status = 'disconnected' # Default status
 
     if automation.portfolio_id:
         portfolio = Portfolio.query.get(automation.portfolio_id)
 
         if portfolio:
-            # Check if portfolio has valid credentials
-            credentials = ExchangeCredentials.query.filter_by(
-                portfolio_id=portfolio.id,
-                exchange='coinbase'
-            ).first()
-            
-            has_valid_credentials = credentials is not None
-            portfolio.has_valid_credentials = has_valid_credentials
-            
-            if has_valid_credentials:
-                # Check if portfolio access is still valid
-                if portfolio.invalid_credentials:
-                    portfolio_status = 'invalid'
-                else:
-                    # Verify portfolio access
-                    try:
-                        # First try to get portfolio value
-                        portfolio_value = AccountService.get_portfolio_value(current_user.id, portfolio.id)
-                        if portfolio_value > 0:
-                            portfolio_status = 'connected'
-                            portfolio.value = portfolio_value
-                        else:
-                            # If value is 0, verify access directly
-                            if CoinbaseService.verify_portfolio_access(current_user.id, portfolio.id):
-                                portfolio_status = 'empty'
-                            else:
-                                portfolio_status = 'invalid'
-                                portfolio.invalid_credentials = True
-                                db.session.commit()
-                    except Exception as e:
-                        logger.error(f"Error verifying portfolio access: {str(e)}")
-                        portfolio_status = 'error'
+            if not portfolio.exchange:
+                current_app.logger.error(f"Portfolio {portfolio.id} (automation {automation_id}) is missing an exchange type.")
+                portfolio_status = 'error_misconfigured_portfolio'
             else:
-                portfolio_status = 'disconnected'
+                credential = ExchangeCredentials.query.filter_by(
+                    user_id=current_user.id,
+                    portfolio_id=portfolio.id
+                ).first()
+
+                if credential and credential.exchange != portfolio.exchange:
+                    current_app.logger.warning(
+                        f"Portfolio {portfolio.id} (type {portfolio.exchange}) has credential {credential.id} "
+                        f"for a different exchange ({credential.exchange}). Automation: {automation_id}. Treating as misconfigured."
+                    )
+                    portfolio_status = 'error_misconfigured_credential_mismatch'
+                    credential = None
+
+                has_valid_credentials = credential is not None
+
+                if has_valid_credentials:
+                    if portfolio.invalid_credentials or (hasattr(credential, 'is_valid') and not credential.is_valid):
+                        portfolio_status = 'invalid_known_bad_keys'
+                    else:
+                        try:
+                            adapter = ExchangeRegistry.get_adapter(portfolio.exchange)
+                            portfolio_data = adapter.get_portfolio_value(
+                                user_id=current_user.id, 
+                                portfolio_id=portfolio.id,
+                                credential_id=credential.id
+                            )
+                            
+                            portfolio_value_usd = portfolio_data.get('total_value_usd')
+
+                            if portfolio_value_usd is not None:
+                                if hasattr(portfolio, 'value'): # Check if attribute exists before setting
+                                    portfolio.value = portfolio_value_usd
+                                if portfolio_value_usd > 0:
+                                    portfolio_status = 'connected'
+                                else:
+                                    portfolio_status = 'empty'
+                            else:
+                                current_app.logger.warning(
+                                    f"Portfolio data for {portfolio.id} on {portfolio.exchange} (cred: {credential.id}) "
+                                    f"missing 'total_value_usd'. Data: {portfolio_data}. Automation: {automation_id}."
+                                )
+                                portfolio_status = 'error_missing_value_data'
+
+                        except InvalidApiKeyError:
+                            current_app.logger.warning(
+                                f"Invalid API key for portfolio {portfolio.id} (credential {credential.id}) "
+                                f"on exchange {portfolio.exchange}. Automation: {automation_id}."
+                            )
+                            portfolio_status = 'invalid_api_key'
+                            portfolio.invalid_credentials = True
+                            if hasattr(credential, 'is_valid'):
+                                credential.is_valid = False
+                                db.session.add(credential)
+                            db.session.commit()
+                        except TemporaryExchangeError as e:
+                            current_app.logger.error(
+                                f"Temporary exchange error for portfolio {portfolio.id} on {portfolio.exchange} "
+                                f"(cred: {credential.id}). Automation: {automation_id}. Error: {str(e)}"
+                            )
+                            portfolio_status = 'error_exchange_down'
+                        except Exception as e:
+                            current_app.logger.error(
+                                f"Error verifying portfolio access for {portfolio.id} on {portfolio.exchange} "
+                                f"(cred: {credential.id}). Automation: {automation_id}. Error: {str(e)}", exc_info=True
+                            )
+                            portfolio_status = 'error_general_verification'
+                else:
+                    portfolio_status = 'disconnected_no_credentials'
+        else:
+            current_app.logger.error(f"Portfolio with ID {automation.portfolio_id} not found for automation {automation_id}.")
+            portfolio_status = 'error_portfolio_not_found'
     
-    # For portfolio selection - only needed if no portfolio is connected or if credentials are invalid
-    portfolios = []
-    selected_portfolio = None
-    show_api_form = False
-    
-    if not portfolio or portfolio_status == 'invalid':
-        # Fetch portfolios from Coinbase
-        portfolios = get_coinbase_portfolios(current_user.id)
-        
-        # Check if portfolio was just selected
-        if 'selected_portfolio_id' in session:
-            portfolio_id = session.pop('selected_portfolio_id')
-            try:
-                portfolio_id = int(portfolio_id)  # Convert to int for comparison
-                for p in portfolios:
-                    if p['id'] == portfolio_id:
-                        selected_portfolio = p
-                        show_api_form = True
-                        break
-            except (ValueError, TypeError):
-                pass
-    
-    # Generate webhook URL using APPLICATION_URL if available
     webhook_url = None
     if current_app.config.get('APPLICATION_URL'):
         webhook_url = f"{current_app.config['APPLICATION_URL'].rstrip('/')}/webhook?automation_id={automation.automation_id}" if automation else None
     else:
         webhook_url = f"{request.url_root}webhook?automation_id={automation.automation_id}" if automation else None
         
-    # Check if user has Coinbase API keys for the exchange selection modal
-    has_coinbase_keys = ExchangeCredentials.query.filter_by(
-        user_id=current_user.id,
-        exchange='coinbase'
-    ).first() is not None
-
     return render_template(
         'automation.html', 
         automation=automation,
         portfolio=portfolio,
         portfolio_status=portfolio_status,
-        portfolios=portfolios,
-        selected_portfolio=selected_portfolio,
-        show_api_form=show_api_form,
-        webhook_url=webhook_url,
-        has_coinbase_keys=has_coinbase_keys
+        webhook_url=webhook_url
     )
 
 
@@ -328,16 +206,11 @@ def create_portfolio(automation_id):
         
         if not trading_creds:
             logger.info("No trading credentials found, will require manual setup")
-            # Check if user has non-default portfolios
-            portfolios = get_coinbase_portfolios(current_user.id)
-            # Filter out any portfolios named "Default"
-            non_default_portfolios = [p for p in portfolios if p.get('name', '').lower() != 'default']
-            has_portfolios = len(non_default_portfolios) > 0
-            
+            # User needs to set up credentials via the Exchange Settings page.
             return jsonify({
                 "success": False,
-                "needs_manual_setup": True,
-                "has_portfolios": has_portfolios
+                "needs_manual_setup": True
+                # "has_portfolios" key removed as it relied on native Coinbase logic
             }), 200
             
         # If we have trading credentials, attempt to create portfolio
@@ -749,17 +622,11 @@ def check_trading_credentials(automation_id):
         # If no trading credentials, guide user through setup
         if not trading_creds:
             logger.info("No trading credentials found, returning setup instructions")
-            
-            # Check if user has non-default portfolios
-            portfolios = get_coinbase_portfolios(current_user.id)
-            # Filter out any portfolios named "Default"
-            non_default_portfolios = [p for p in portfolios if p.get('name', '').lower() != 'default']
-            has_portfolios = len(non_default_portfolios) > 0
-            
+            # User needs to set up credentials via the Exchange Settings page.
             return jsonify({
                 "success": False,
-                "needs_manual_setup": True,
-                "has_portfolios": has_portfolios
+                "needs_manual_setup": True
+                # "has_portfolios" key removed as it relied on native Coinbase logic
             }), 200
 
         logger.info("Trading credentials found, user can create portfolio")
@@ -860,393 +727,6 @@ def debug_credentials():
         logger.error(f"Error in debug_credentials: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)})
 
-@bp.route('/debug/portfolios')
-@api_login_required
-def debug_portfolios():
-    try:
-        # Get all portfolios in the database
-        db_portfolios = Portfolio.query.filter_by(
-            user_id=current_user.id
-        ).all()
-        
-        portfolio_list = []
-        for p in db_portfolios:
-            portfolio_list.append({
-                'id': p.id,
-                'portfolio_id': p.portfolio_id,
-                'name': p.name,
-                'exchange': p.exchange
-            })
-        
-        # Try to fetch portfolios directly from Coinbase
-        portfolios_from_coinbase = []
-        api_response_info = {}
-        
-        try:
-            # Try to get any credentials
-            cred = ExchangeCredentials.query.filter_by(
-                user_id=current_user.id,
-                exchange='coinbase'
-            ).first()
-            
-            if cred:
-                api_key = cred.api_key
-                api_secret = cred.decrypt_secret()
-                
-                client = RESTClient(api_key=api_key, api_secret=api_secret)
-                response = client.get_portfolios()
-                
-                # Store information about the response
-                api_response_info['type'] = str(type(response))
-                api_response_info['dir'] = dir(response)
-                
-                if hasattr(response, 'portfolios'):
-                    # It's an object with a portfolios attribute
-                    portfolio_objects = response.portfolios
-                    api_response_info['access_method'] = 'attribute'
-                elif isinstance(response, dict) and 'portfolios' in response:
-                    # It's a dictionary with portfolios key
-                    portfolio_objects = response['portfolios']
-                    api_response_info['access_method'] = 'dict_key'
-                else:
-                    # Try to convert to dict
-                    try:
-                        response_dict = vars(response)
-                        api_response_info['vars'] = response_dict
-                        if 'portfolios' in response_dict:
-                            portfolio_objects = response_dict['portfolios']
-                            api_response_info['access_method'] = 'vars'
-                        else:
-                            portfolio_objects = []
-                            api_response_info['error'] = 'No portfolios in vars(response)'
-                    except:
-                        # Try to iterate
-                        try:
-                            portfolio_objects = list(response)
-                            api_response_info['access_method'] = 'iterate'
-                        except:
-                            portfolio_objects = []
-                            api_response_info['error'] = 'Cannot iterate over response'
-                
-                # Try to convert each portfolio to a dict
-                for p in portfolio_objects:
-                    if isinstance(p, dict):
-                        portfolios_from_coinbase.append(p)
-                    else:
-                        try:
-                            # Try to get all attributes
-                            p_dict = {attr: getattr(p, attr) for attr in dir(p) 
-                                     if not callable(getattr(p, attr)) and not attr.startswith('_')}
-                            portfolios_from_coinbase.append(p_dict)
-                        except Exception as e:
-                            portfolios_from_coinbase.append({
-                                'object': str(p),
-                                'error': str(e)
-                            })
-        except Exception as e:
-            api_response_info['error'] = str(e)
-            
-        return jsonify({
-            'database_portfolios': portfolio_list,
-            'coinbase_portfolios': portfolios_from_coinbase,
-            'api_response_info': api_response_info
-        })
-    except Exception as e:
-        logger.error(f"Error in debug_portfolios: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)})
-    
-@bp.route('/debug/account-data/<portfolio_id>')
-@api_login_required
-def debug_account_data(portfolio_id):
-    """Debug endpoint to check account data for a portfolio"""
-    try:
-        # Convert portfolio_id to integer if it's a string
-        if isinstance(portfolio_id, str) and portfolio_id.isdigit():
-            portfolio_id = int(portfolio_id)
-            
-        # Get the Portfolio object for reference
-        portfolio = Portfolio.query.get(portfolio_id)
-        
-        # Get accounts from AccountService
-        accounts = AccountService.get_accounts(
-            user_id=current_user.id,
-            portfolio_id=portfolio_id,
-            force_refresh=True  # Force refresh to get latest data
-        )
-        
-        # Prepare account information for display
-        account_data = []
-        for acct in accounts:
-            account_data.append({
-                'id': acct.id,
-                'account_id': acct.account_id,
-                'name': acct.name,
-                'currency_code': acct.currency_code,
-                'balance_amount': acct.balance_amount,
-                'available_amount': acct.available_amount,
-                'hold_amount': acct.hold_amount,
-                'last_cached_at': acct.last_cached_at.isoformat() if acct.last_cached_at else None
-            })
-        
-        # Calculate portfolio value
-        portfolio_value = AccountService.get_portfolio_value(
-            user_id=current_user.id,
-            portfolio_id=portfolio_id
-        )
-        
-        # Return debug information
-        return jsonify({
-            'portfolio': {
-                'id': portfolio.id if portfolio else None,
-                'name': portfolio.name if portfolio else None, 
-                'portfolio_id': portfolio.portfolio_id if portfolio else None
-            },
-            'portfolio_value': portfolio_value,
-            'account_count': len(accounts),
-            'accounts': account_data
-        })
-    except Exception as e:
-        logger.error(f"Error debugging account data: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-@bp.route('/debug/direct-balance/<portfolio_uuid>')
-@api_login_required
-def debug_direct_balance(portfolio_uuid):
-    """Debug endpoint to check direct account balance for a portfolio"""
-    try:
-        # Try to find portfolio by UUID first
-        portfolio = Portfolio.query.filter_by(
-            portfolio_id=portfolio_uuid,
-            user_id=current_user.id
-        ).first()
-        
-        if not portfolio:
-            return jsonify({
-                "error": f"Portfolio with UUID {portfolio_uuid} not found"
-            }), 404
-            
-        # Now we have the database ID to use
-        portfolio_id = portfolio.id
-        
-        # Get appropriate credentials
-        creds = ExchangeCredentials.query.filter_by(
-            user_id=current_user.id,
-            portfolio_id=portfolio_id,
-            exchange='coinbase'
-        ).first()
-        
-        if not creds:
-            return jsonify({
-                "error": "No credentials found for this portfolio",
-                "portfolio": {
-                    "id": portfolio.id,
-                    "name": portfolio.name,
-                    "portfolio_id": portfolio.portfolio_id
-                }
-            })
-        
-        logger.info(f"Using credentials: id={creds.id}, portfolio_name={creds.portfolio_name}")
-        
-        # Get direct balance
-        balance = CoinbaseService.get_portfolio_balance(
-            user_id=current_user.id,
-            portfolio_id=portfolio_id
-        )
-        
-        # Return debug information
-        return jsonify({
-            'portfolio': {
-                'id': portfolio.id,
-                'name': portfolio.name, 
-                'portfolio_id': portfolio.portfolio_id
-            },
-            'credentials': {
-                'id': creds.id,
-                'portfolio_name': creds.portfolio_name,
-                'has_api_key': bool(creds.api_key),
-                'has_api_secret': bool(creds.api_secret)
-            },
-            'direct_balance': balance
-        })
-    except Exception as e:
-        logger.error(f"Error getting direct balance: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-    
-@bp.route('/debug/portfolio-value/<portfolio_uuid>')
-@api_login_required
-def debug_portfolio_value(portfolio_uuid):
-    """Debug endpoint to check portfolio value using the breakdown API"""
-    try:
-        # Find portfolio by UUID
-        portfolio = Portfolio.query.filter_by(
-            portfolio_id=portfolio_uuid,
-            user_id=current_user.id
-        ).first()
-        
-        if not portfolio:
-            return jsonify({
-                "error": f"Portfolio with UUID {portfolio_uuid} not found"
-            }), 404
-            
-        # Find credentials specifically for this portfolio
-        creds = ExchangeCredentials.query.filter_by(
-            user_id=current_user.id,
-            portfolio_id=portfolio.id,
-            exchange='coinbase'
-        ).first()
-        
-        if not creds:
-            return jsonify({
-                "error": "No credentials found for this portfolio",
-                "portfolio": {
-                    "id": portfolio.id,
-                    "name": portfolio.name,
-                    "portfolio_id": portfolio.portfolio_id
-                }
-            })
-        
-        # Create client with these specific credentials
-        client = CoinbaseService.get_client_from_credentials(creds)
-        if not client:
-            return jsonify({"error": "Failed to create Coinbase client"})
-        
-        # Get portfolio breakdown
-        try:
-            breakdown = client.get_portfolio_breakdown(portfolio_uuid=portfolio_uuid)
-            
-            # Try to extract total value
-            total_value = 0.0
-            
-            if hasattr(breakdown, 'breakdown') and hasattr(breakdown.breakdown, 'portfolio_balances'):
-                balances = breakdown.breakdown.portfolio_balances
-                if hasattr(balances, 'total_balance') and hasattr(balances.total_balance, 'value'):
-                    total_value_str = balances.total_balance.value
-                    total_value = float(total_value_str)
-            elif isinstance(breakdown, dict) and 'breakdown' in breakdown:
-                breakdown_data = breakdown['breakdown']
-                if 'portfolio_balances' in breakdown_data:
-                    balances = breakdown_data['portfolio_balances']
-                    if 'total_balance' in balances and 'value' in balances['total_balance']:
-                        total_value_str = balances['total_balance']['value']
-                        total_value = float(total_value_str)
-            
-            return jsonify({
-                'portfolio': {
-                    'id': portfolio.id,
-                    'name': portfolio.name, 
-                    'portfolio_id': portfolio.portfolio_id
-                },
-                'credentials_used': {
-                    'id': creds.id,
-                    'portfolio_name': creds.portfolio_name
-                },
-                'portfolio_value': total_value,
-                'raw_response': str(breakdown)[:1000]  # Truncate for readability
-            })
-        except Exception as e:
-            return jsonify({
-                "error": f"Error calling get_portfolio_breakdown: {str(e)}",
-                "portfolio_uuid": portfolio_uuid,
-                "credentials_used": {
-                    'id': creds.id,
-                    'portfolio_name': creds.portfolio_name
-                }
-            })
-    except Exception as e:
-        logger.error(f"Error getting portfolio value: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-    
-@bp.route('/debug/portfolio-breakdown/<portfolio_uuid>')
-@api_login_required
-def debug_portfolio_breakdown(portfolio_uuid):
-    """Debug endpoint to show the raw portfolio breakdown response"""
-    try:
-        # Get credentials for this user
-        creds = ExchangeCredentials.query.filter_by(
-            user_id=current_user.id,
-            exchange='coinbase'
-        ).first()
-        
-        if not creds:
-            return jsonify({"error": "No API credentials found"})
-        
-        # Create client
-        client = CoinbaseService.get_client_from_credentials(creds)
-        if not client:
-            return jsonify({"error": "Failed to create Coinbase client"})
-        
-        # Get portfolio breakdown
-        try:
-            breakdown = client.get_portfolio_breakdown(portfolio_uuid=portfolio_uuid)
-            
-            # Inspect the response
-            response_info = {
-                "type": str(type(breakdown)),
-                "attrs": dir(breakdown) if hasattr(breakdown, "__dir__") else None,
-                "dict": vars(breakdown) if hasattr(breakdown, "__dict__") else None
-            }
-            
-            # Try to extract the breakdown data
-            breakdown_data = None
-            if hasattr(breakdown, 'breakdown'):
-                breakdown_data = breakdown.breakdown
-                response_info["extraction_method"] = "breakdown attribute"
-            elif isinstance(breakdown, dict) and 'breakdown' in breakdown:
-                breakdown_data = breakdown['breakdown']
-                response_info["extraction_method"] = "breakdown dict key"
-            
-            # Convert breakdown_data to a serializable form
-            serializable_breakdown = None
-            if breakdown_data:
-                if isinstance(breakdown_data, dict):
-                    serializable_breakdown = breakdown_data
-                else:
-                    try:
-                        # Try to convert to dict
-                        serializable_breakdown = vars(breakdown_data)
-                    except:
-                        # If that fails, try a custom approach
-                        try:
-                            serializable_breakdown = {
-                                "portfolio": {
-                                    "name": getattr(breakdown_data, "name", None),
-                                    "uuid": getattr(breakdown_data, "uuid", None),
-                                    "type": getattr(breakdown_data, "type", None),
-                                    "deleted": getattr(breakdown_data, "deleted", None)
-                                }
-                            }
-                            
-                            # Try to extract portfolio_balances
-                            balances = getattr(breakdown_data, "portfolio_balances", None)
-                            if balances:
-                                serializable_breakdown["portfolio_balances"] = {}
-                                
-                                # Extract total_balance
-                                total_balance = getattr(balances, "total_balance", None)
-                                if total_balance:
-                                    serializable_breakdown["portfolio_balances"]["total_balance"] = {
-                                        "value": getattr(total_balance, "value", None),
-                                        "currency": getattr(total_balance, "currency", None)
-                                    }
-                        except Exception as e:
-                            response_info["custom_extraction_error"] = str(e)
-            
-            return jsonify({
-                "portfolio_uuid": portfolio_uuid,
-                "response_info": response_info,
-                "breakdown": serializable_breakdown
-            })
-        except Exception as e:
-            return jsonify({
-                "error": f"Error calling get_portfolio_breakdown: {str(e)}",
-                "portfolio_uuid": portfolio_uuid
-            })
-            
-    except Exception as e:
-        logger.error(f"Error in debug_portfolio_breakdown: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-    
 @bp.route('/test-route/<automation_id>')
 def test_automation_route(automation_id):
     return f"Automation ID: {automation_id}"

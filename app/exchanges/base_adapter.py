@@ -164,3 +164,13 @@ class ExchangeAdapter(ABC):
         Coinbase (Native) might use something like 'default' (lowercase).
         """
         return "Default" # Default implementation
+
+
+class InvalidApiKeyError(Exception):
+    """Custom exception for invalid API keys."""
+    pass
+
+
+class TemporaryExchangeError(Exception):
+    """Custom exception for temporary exchange errors (e.g., network issues, rate limits)."""
+    pass

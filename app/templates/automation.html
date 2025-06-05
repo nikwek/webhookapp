@@ -60,23 +60,33 @@
             {% else %}
             <div id="automationDetails">
                 <!-- Portfolio Section -->
-                {% if portfolio %}
-                <!-- Portfolio is already connected -->
                 <div class="card mb-4">
-                    <div class="card-header bg-success bg-opacity-10">
-                        <h5 class="mb-0">Connected Portfolio</h5>
+                    {% if portfolio %}
+                        {% set card_header_class = 'bg-light' %}
+                        {% set card_icon = '' %}
+                        {% if portfolio_status == 'connected' %}
+                            {% set card_header_class = 'bg-success bg-opacity-10' %}
+                            {% set card_icon = '<i class="fas fa-check-circle text-success me-2"></i>' %}
+                        {% elif portfolio_status == 'empty' %}
+                            {% set card_header_class = 'bg-info bg-opacity-10' %}
+                            {% set card_icon = '<i class="fas fa-info-circle text-info me-2"></i>' %}
+                        {% elif portfolio_status.startswith('invalid_') or portfolio_status.startswith('error_') %}
+                            {% set card_header_class = 'bg-danger bg-opacity-10' %}
+                            {% set card_icon = '<i class="fas fa-exclamation-triangle text-danger me-2"></i>' %}
+                        {% elif portfolio_status.startswith('disconnected') %}
+                            {% set card_header_class = 'bg-warning bg-opacity-10' %}
+                            {% set card_icon = '<i class="fas fa-plug text-warning me-2"></i>' %}
+                        {% endif %}
+
+                    <div class="card-header {{ card_header_class }}">
+                        <h5 class="mb-0">{{ card_icon|safe }}Connected Portfolio</h5>
                     </div>
                     <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
                             <div>
                                 <p class="mb-1"><strong>Portfolio:</strong> {{ portfolio.name }}</p>
-                                <p class="mb-1"><strong>Exchange:</strong> {{ portfolio.exchange|capitalize }}</p>
-                                {% if portfolio.has_valid_credentials == false or portfolio_status == 'invalid' %}
-                                <div class="alert alert-warning mt-2">
-                                    <i class="fas fa-exclamation-triangle me-2"></i>
-                                    <strong>API Keys Missing or Invalid:</strong> Your Coinbase API keys for this portfolio are no longer valid.
-                                </div>
-                                {% elif portfolio.value is defined and portfolio.value is not none %}
+                                <p class="mb-1"><strong>Exchange:</strong> {{ portfolio.exchange|default('N/A')|capitalize }}</p>
+                                {% if portfolio.value is defined and portfolio.value is not none and portfolio_status == 'connected' %}
                                 <p class="mb-0">
                                     <strong>Value:</strong> 
                                     <span class="text-success">${{ "%.2f"|format(portfolio.value) }}</span>
@@ -86,168 +96,54 @@
                             <form method="POST" action="{{ url_for('automation.disconnect_portfolio', automation_id=automation.automation_id) }}">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-outline-danger btn-sm" 
-                                        onclick="return confirm('Are you sure you want to disconnect this portfolio?');">
-                                    Disconnect Portfolio
+                                        onclick="return confirm('Are you sure you want to disconnect this portfolio? This will stop any trades for this automation.');">
+                                    <i class="fas fa-unlink me-1"></i> Disconnect
                                 </button>
                             </form>
                         </div>
-                    </div>
-                </div>
-                
-                {% else %}
-                <!-- No portfolio connected yet -->
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5 class="mb-0">Connect a Portfolio</h5>
-                    </div>
-                    <div class="card-body">
-                        <!-- Step 1: Portfolio Selection Section -->
-                        <div id="portfolio-selection-section" {% if show_api_form %}class="d-none"{% endif %}>
-                            <p class="text-muted mb-3">
-                                Connect your exchange portfolio to this automation to execute trades.
-                            </p>
-                            
-                            {% if portfolios %}
-                            <form id="select-portfolio-form" method="POST" action="{{ url_for('automation.select_portfolio', automation_id=automation.automation_id) }}">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <div class="mb-3">
-                                    <label for="portfolio_id" class="form-label">Select a portfolio:</label>
-                                    <select class="form-select" id="portfolio_id" name="portfolio_id" required>
-                                        <option value="">-- Select a portfolio --</option>
-                                        {% for portfolio in portfolios %}
-                                            {% if portfolio.name.lower() != 'default' %}
-                                                <option value="{{ portfolio.id }}">{{ portfolio.exchange | title }} - {{ portfolio.name }}</option>
-                                            {% endif %}
-                                        {% endfor %}
-                                    </select>
-                                </div>
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#createPortfolioModal">
-                                        <i class="fas fa-plus-circle me-1"></i> Create New Portfolio
-                                    </button>
-                                    <div>
-                                        <button type="button" id="refreshPortfoliosBtn" class="btn btn-outline-primary me-2">
-                                            <i class="fas fa-sync-alt me-1"></i> Refresh List
-                                        </button>
-                                        <button type="submit" class="btn btn-primary">Next</button>
-                                    </div>
-                                </div>
-                            </form>
-                            {% else %}
-                            <div class="alert alert-warning">
-                                <h6>No portfolios found</h6>
-                                <p>We couldn't find any portfolios associated with your connected exchanges. This could be because:</p>
-                                <ul>
-                                    <li>You haven't connected any exchanges yet</li>
-                                    <li>Your API credentials don't have permission to view portfolios</li>
-                                    <li>You don't have any portfolios set up on your exchanges</li>
-                                </ul>
-                                <div class="mt-3">
-                                    <a href="{{ url_for('dashboard.settings') }}" class="btn btn-primary me-2">Setup API Credentials</a>
-                                    <button type="button" id="refreshPortfoliosBtn" class="btn btn-outline-primary">
-                                        <i class="fas fa-sync-alt me-1"></i> Refresh List
-                                    </button>
-                                </div>
-                            </div>
-                            {% endif %}
-                            
-                            <!-- The portfolio instructions alert will be inserted here dynamically -->
-                        </div>
 
-                        <!-- Updated Modal for Portfolio Creation -->
-                        <div class="modal fade" id="createPortfolioModal" tabindex="-1">
-                            <div class="modal-dialog">
-                                <div class="modal-content">
-                                    <div class="modal-header">
-                                        <h5 class="modal-title">Create New Portfolio</h5>
-                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                    </div>
-                                    <div class="modal-body">
-                                        <!-- Exchange Selection Screen -->
-                                        <div id="exchange-selection-screen">
-                                            <p class="mb-3">Select the exchange for your new portfolio:</p>
-                                            <div class="d-flex flex-wrap justify-content-center gap-3 mb-3">
-                                                {% if has_coinbase_keys %}
-                                                <div class="exchange-option p-3 border rounded text-center" onclick="selectExchangeForPortfolio('coinbase')">
-                                                    <img src="{{ url_for('static', filename='images/exchanges/coinbase.svg') }}" alt="Coinbase" width="64" height="64" class="mb-2">
-                                                    <p class="mb-0">Coinbase</p>
-                                                </div>
-                                                {% endif %}
-                                                <!-- More exchanges will be added here automatically as they are connected -->
-                                            </div>
-                                            
-                                            {% if not has_coinbase_keys %}
-                                            <div class="alert alert-warning">
-                                                <p class="mb-0">You need to connect an exchange first before creating a portfolio.</p>
-                                                <a href="{{ url_for('dashboard.settings') }}" class="btn btn-primary mt-2">Connect Exchange</a>
-                                            </div>
-                                            {% endif %}
-                                        </div>
-                                        
-                                        <!-- Portfolio Creation Form (Initially Hidden) -->
-                                        <div id="portfolio-creation-form" style="display: none;">
-                                            <div class="d-flex align-items-center mb-3">
-                                                <button type="button" class="btn btn-sm btn-outline-secondary me-3" onclick="showExchangeSelectionForPortfolio()">
-                                                    <i class="fas fa-arrow-left"></i>
-                                                </button>
-                                                <div class="d-flex align-items-center">
-                                                    <img id="selected-exchange-icon" src="" alt="Exchange" width="24" height="24" class="me-2">
-                                                    <h6 class="mb-0" id="selected-exchange-name"></h6>
-                                                </div>
-                                            </div>
-                                            <form id="createPortfolioForm">
-                                                <input type="hidden" id="selectedExchange" name="exchange">
-                                                <div class="mb-3">
-                                                    <label for="portfolioName" class="form-label">Portfolio Name</label>
-                                                    <input type="text" class="form-control" id="portfolioName" required>
-                                                    <div class="form-text">Choose a name for your trading portfolio</div>
-                                                </div>
-                                                <div class="d-flex justify-content-end">
-                                                    <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
-                                                    <button type="submit" class="btn btn-primary">Create</button>
-                                                </div>
-                                            </form>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- API Key Form Section -->
-                        <div id="api-key-form-section" {% if not show_api_form %}class="d-none"{% endif %}>
-                            <h5 class="mb-3">Connect API Keys for {{ selected_portfolio.name if selected_portfolio else 'Portfolio' }}</h5>
-                            
-                            <div class="alert alert-info mb-4">
-                                {% if selected_portfolio and selected_portfolio.exchange and selected_portfolio.exchange.lower() == 'coinbase' %}
-                                <h6 class="fw-bold">How to get your Coinbase API Keys:</h6>
-                                <ol>
-                                    <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a></li>
-                                    <li>Click "New API Key"</li>
-                                    <li>Give the API key a nickname (e.g., "{{ automation.name }}")</li>
-                                    <li>Under Portfolio, select "{{ selected_portfolio.name if selected_portfolio else 'Default' }}"</li>
-                                    <li>Check the ✅ View (read-only), and the ✅ Trade (execute trades on your behalf) boxes</li>
-                                    <li>Set an IP whitelist if desired (optional)</li>
-                                    <li>Click "Create API Key" and you'll see your API Key and API Secret</li>
-                                    <li>Copy and paste both values below (you won't be able to see the API Secret again)</li>
-                                </ol>
-                                {% else %}
-                                <h6 class="fw-bold">How to get your {{ selected_portfolio.exchange | default('Exchange') | title }} API Keys:</h6>
-                                <p>Please follow the API key generation instructions for your specific exchange.</p>
-                                <p>Make sure to:</p>
-                                <ul>
-                                    <li>Select the "{{ selected_portfolio.name if selected_portfolio else 'Default' }}" portfolio if applicable</li>
-                                    <li>Enable both read and trade permissions for the API key</li>
-                                    <li>Copy both the API Key and API Secret before leaving the exchange's API settings page</li>
-                                </ul>
+                        {% if portfolio_status != 'connected' and portfolio_status != 'empty' %}
+                        <div class="alert 
+                            {% if portfolio_status.startswith('invalid_') or portfolio_status.startswith('error_misconfigured') %} alert-danger 
+                            {% elif portfolio_status.startswith('error_') %} alert-warning
+                            {% elif portfolio_status.startswith('disconnected') %} alert-info
+                            {% else %} alert-secondary {% endif %} mt-2 small">
+                            <h6 class="alert-heading mb-1">
+                                {% if portfolio_status == 'invalid_api_key' %}API Key Invalid
+                                {% elif portfolio_status == 'invalid_known_bad_keys' %}Credentials Problem
+                                {% elif portfolio_status == 'error_exchange_down' %}Exchange Connectivity Issue
+                                {% elif portfolio_status == 'error_general_verification' %}Verification Error
+                                {% elif portfolio_status == 'error_misconfigured_portfolio' %}Portfolio Misconfiguration
+                                {% elif portfolio_status == 'error_misconfigured_credential_mismatch' %}Credential Mismatch
+                                {% elif portfolio_status == 'error_portfolio_not_found' %}Portfolio Not Found
+                                {% elif portfolio_status == 'error_missing_value_data' %}Data Retrieval Issue
+                                {% elif portfolio_status == 'disconnected_no_credentials' %}No API Keys
+                                {% else %}Status: {{ portfolio_status|replace('_', ' ')|capitalize }}
                                 {% endif %}
-                            </div>
-                            
-                            <form method="POST" action="{{ url_for('automation.save_api_keys', automation_id=automation.automation_id) }}">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="portfolio_id" value="{{ selected_portfolio.id }}">
-                                <input type="hidden" name="portfolio_name" value="{{ selected_portfolio.name }}">
-                                
-                                <div class="mb-3">
+                            </h6>
+                            {% if portfolio_status == 'invalid_api_key' %}
+                                The API keys for this portfolio are invalid or have been revoked. Please update them in <a href="{{ url_for('dashboard.settings') }}#{{portfolio.exchange}}-settings" class="alert-link">Exchange Settings</a>.
+                            {% elif portfolio_status == 'invalid_known_bad_keys' %}
+                                There's an issue with the stored credentials for this portfolio. Please review and update them in <a href="{{ url_for('dashboard.settings') }}#{{portfolio.exchange}}-settings" class="alert-link">Exchange Settings</a>.
+                            {% elif portfolio_status == 'error_exchange_down' %}
+                                We're having trouble connecting to {{ portfolio.exchange|capitalize }}. This might be a temporary issue with the exchange. Please try again later.
+                            {% elif portfolio_status == 'error_general_verification' %}
+                                An unexpected error occurred while trying to verify your portfolio. Please check your API key permissions or try again later. If the issue persists, contact support.
+                            {% elif portfolio_status == 'error_misconfigured_portfolio' %}
+                                This portfolio is not configured correctly (missing exchange type). Please check its setup in <a href="{{ url_for('dashboard.settings') }}" class="alert-link">Exchange Settings</a> or re-link it.
+                            {% elif portfolio_status == 'error_misconfigured_credential_mismatch' %}
+                                The stored API keys for this portfolio seem to be for a different exchange. Please correct this in <a href="{{ url_for('dashboard.settings') }}" class="alert-link">Exchange Settings</a>.
+                            {% elif portfolio_status == 'error_portfolio_not_found' %}
+                                The linked portfolio could not be found. It might have been deleted. Please <a href="{{ url_for('dashboard.settings') }}" class="alert-link">connect a new portfolio</a>.
+                            {% elif portfolio_status == 'error_missing_value_data' %}
+                                We could retrieve account balances but not the total portfolio value. This might be due to new or unsupported assets. Trading functionality should still work.
+                            {% elif portfolio_status == 'disconnected_no_credentials' %}
+                                No API keys are associated with this portfolio for this automation. Please <a href="{{ url_for('dashboard.settings') }}" class="alert-link">connect your API keys</a> in the Exchange Settings and then link the portfolio here.
+                            {% else %}
+                                Please review your portfolio and API key configuration in <a href="{{ url_for('dashboard.settings') }}" class="alert-link">Exchange Settings</a>.
+                            {% endif %}
+                        </div>
+                        {% endif %}
                                     <label for="api_key" class="form-label">API Key:</label>
                                     <input type="text" class="form-control" id="api_key" name="api_key" required>
                                 </div>
@@ -442,11 +338,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Cache DOM elements for portfolio management
-    const createPortfolioBtn = document.getElementById('createPortfolioBtn');
-    const portfolioSelectionSection = document.getElementById('portfolio-selection-section');
-    const refreshPortfoliosBtn = document.getElementById('refreshPortfoliosBtn');
-    const createPortfolioModal = document.getElementById('createPortfolioModal');
-    const createPortfolioForm = document.getElementById('createPortfolioForm');
     const deleteAutomationBtn = document.getElementById('deleteAutomationBtn');
 
     // Handler for Delete Automation button
@@ -520,223 +411,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('Error creating automation: ' + error.message);
             });
         });
-    }
-    
-    // Initialize portfolio management if elements exist
-    if (portfolioSelectionSection) {
-        // Refresh button handler
-        if (refreshPortfoliosBtn) {
-            refreshPortfoliosBtn.addEventListener('click', function() {
-                window.location.reload();
-            });
-        }
-        
-        // Multi-exchange portfolio creation functions
-        window.selectExchangeForPortfolio = function(exchange) {
-            // Set the exchange in the hidden input
-            document.getElementById('selectedExchange').value = exchange;
-            
-            // Update the exchange name and icon
-            const exchangeName = document.getElementById('selected-exchange-name');
-            const exchangeIcon = document.getElementById('selected-exchange-icon');
-            
-            if (exchange === 'coinbase') {
-                exchangeName.textContent = 'Coinbase Portfolio';
-                exchangeIcon.src = "{{ url_for('static', filename='images/exchanges/coinbase.svg') }}";
-            }
-            // Add more exchanges here as needed
-            
-            // Hide exchange selection, show portfolio form
-            document.getElementById('exchange-selection-screen').style.display = 'none';
-            document.getElementById('portfolio-creation-form').style.display = 'block';
-        };
-        
-        window.showExchangeSelectionForPortfolio = function() {
-            // Hide portfolio form, show exchange selection
-            document.getElementById('exchange-selection-screen').style.display = 'block';
-            document.getElementById('portfolio-creation-form').style.display = 'none';
-        };
-        
-        // Create Portfolio button handler - Direct approach without using modal
-        if (createPortfolioBtn) {
-            createPortfolioBtn.addEventListener('click', function(e) {
-                e.preventDefault();
-                
-                // Simple approach: Ask for the name directly with prompt
-                const portfolioName = prompt('Enter new portfolio name:');
-                if (!portfolioName || portfolioName.trim() === '') {
-                    return;
-                }
-                
-                fetch(`/automation/${automationId}/create-portfolio`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken
-                    },
-                    body: JSON.stringify({ name: portfolioName.trim() })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        throw new Error(data.error);
-                    }
-                    
-                    if (data.needs_manual_setup) {
-                        if (confirm('You need to create a portfolio manually on Coinbase. Would you like to open Coinbase now?')) {
-                            window.open('https://www.coinbase.com/advanced-portfolio', '_blank');
-                        }
-                        return;
-                    }
-                    
-                    if (data.success) {
-                        const select = document.getElementById('portfolio_id');
-                        if (select) {
-                            const option = new Option(data.portfolio.name, data.portfolio.id);
-                            select.add(option);
-                            select.value = data.portfolio.id;
-                        }
-                        
-                        alert(`Portfolio "${data.portfolio.name}" created successfully!`);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error creating portfolio:', error);
-                    alert('Error creating portfolio: ' + error.message);
-                });
-            });
-        }
-        
-        // Setup portfolio form if it exists
-        if (createPortfolioForm) {
-            createPortfolioForm.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                
-                const portfolioName = document.getElementById('portfolioName').value.trim();
-                const selectedExchange = document.getElementById('selectedExchange').value;
-                
-                if (!portfolioName) {
-                    alert('Please enter a portfolio name');
-                    return;
-                }
-                
-                if (!selectedExchange) {
-                    alert('Please select an exchange');
-                    return;
-                }
-                
-                try {
-                    // Use existing endpoint for portfolio creation
-                    const endpoint = `/automation/${automationId}/create-portfolio`;
-                    
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': csrfToken
-                        },
-                        body: JSON.stringify({ name: portfolioName, exchange: selectedExchange })
-                    });
-                    
-                    if (!response.ok) throw new Error('Failed to create portfolio');
-                    
-                    const data = await response.json();
-                    
-                    // Add the new portfolio to the dropdown
-                    const portfolioSelect = document.getElementById('portfolio_id');
-                    const option = document.createElement('option');
-                    option.value = data.id;
-                    option.textContent = `${selectedExchange.charAt(0).toUpperCase() + selectedExchange.slice(1)} - ${data.name}`;
-                    portfolioSelect.appendChild(option);
-                    
-                    // Select the new portfolio
-                    portfolioSelect.value = data.id;
-                    
-                    // Show success message
-                    showPortfolioInstructions(`${selectedExchange.charAt(0).toUpperCase() + selectedExchange.slice(1)} portfolio "${data.name}" created successfully! Please continue with your automation setup.`, true);
-                    
-                    // Close the modal
-                    if (createPortfolioModal && typeof bootstrap !== 'undefined') {
-                        const modal = bootstrap.Modal.getInstance(createPortfolioModal);
-                        if (modal) modal.hide();
-                    }
-                } catch (error) {
-                    console.error(`Error creating ${selectedExchange} portfolio:`, error);
-                    alert(`Error creating portfolio: ${error.message}`);
-                }
-            });
-        }
-        
-        // Check trading credentials
-        checkTradingCredentials();
-    }
-
-    // Portfolio management functions
-    async function checkTradingCredentials() {
-        if (!automationId) return;
-        
-        try {
-            const response = await fetch(`/automation/${automationId}/check-trading-credentials`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Server returned ${response.status}`);
-            }
-            
-            const data = await response.json();
-            console.log('Credential check response:', data);
-            
-            const hasPortfolios = checkForNonDefaultPortfolios();
-            
-            if (data.needs_manual_setup) {
-                if (createPortfolioBtn) createPortfolioBtn.style.display = 'none';
-                showPortfolioInstructions(data.message, hasPortfolios);
-            } else {
-                if (createPortfolioBtn) {
-                    createPortfolioBtn.style.display = 'inline-block';
-                }
-            }
-        } catch (error) {
-            console.error('Error checking trading credentials:', error);
-        }
-    }
-
-    function checkForNonDefaultPortfolios() {
-        const portfolioSelect = document.getElementById('portfolio_id');
-        if (!portfolioSelect) return false;
-        
-        let nonDefaultOptions = 0;
-        for (let i = 0; i < portfolioSelect.options.length; i++) {
-            const option = portfolioSelect.options[i];
-            if (option.value && option.text.toLowerCase() !== 'default') {
-                nonDefaultOptions++;
-            }
-        }
-        return nonDefaultOptions > 0;
-    }
-
-    function showPortfolioInstructions(message, hasPortfolios) {
-        if (!portfolioSelectionSection) return;
-        
-        const existingAlerts = document.querySelectorAll('.portfolio-instructions-alert');
-        existingAlerts.forEach(alert => alert.remove());
-        
-        const alertDiv = document.createElement('div');
-        alertDiv.className = 'alert alert-info portfolio-instructions-alert mb-3';
-        alertDiv.innerHTML = `
-            <h5 class="alert-heading">${hasPortfolios ? 'Pick a portfolio or create a new one' : 'Create a Portfolio'}</h5>
-            <ol>
-                <li>Go to <a href="https://www.coinbase.com/advanced-portfolio" target="_blank">https://www.coinbase.com/advanced-portfolio</a></li>
-                <li>Click "New Portfolio" and create your portfolio</li>
-                <li>Return here, refresh the list, and select your new portfolio</li>
-            </ol>
-        `;
-        
-        portfolioSelectionSection.insertBefore(alertDiv, portfolioSelectionSection.firstChild);
     }
     
     // Set up copy buttons for webhook URL and template

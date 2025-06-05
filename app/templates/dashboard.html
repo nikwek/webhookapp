@@ -36,7 +36,7 @@
                             <tbody>
                                 {% if exchanges and exchanges|length > 0 %}
                                     {% for exchange in exchanges %}
-                                    <tr>
+                                    <tr onclick="window.location.href='{{ url_for('dashboard.view_exchange', exchange_id=exchange.name) }}';" style="cursor: pointer;">
                                         <td>
                                             <div class="d-flex align-items-center">
                                                 <img src="{{ url_for('static', filename='images/exchanges/' ~ exchange.logo) }}" alt="{{ exchange.display_name }}" width="24" height="24" class="me-2">

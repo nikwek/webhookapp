@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="row mb-4 align-items-center">
+        <div class="col-md-auto">
+            <div class="dropdown">
+                <button class="btn btn-secondary dropdown-toggle btn-lg" type="button" id="exchangeDropdownMenuButton" data-bs-toggle="dropdown" aria-expanded="false">
+                    {% if current_exchange_id %}
+                    <img src="{{ url_for('static', filename='images/exchanges/' + current_exchange_id + '.svg') }}" 
+                         alt="{{ current_exchange_display_name }}" width="24" height="24" class="me-2" 
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"
+                         style="vertical-align: middle;">
+                    <span style="display:none; vertical-align: middle;">{{ current_exchange_display_name }}</span>
+                    {% endif %}
+                    {{ current_exchange_display_name }}
+                </button>
+                <ul class="dropdown-menu" aria-labelledby="exchangeDropdownMenuButton">
+                    {% for ex in all_connected_exchanges %}
+                        {% if ex.id != current_exchange_id %}
+                        <li>
+                            <a class="dropdown-item" href="{{ url_for('dashboard.view_exchange', exchange_id=ex.id) }}">
+                                <img src="{{ url_for('static', filename='images/exchanges/' + ex.id + '.svg') }}" 
+                                     alt="{{ ex.display_name }}" width="20" height="20" class="me-2" 
+                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"
+                                     style="vertical-align: middle;">
+                                <span style="display:none; vertical-align: middle;">{{ ex.display_name }}</span>
+                                {{ ex.display_name }}
+                            </a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                    {% if all_connected_exchanges|length > 1 and all_connected_exchanges|rejectattr('id', 'equalto', current_exchange_id)|list|length > 0 %}
+                        <li><hr class="dropdown-divider"></li>
+                    {% endif %}
+                    <li><a class="dropdown-item" href="{{ url_for('dashboard.settings') }}"><i class="fas fa-plus-circle me-2"></i>Add New Exchange</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="col-md">
+            {# Spacer or other elements can go here #}
+        </div>
+        <div class="col-md-auto">
+            <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    {% if current_exchange_data.error_message and not current_exchange_data.success %}
+    <div class="alert alert-danger" role="alert">
+        <h4 class="alert-heading"><i class="fas fa-exclamation-triangle me-2"></i>Error!</h4>
+        <p>Could not load data for {{ current_exchange_display_name }}: {{ current_exchange_data.error_message }}</p>
+        {% if current_exchange_data.pricing_errors and current_exchange_data.pricing_errors|length > 0 %}
+            <hr>
+            <p class="mb-0">Details:</p>
+            <ul>
+                {% for error_item in current_exchange_data.pricing_errors %}
+                    <li>Asset {{ error_item.asset }}: {{ error_item.error }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+    {% else %}
+    <!-- Total Value Card -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body text-center">
+            <h5 class="card-title text-muted mb-3">Total Account Value</h5>
+            <p class="card-text display-4">
+                {{ "{:,.2f}".format(current_exchange_data.total_value|float) }}
+                <span class="text-muted fs-5 align-baseline">{{ current_exchange_data.currency }}</span>
+            </p>
+        </div>
+    </div>
+
+    <!-- Assets List Card -->
+    <div class="card shadow-sm">
+        <div class="card-header">
+            <h4 class="mb-0">Assets on {{ current_exchange_display_name }}</h4>
+        </div>
+        <div class="card-body p-0">
+            {% if current_exchange_data.balances and current_exchange_data.balances|length > 0 %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col" style="width: 40%;">Asset</th>
+                            <th scope="col" class="text-end" style="width: 30%;">Quantity</th>
+                            <th scope="col" class="text-end" style="width: 30%;">Value ({{ current_exchange_data.currency }})</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% set found_positive_balance = false %}
+                        {% for asset_balance in current_exchange_data.balances %}
+                            {% if asset_balance.get('total', 0)|float > 1e-9 or asset_balance.get('usd_value', 0)|float > 0.001 %} {# Only show if there's a meaningful balance or value #}
+                            {% set found_positive_balance = true %}
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        {# Placeholder for potential asset-specific icons in the future #}
+                                        {# <img src="{{ url_for('static', filename='images/crypto_icons/' + asset_balance.asset|lower + '.svg') }}" alt="" width="20" height="20" class="me-2" onerror="this.style.display='none'"> #}
+                                        <strong>{{ asset_balance.asset }}</strong>
+                                    </div>
+                                </td>
+                                <td class="text-end">{{ asset_balance.get('total', 0)|float }}</td>
+                                <td class="text-end">
+                                    {% if asset_balance.get('usd_value') is not none %}
+                                        {{ "{:,.2f}".format(asset_balance.usd_value|float) }}
+                                    {% else %}
+                                        <span class="text-muted">N/A</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endif %}
+                        {% endfor %}
+                        {% if not found_positive_balance %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted p-4">
+                                No assets with significant balances found on this exchange.
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center p-4">
+                <p class="text-muted">No asset data available for this exchange, or balances are zero.</p>
+            </div>
+            {% endif %}
+        </div>
+        {% if current_exchange_data.pricing_errors and current_exchange_data.pricing_errors|length > 0 %}
+        <div class="card-footer bg-light">
+            <div class="alert alert-warning mb-0 small" role="alert">
+                <strong><i class="fas fa-exclamation-triangle me-1"></i>Note:</strong> Some asset values could not be determined:
+                <ul class="mb-0 mt-1">
+                    {% for error_item in current_exchange_data.pricing_errors %}
+                        <li>{{ error_item.asset }}: {{ error_item.error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    .display-4 {
+        font-weight: 300;
+    }
+    .table th {
+        font-weight: 500; /* Bootstrap default is often bold, this makes it slightly less so if needed or use .fw-semibold */
+    }
+    .dropdown-toggle img, .dropdown-item img {
+        vertical-align: middle;
+    }
+    /* Fallback for missing images */
+    img[onerror] + span { /* Selects the span immediately following an img tag that has an onerror attribute */
+        display: none; /* Initially hide the text span if image might load */
+    }
+    .btn-lg img { /* Ensure images in large buttons are aligned well */
+        margin-top: -2px;
+    }
+</style>
+{% endblock %}

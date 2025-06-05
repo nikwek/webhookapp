@@ -535,12 +535,118 @@ def delete_api_keys():
         )
         flash(message, 'success')
         log_message = "Del %s creds for user %s, exch '%s'."
-        logger.info(log_message, len(credentials_to_delete), current_user.id, exchange_name_to_delete)
-    else:
-        logger.warning(
-            f"No API keys found for user {current_user.id}, "
-            f"exchange '{exchange_name_to_delete}' to delete."
+        logger.info(
+            log_message,
+            len(credentials_to_delete),
+            current_user.id,
+            exchange_name_to_delete
         )
-        flash(f'No API keys found for {exchange_name_to_delete.capitalize()} to delete.', 'warning')
+    else:
+        warning_msg_user = f"No API keys found for user {current_user.id}, "
+        warning_msg_exchange = f"exchange '{exchange_name_to_delete}' to delete."
+        logger.warning(warning_msg_user + warning_msg_exchange)
+        message = f'No API keys found for {exchange_name_to_delete.capitalize()} to delete.'
+        flash(message, 'warning')
 
     return redirect(url_for('dashboard.settings'))
+
+
+@bp.route('/exchange/<string:exchange_id>')
+@login_required
+def view_exchange(exchange_id: str):
+    """Render the specific exchange page."""
+    user_id = current_user.id
+    all_creds = ExchangeCredentials.query.filter_by(user_id=user_id).all()
+    
+    # Get all connected exchanges for the dropdown
+    connected_exchanges_for_dropdown = []
+    unique_exchange_ids = sorted(list(set(cred.exchange for cred in all_creds)))
+
+    for ex_id in unique_exchange_ids:
+        adapter_cls_dropdown = ExchangeRegistry.get_adapter(ex_id)
+        display_name_dropdown = ex_id # Default
+        if adapter_cls_dropdown:
+            try:
+                if hasattr(adapter_cls_dropdown, 'get_display_name'):
+                    display_name_dropdown = adapter_cls_dropdown.get_display_name()
+                elif hasattr(adapter_cls_dropdown, 'get_name'):
+                    display_name_dropdown = adapter_cls_dropdown.get_name()
+            except Exception as e:
+                logger.error(f"Error getting display name for {ex_id} in dropdown: {e}")
+        connected_exchanges_for_dropdown.append({
+            'id': ex_id,
+            'display_name': display_name_dropdown
+        })
+
+    # Get data for the currently selected exchange
+    current_exchange_adapter_cls = ExchangeRegistry.get_adapter(exchange_id)
+    current_exchange_display_name = exchange_id # Default
+    current_exchange_data = {
+        'total_value': 0.0,
+        'balances': [],
+        'currency': 'USD',
+        'pricing_errors': [],
+        'success': False,
+        'error_message': None
+    }
+
+    if not current_exchange_adapter_cls:
+        logger.warning(f"No adapter found for selected exchange: {exchange_id}, user: {user_id}")
+        flash(f"Could not load data for exchange '{exchange_id}'. Adapter not found.", "danger")
+        current_exchange_data['error_message'] = f"Adapter for '{exchange_id}' not found."
+        return render_template(
+            'exchange.html',
+            current_exchange_id=exchange_id,
+            current_exchange_display_name=current_exchange_display_name,
+            current_exchange_data=current_exchange_data,
+            all_connected_exchanges=connected_exchanges_for_dropdown,
+            title=f"{current_exchange_display_name} Details"
+        )
+
+    try:
+        if hasattr(current_exchange_adapter_cls, 'get_display_name'):
+            current_exchange_display_name = current_exchange_adapter_cls.get_display_name()
+        elif hasattr(current_exchange_adapter_cls, 'get_name'):
+            current_exchange_display_name = current_exchange_adapter_cls.get_name()
+    except Exception as e:
+        logger.error(f"Error getting display name for current exchange {exchange_id}: {e}")
+
+    if issubclass(current_exchange_adapter_cls, CcxtBaseAdapter):
+        cred = next((c for c in all_creds if c.exchange == exchange_id), None)
+        if cred and hasattr(current_exchange_adapter_cls, 'get_portfolio_value'):
+            try:
+                portfolio_data = current_exchange_adapter_cls.get_portfolio_value(
+                    user_id=user_id,
+                    portfolio_id=cred.portfolio_id, 
+                    target_currency="USD"
+                )
+                current_exchange_data['total_value'] = float(portfolio_data.get('total_value', 0.0))
+                current_exchange_data['balances'] = portfolio_data.get('balances', [])
+                current_exchange_data['currency'] = portfolio_data.get('currency', 'USD')
+                current_exchange_data['pricing_errors'] = portfolio_data.get('pricing_errors', [])
+                current_exchange_data['success'] = portfolio_data.get('success', True)
+                if not current_exchange_data['success']:
+                     current_exchange_data['error_message'] = portfolio_data.get('error', 'Failed to retrieve portfolio data.')
+            except Exception as e:
+                logger.error(f"Error getting portfolio value for {exchange_id} (user {user_id}): {e}", exc_info=True)
+                flash(f"Error retrieving data for {current_exchange_display_name}: {e}", "danger")
+                current_exchange_data['error_message'] = f"An error occurred: {e}"
+                current_exchange_data['pricing_errors'].append({'asset': 'N/A', 'error': str(e)})
+        elif not cred:
+            logger.warning(f"No credentials found for {exchange_id} for user {user_id} to fetch portfolio.")
+            flash(f"Credentials for {current_exchange_display_name} not found.", "warning")
+            current_exchange_data['error_message'] = f"Credentials for {current_exchange_display_name} not found."
+        else: 
+            logger.error(f"Adapter {exchange_id} is CCXT but has no get_portfolio_value method.")
+            flash(f"Cannot retrieve portfolio for {current_exchange_display_name}.", "danger")
+            current_exchange_data['error_message'] = f"Cannot retrieve portfolio for {current_exchange_display_name} (internal error)."
+
+    return render_template(
+        'exchange.html',
+        current_exchange_id=exchange_id,
+        current_exchange_display_name=current_exchange_display_name,
+        current_exchange_data=current_exchange_data,
+        all_connected_exchanges=connected_exchanges_for_dropdown,
+        title=f"{current_exchange_display_name} Details"
+    )
+

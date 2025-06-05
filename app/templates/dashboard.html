@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="container mt-4">
-    {% if not has_coinbase_keys %}
+    {% if not has_any_exchange_keys %}
     <div class="row mb-4">
         <div class="col-md-12">
             <div class="alert alert-warning">
@@ -39,11 +39,11 @@
                                     <tr>
                                         <td>
                                             <div class="d-flex align-items-center">
-                                                <img src="{{ url_for('static', filename='images/exchanges/' ~ exchange.logo) }}" alt="{{ exchange.name }}" width="24" height="24" class="me-2">
-                                                <span>{{ exchange.name }}</span>
+                                                <img src="{{ url_for('static', filename='images/exchanges/' ~ exchange.logo) }}" alt="{{ exchange.display_name }}" width="24" height="24" class="me-2">
+                                                <span>{{ exchange.display_name }}</span>
                                             </div>
                                         </td>
-                                        <td class="total-value">${{ exchange.total_dollar_value }}</td>
+                                        <td class="total-value">${{ "{:,.2f}".format(exchange.value|float) }}</td>
                                         <td class="strategies">{{ exchange.investment_strategy_count }}</td>
                                     </tr>
                                     {% endfor %}

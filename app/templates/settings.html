@@ -630,7 +630,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                Are you sure you want to delete your exchange API keys? This action cannot be undone.
+                <p>Are you sure you want to delete all API keys for <strong id="delete-exchange-name-display">this exchange</strong>? This action cannot be undone.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -735,5 +735,28 @@
             });
         }
     });
+
+    // Handle delete API keys modal
+    const deleteApiKeysModal = document.getElementById('deleteApiKeysModal');
+    if (deleteApiKeysModal) {
+        deleteApiKeysModal.addEventListener('show.bs.modal', function (event) {
+            // Button that triggered the modal
+            const button = event.relatedTarget;
+            // Extract info from data-* attributes
+            const exchangeValue = button.getAttribute('data-exchange-value');
+            const exchangeName = button.getAttribute('data-exchange-name');
+
+            // Update the modal's content.
+            const modalExchangeInput = deleteApiKeysModal.querySelector('#delete-exchange');
+            const modalExchangeNameDisplay = deleteApiKeysModal.querySelector('#delete-exchange-name-display');
+
+            if (modalExchangeInput) {
+                modalExchangeInput.value = exchangeValue;
+            }
+            if (modalExchangeNameDisplay) {
+                modalExchangeNameDisplay.textContent = exchangeName;
+            }
+        });
+    }
 </script>
 {% endblock %}

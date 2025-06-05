@@ -267,15 +267,26 @@ class CoinbaseAdapter(ExchangeAdapter):
             )
                 
             # Get portfolio value
-            response = client.portfolio_breakdown(portfolio_uuid=coinbase_portfolio_id, currency=currency)
+            response = client.get_portfolio_breakdown(portfolio_uuid=coinbase_portfolio_id, currency=currency)
                 
-            # Process response - handle both object and dict types
-            if hasattr(response, 'portfolio_breakdown'):
-                breakdown = response.portfolio_breakdown
-                total_value = getattr(breakdown, 'total_value', 0.0)
-            else:
-                breakdown = response.get('portfolio_breakdown', {})
-                total_value = breakdown.get('total_value', 0.0)
+            # Process response using the structure of GetPortfolioBreakdownResponse
+            # 'response' is the GetPortfolioBreakdownResponse object.
+            # 'response' is GetPortfolioBreakdownResponse object.
+            # 'response.breakdown' is a PortfolioBreakdown object.
+            # This object should have 'portfolio_balances', then 'total_balance', then 'value'.
+            total_value = "0.0" # Default value
+            try:
+                portfolio_breakdown_obj = getattr(response, 'breakdown', None)
+                if portfolio_breakdown_obj:
+                    portfolio_balances_obj = getattr(portfolio_breakdown_obj, 'portfolio_balances', None)
+                    if portfolio_balances_obj:
+                        total_balance_obj = getattr(portfolio_balances_obj, 'total_balance', None)
+                        if total_balance_obj:
+                            total_value = getattr(total_balance_obj, 'value', "0.0")
+            except AttributeError:
+                # Handle cases where the structure might unexpectedly not have these attributes
+                logger.warning("Could not find expected attributes in Coinbase portfolio breakdown response.")
+                pass # total_value remains "0.0"
                 
             # Try to convert value to float if it's a string
             if isinstance(total_value, str):

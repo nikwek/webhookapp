@@ -12,6 +12,9 @@ our code can access them by name exactly matching the exchange id.
 from __future__ import annotations
 
 import logging
+import json  # Added for cache key generation
+
+from app import cache  # Added for caching
 import base64
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
@@ -25,6 +28,18 @@ from app.exchanges.base_adapter import ExchangeAdapter
 from app.utils.circuit_breaker import circuit_breaker
 
 logger = logging.getLogger(__name__)
+
+# Cache key generation functions
+
+
+def _make_key_ccxt_client(cls, user_id, portfolio_name="default"):
+    """Generate cache key for CCXT client instances."""
+    return f"ccxt_client:{cls.get_name()}:{user_id}:{portfolio_name}"
+
+
+def _make_key_ccxt_get_portfolio_value(cls, user_id, portfolio_id, target_currency="USD"):
+    """Generate cache key for get_portfolio_value method."""
+    return f"ccxt_portfolio_value:{cls.get_name()}:{user_id}:{portfolio_id}:{target_currency}"
 
 
 class CcxtBaseAdapter(ExchangeAdapter):
@@ -78,6 +93,7 @@ class CcxtBaseAdapter(ExchangeAdapter):
 
     # --------------------------- client -------------------------------
     @classmethod
+    @cache.cached(timeout=600, make_cache_key=_make_key_ccxt_client)
     def get_client(cls, user_id: int, portfolio_name: str = "default"):
         creds = (
             ExchangeCredentials.query.filter_by(
@@ -258,6 +274,7 @@ class CcxtBaseAdapter(ExchangeAdapter):
 
     # ------------------- portfolio value ------------------------------
     @classmethod
+    @cache.cached(timeout=600, make_cache_key=_make_key_ccxt_get_portfolio_value)
     @circuit_breaker("ccxt_api_portfolio_value")  # Added circuit breaker
     def get_portfolio_value(
         cls, user_id: int, portfolio_id: int, target_currency: str = "USD"

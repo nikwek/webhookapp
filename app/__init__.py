@@ -9,6 +9,7 @@ from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
 from flask_mail import Mail
 from flask_session import Session
+from flask_caching import Cache
 from config import get_config
 from app.forms.custom_login_form import CustomLoginForm
 from app.forms.custom_2fa_form import Custom2FACodeForm
@@ -25,6 +26,7 @@ csrf = CSRFProtect()
 security = Security()
 mail = Mail()
 sess = Session()
+cache = Cache()
 
 
 # Check if account is suspended 
@@ -65,6 +67,11 @@ def create_app(test_config=None):
     csrf.init_app(app)
     mail.init_app(app)
     sess.init_app(app)
+
+    # Initialize Flask-Caching
+    app.config.setdefault('CACHE_TYPE', 'SimpleCache') # Default to SimpleCache if not set in config
+    app.config.setdefault('CACHE_DEFAULT_TIMEOUT', 300) # Default 5 mins if not set
+    cache.init_app(app)
     
     # Initialize limiter
     from app.routes.webhook import limiter

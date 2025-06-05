@@ -1,3 +1,4 @@
+from datetime import datetime # Ensure datetime is imported for logging
 from flask import (
     Blueprint, render_template, jsonify,
     redirect, url_for, request, flash,
@@ -170,11 +171,13 @@ def dashboard():
             )
             if ccxt_cred and hasattr(adapter_cls, 'get_portfolio_value'):
                 try:
+                    logger.info(f"Dashboard: START get_portfolio_value for CCXT {ex_name} at {datetime.now()}") # Log start
                     val_data = adapter_cls.get_portfolio_value(
                         user_id=user_id,
                         portfolio_id=ccxt_cred.portfolio_id,
                         target_currency="USD"
                     )
+                    logger.info(f"Dashboard: END get_portfolio_value for CCXT {ex_name} at {datetime.now()}. Success: {val_data.get('success', True)}") # Log end
                     total_value = float(val_data.get('total_value', 0.0))
                     pricing_errors.extend(
                         val_data.get('pricing_errors', [])
@@ -201,11 +204,13 @@ def dashboard():
             for cred_item in cb_creds:
                 if hasattr(adapter_cls, 'get_portfolio_value'):
                     try:
+                        logger.info(f"Dashboard: START get_portfolio_value for Coinbase portfolio {cred_item.portfolio_id} at {datetime.now()}") # Log start
                         val_data = adapter_cls.get_portfolio_value(
                             user_id=user_id,
                             portfolio_id=cred_item.portfolio_id,
                             currency="USD"
                         )
+                        logger.info(f"Dashboard: END get_portfolio_value for Coinbase portfolio {cred_item.portfolio_id} at {datetime.now()}. Success: {val_data.get('success')}") # Log end
                         if val_data.get('success'):
                             total_value += float(val_data.get('value', 0.0))
                         else:
@@ -523,7 +528,12 @@ def delete_api_keys():
         for cred in credentials_to_delete:
             db.session.delete(cred)
         db.session.commit()
-        flash(f'All API keys for {exchange_name_to_delete.capitalize()} have been deleted successfully!', 'success')
+        capitalized_exchange_name = exchange_name_to_delete.capitalize()
+        message = (
+            f"All API keys for {capitalized_exchange_name} "
+            "have been deleted successfully!"
+        )
+        flash(message, 'success')
         log_message = "Del %s creds for user %s, exch '%s'."
         logger.info(log_message, len(credentials_to_delete), current_user.id, exchange_name_to_delete)
     else:

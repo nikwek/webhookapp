@@ -43,6 +43,7 @@ def check_if_account_is_suspended(app, user, **kwargs):
 
 def create_app(test_config=None):
     app = Flask(__name__)
+    app.jinja_env.add_extension('jinja2.ext.do')
 
     # Set Flask-Security to INFO level instead of DEBUG to reduce verbosity
     logging.getLogger('flask_security').setLevel(logging.INFO)

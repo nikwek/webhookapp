@@ -275,7 +275,7 @@ class CcxtBaseAdapter(ExchangeAdapter):
     # ------------------- portfolio value ------------------------------
     @classmethod
     @cache.cached(timeout=600, make_cache_key=_make_key_ccxt_get_portfolio_value)
-    @circuit_breaker("ccxt_api_portfolio_value")  # Added circuit breaker
+    @circuit_breaker("ccxt_api_portfolio_value")
     def get_portfolio_value(
         cls, user_id: int, portfolio_id: int, target_currency: str = "USD"
     ) -> Dict[str, Any]:
@@ -284,6 +284,7 @@ class CcxtBaseAdapter(ExchangeAdapter):
             return {
                 "currency": target_currency,
                 "total_value": 0.0,
+                "balances": [],
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "pricing_errors": [
                     {"asset": "N/A", "error": "Client not available"}
@@ -292,35 +293,37 @@ class CcxtBaseAdapter(ExchangeAdapter):
 
         total_value_in_target_currency = 0.0
         pricing_errors: List[Dict[str, str]] = []
+        detailed_asset_balances: List[Dict[str, Any]] = []
 
         try:
             # Load markets to ensure ticker data is available/fresh for some exchanges
             if client.has.get('loadMarkets'):
                 client.load_markets()
 
-            balances = None
+            balances_data = None
             try:
                 logger.debug(f"{cls.get_name()}: Attempting to fetch balance.")
-                balances = client.fetch_balance()
+                balances_data = client.fetch_balance()
                 exchange_name = cls.get_name()
                 logger.debug(
-                    f"{exchange_name}: Balances fetched. Type: {type(balances)}. "
-                    f"Content (first 200 chars): {str(balances)[:200]}"
+                    f"{exchange_name}: Balances fetched. Type: {type(balances_data)}. "
+                    f"Content (first 200 chars): {str(balances_data)[:200]}"
                 )
             except IndexError as ie_fb:
                 logger.error(
                     f"{cls.get_name()}: IndexError during fetch_balance: {ie_fb}",
                     exc_info=True
                 )
-                # Re-raise to be caught by the main error handler for this method
-                raise
+                raise # Re-raise to be caught by the main error handler
             except Exception as e_fb:
                 logger.error(
                     f"{cls.get_name()}: Error during fetch_balance: {e_fb}",
                     exc_info=True
                 )
                 return {
-                    "currency": target_currency, "total_value": 0.0,
+                    "currency": target_currency,
+                    "total_value": 0.0,
+                    "balances": [],
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "pricing_errors": [{
                         "asset": "N/A",
@@ -328,27 +331,25 @@ class CcxtBaseAdapter(ExchangeAdapter):
                     }]
                 }
 
-            asset_balances = {}
-            if isinstance(balances, dict):
-                # Use 'total' balances for portfolio valuation, 
-                # falling back to 'free' if 'total' is not present or empty
-                asset_balances = balances.get("total", {})
-                if not asset_balances:
-                    asset_balances = balances.get("free", {})
+            asset_balances_iter = {}
+            if isinstance(balances_data, dict):
+                asset_balances_iter = balances_data.get("total", {})
+                if not asset_balances_iter: # Fallback to 'free' if 'total' is empty or not present
+                    asset_balances_iter = balances_data.get("free", {})
             else:
                 exchange_name = cls.get_name()
                 logger.warning(
                     f"{exchange_name}: Balances object not a dict. "
-                    f"Type: {type(balances)}. Content: {str(balances)[:200]}"
+                    f"Type: {type(balances_data)}. Content: {str(balances_data)[:200]}"
                 )
             
-            exchange_name = cls.get_name()
+            # exchange_name = cls.get_name() # This is redundant, already defined
             logger.debug(
-                f"{exchange_name}: Asset balances to iterate. "
-                f"Type: {type(asset_balances)}. Content: {str(asset_balances)[:200]}"
+                f"{cls.get_name()}: Asset balances to iterate. " # Use cls.get_name() for consistency
+                f"Type: {type(asset_balances_iter)}. Content: {str(asset_balances_iter)[:200]}"
             )
 
-            for asset_code, amount_value in asset_balances.items():
+            for asset_code, amount_value in asset_balances_iter.items():
                 amount = 0.0
                 if isinstance(amount_value, (int, float)):
                     amount = float(amount_value)
@@ -382,10 +383,19 @@ class CcxtBaseAdapter(ExchangeAdapter):
 
                 if asset_upper == target_currency_upper:
                     total_value_in_target_currency += amount
+                    detailed_asset_balances.append({
+                        "asset": asset_upper,
+                        "total": amount,
+                        "usd_value": amount # Value is itself in target currency
+                    })
                 else:
-                    # Handle USDC as 1:1 with USD if target is USD
                     if asset_upper == 'USDC' and target_currency_upper == 'USD':
                         total_value_in_target_currency += amount
+                        detailed_asset_balances.append({
+                            "asset": asset_upper,
+                            "total": amount,
+                            "usd_value": amount # USDC is 1:1 with USD
+                        })
                         logger.debug(
                             f"{cls.get_name()}: Converted {amount} {asset_upper} to {target_currency_upper} at 1:1 rate."
                         )
@@ -394,54 +404,55 @@ class CcxtBaseAdapter(ExchangeAdapter):
                         logger.warning(f"{cls.get_name()}: {error_msg}")
                         pricing_errors.append({"asset": asset_upper, "error": error_msg})
                         continue
-                    
-                    symbol = f"{asset_upper}/{target_currency_upper}"
-                    try:
-                        logger.debug(f"{cls.get_name()}: Attempting to fetch ticker for {symbol}.")
-                        ticker = client.fetch_ticker(symbol)
-                        logger.debug(f"{cls.get_name()}: Ticker for {symbol} fetched. Type: {type(ticker)}. Content (first 500 chars): {str(ticker)[:500]}")
+                    else:
+                        symbol = f"{asset_upper}/{target_currency_upper}"
+                        try:
+                            logger.debug(f"{cls.get_name()}: Attempting to fetch ticker for {symbol}.")
+                            ticker = client.fetch_ticker(symbol)
+                            logger.debug(f"{cls.get_name()}: Ticker for {symbol} fetched. Type: {type(ticker)}. Content (first 500 chars): {str(ticker)[:500]}")
 
-                        if not isinstance(ticker, dict):
-                            logger.warning(f"{cls.get_name()}: Ticker for {symbol} is not a dict as expected. Type: {type(ticker)}. Content: {str(ticker)[:500]}")
-                            pricing_errors.append({"asset": asset_upper, "error": f"Invalid ticker format for {symbol}"})
-                            continue # To next asset in the loop
+                            if not isinstance(ticker, dict):
+                                logger.warning(f"{cls.get_name()}: Ticker for {symbol} is not a dict. Type: {type(ticker)}. Content: {str(ticker)[:500]}")
+                                pricing_errors.append({"asset": asset_upper, "error": f"Invalid ticker format for {symbol}"})
+                                continue
 
-                        price = ticker.get('last') or ticker.get('close') or ticker.get('bid')
+                            price = ticker.get('last') or ticker.get('close') or ticker.get('bid')
 
-                        if price is not None:
-                            try:
-                                total_value_in_target_currency += amount * float(price)
-                            except ValueError:
-                                error_msg = f"Invalid price format for {symbol}: {price}"
+                            if price is not None:
+                                try:
+                                    asset_value_in_target = amount * float(price)
+                                    total_value_in_target_currency += asset_value_in_target
+                                    detailed_asset_balances.append({
+                                        "asset": asset_upper,
+                                        "total": amount,
+                                        "usd_value": round(asset_value_in_target, 2)
+                                    })
+                                except ValueError:
+                                    error_msg = f"Invalid price format for {symbol}: {price}"
+                                    logger.warning(f"{cls.get_name()}: {error_msg}")
+                                    pricing_errors.append({"asset": asset_upper, "error": error_msg})
+                            else:
+                                error_msg = f"Could not get price for {symbol} from {cls.get_name()}. Ticker: {str(ticker)[:200]}"
                                 logger.warning(f"{cls.get_name()}: {error_msg}")
                                 pricing_errors.append({"asset": asset_upper, "error": error_msg})
-                        else:
-                            # Log part of ticker to avoid overly long messages if ticker is large
-                            error_msg = f"Could not get price for {symbol} from {cls.get_name()}. Ticker: {str(ticker)[:200]}"
-                            logger.warning(f"{cls.get_name()}: {error_msg}")
-                            pricing_errors.append({"asset": asset_upper, "error": error_msg})
 
-                    except IndexError as ie_ft: # Specific to ccxt call if it raises IndexError internally
-                        logger.error(f"{cls.get_name()}: IndexError during fetch_ticker for {symbol}: {ie_ft}", exc_info=True)
-                        pricing_errors.append({"asset": asset_upper, "error": f"IndexError fetching price for {symbol}: {ie_ft}"})
-                        # Continue to next asset handled by the loop
-                    except ccxt.NetworkError as e_ne:
-                        logger.error(f"{cls.get_name()}: Network error fetching ticker for {symbol}: {e_ne}")
-                        pricing_errors.append({"asset": asset_upper, "error": f"Network error: {e_ne}"})
-                        # Continue to next asset
-                    except ccxt.ExchangeError as e_ee: # Includes ccxt.BadSymbol, ccxt.RateLimitExceeded, etc.
-                        logger.warning(f"{cls.get_name()}: Exchange error fetching ticker for {symbol}: {e_ee} (Type: {type(e_ee).__name__})")
-                        pricing_errors.append({"asset": asset_upper, "error": f"Exchange error ({type(e_ee).__name__}): {e_ee}"})
-                        # Continue to next asset
-                    except Exception as e_generic_ft: # Catch any other error during fetch_ticker or subsequent processing
-                        logger.exception(f"{cls.get_name()}: Generic error processing ticker/price for {symbol}: {e_generic_ft}")
-                        pricing_errors.append({"asset": asset_upper, "error": f"Failed to process price for {symbol}: {e_generic_ft}"})
-                        # Continue to next asset
-
+                        except IndexError as ie_ft:
+                            logger.error(f"{cls.get_name()}: IndexError during fetch_ticker for {symbol}: {ie_ft}", exc_info=True)
+                            pricing_errors.append({"asset": asset_upper, "error": f"IndexError fetching price for {symbol}: {ie_ft}"})
+                        except ccxt.NetworkError as e_ne:
+                            logger.error(f"{cls.get_name()}: Network error fetching ticker for {symbol}: {e_ne}")
+                            pricing_errors.append({"asset": asset_upper, "error": f"Network error: {e_ne}"})
+                        except ccxt.ExchangeError as e_ee:
+                            logger.warning(f"{cls.get_name()}: Exchange error fetching ticker for {symbol}: {e_ee} (Type: {type(e_ee).__name__})")
+                            pricing_errors.append({"asset": asset_upper, "error": f"Exchange error ({type(e_ee).__name__}): {e_ee}"})
+                        except Exception as e_generic_ft:
+                            logger.exception(f"{cls.get_name()}: Generic error processing ticker/price for {symbol}: {e_generic_ft}")
+                            pricing_errors.append({"asset": asset_upper, "error": f"Failed to process price for {symbol}: {e_generic_ft}"})
             
             return {
                 "currency": target_currency,
                 "total_value": round(total_value_in_target_currency, 2),
+                "balances": detailed_asset_balances,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "pricing_errors": pricing_errors,
             }

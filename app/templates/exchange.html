@@ -103,37 +103,39 @@
                             <th scope="col" class="text-end" style="width: 30%;">Value ({{ current_exchange_data.currency }})</th>
                         </tr>
                     </thead>
+                    {% set significant_balances = [] %}
+                    {% for asset_balance_item in current_exchange_data.balances %}
+                        {% if asset_balance_item.get('total', 0)|float > 1e-9 or asset_balance_item.get('usd_value', 0)|float > 0.001 %}
+                            {% do significant_balances.append(asset_balance_item) %}
+                        {% endif %}
+                    {% endfor %}
+
                     <tbody>
-                        {% set found_positive_balance = false %}
-                        {% for asset_balance in current_exchange_data.balances %}
-                            {% if asset_balance.get('total', 0)|float > 1e-9 or asset_balance.get('usd_value', 0)|float > 0.001 %} {# Only show if there's a meaningful balance or value #}
-                            {% set found_positive_balance = true %}
-                            <tr>
-                                <td>
-                                    <div class="d-flex align-items-center">
-                                        {# Placeholder for potential asset-specific icons in the future #}
-                                        {# <img src="{{ url_for('static', filename='images/crypto_icons/' + asset_balance.asset|lower + '.svg') }}" alt="" width="20" height="20" class="me-2" onerror="this.style.display='none'"> #}
-                                        <strong>{{ asset_balance.asset }}</strong>
-                                    </div>
-                                </td>
-                                <td class="text-end">{{ asset_balance.get('total', 0)|float }}</td>
-                                <td class="text-end">
-                                    {% if asset_balance.get('usd_value') is not none %}
-                                        {{ "{:,.2f}".format(asset_balance.usd_value|float) }}
-                                    {% else %}
-                                        <span class="text-muted">N/A</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endif %}
-                        {% endfor %}
-                        {% if not found_positive_balance %}
+                        {% for asset_balance in significant_balances %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    {# Placeholder for potential asset-specific icons in the future #}
+                                    {# <img src="{{ url_for('static', filename='images/crypto_icons/' + asset_balance.asset|lower + '.svg') }}" alt="" width="20" height="20" class="me-2" onerror="this.style.display='none'"> #}
+                                    <strong>{{ asset_balance.asset }}</strong>
+                                </div>
+                            </td>
+                            <td class="text-end">{{ asset_balance.get('total', 0)|float }}</td>
+                            <td class="text-end">
+                                {% if asset_balance.get('usd_value') is not none %}
+                                    {{ "{:,.2f}".format(asset_balance.usd_value|float) }}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
                         <tr>
                             <td colspan="3" class="text-center text-muted p-4">
                                 No assets with significant balances found on this exchange.
                             </td>
                         </tr>
-                        {% endif %}
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>

@@ -33,7 +33,7 @@
                     {% for ex in all_connected_exchanges %}
                         {% if ex.id != current_exchange_id %}
                         <li>
-                            <a class="dropdown-item" href="{{ url_for('dashboard.view_exchange', exchange_id=ex.id) }}">
+                            <a class="dropdown-item" href="{{ url_for('exchange.view_exchange', exchange_id=ex.id) }}">
                                 <img src="{{ url_for('static', filename='images/exchanges/' + ex.id + '.svg') }}" 
                                      alt="{{ ex.display_name }}" width="20" height="20" class="me-2" 
                                      onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"
@@ -99,8 +99,11 @@
                     <thead class="table-light">
                         <tr>
                             <th scope="col" style="width: 40%;">Asset</th>
-                            <th scope="col" class="text-end" style="width: 30%;">Quantity</th>
-                            <th scope="col" class="text-end" style="width: 30%;">Value ({{ current_exchange_data.currency }})</th>
+                            <th scope="col" class="text-end" style="width: 20%;">Total on Exchange</th>
+                            <th scope="col" class="text-end" style="width: 20%;">Total Allocated</th>
+                            <th scope="col" class="text-end" style="width: 20%;">Unallocated</th>
+                            <th scope="col" class="text-end" style="width: 20%;">Value ({{ current_exchange_data.currency }})</th>
+                            <th scope="col" style="width: 20%;">Actions</th>
                         </tr>
                     </thead>
                     {% set significant_balances = [] %}
@@ -121,6 +124,8 @@
                                 </div>
                             </td>
                             <td class="text-end">{{ asset_balance.get('total', 0)|float }}</td>
+                            <td class="text-end">{{ "{:,.8f}".format(asset_balance.get('total_allocated', 0)|float).rstrip('0').rstrip('.') if asset_balance.get('total_allocated', 0)|float > 0 else '0' }}</td>
+                            <td class="text-end">{{ "{:,.8f}".format(asset_balance.get('unallocated', 0)|float).rstrip('0').rstrip('.') if asset_balance.get('unallocated', 0)|float > 0 else '0' }}</td>
                             <td class="text-end">
                                 {% if asset_balance.get('usd_value') is not none %}
                                     {{ "{:,.2f}".format(asset_balance.usd_value|float) }}
@@ -128,10 +133,13 @@
                                     <span class="text-muted">N/A</span>
                                 {% endif %}
                             </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" disabled>Transfer</button>
+                            </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="3" class="text-center text-muted p-4">
+                            <td colspan="6" class="text-center text-muted p-4">
                                 No assets with significant balances found on this exchange.
                             </td>
                         </tr>
@@ -159,6 +167,81 @@
         {% endif %}
     </div>
     {% endif %}
+
+
+    <!-- Create New Trading Strategy Section -->
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="mb-0">Create New Trading Strategy</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('exchange.create_trading_strategy', exchange_id=current_exchange_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                
+                <div class="mb-3">
+                    <label for="strategy_name" class="form-label">Strategy Name</label>
+                    <input type="text" class="form-control" id="strategy_name" name="strategy_name" required>
+                </div>
+                <div class="mb-3">
+                    <label for="trading_pair" class="form-label">Trading Pair</label>
+                    <input type="text" class="form-control" id="trading_pair" name="trading_pair" placeholder="e.g., BTC/USDT" aria-describedby="tradingPairHelp" required>
+                    <div id="tradingPairHelp" class="form-text">Use a forward slash (/) to separate symbols, e.g., BTC/USDT.</div>
+                </div>
+                <button type="submit" class="btn btn-primary">Create Strategy</button>
+            </form>
+        </div>
+    </div>
+
+
+
+    <!-- Trading Strategies List Section -->
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="mb-0">Your Trading Strategies on {{ current_exchange_display_name }}</h5>
+        </div>
+        <div class="card-body p-0"> {# Use p-0 if table is directly inside #}
+            {% if user_strategies and user_strategies|length > 0 %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th scope="col">Name</th>
+                                <th scope="col">Trading Pair</th>
+                                <th scope="col">Allocated Base</th>
+                                <th scope="col">Allocated Quote</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for strategy in user_strategies %}
+                            <tr>
+                                <td>{{ strategy.name }}</td>
+                                <td>{{ strategy.trading_pair }}</td>
+                                <td>{{ (strategy.allocated_base_asset_quantity | float) | round(8) }} {{ strategy.base_asset_symbol }}</td>
+                                <td>{{ (strategy.allocated_quote_asset_quantity | float) | round(8) }} {{ strategy.quote_asset_symbol }}</td>
+                                <td>
+                                    {% if strategy.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Inactive</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-info" disabled title="Strategy details page coming soon">Details</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="p-3">
+                    <p class="text-muted mb-0">You haven't created any trading strategies for this exchange yet.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
 
 </div>
 {% endblock %}

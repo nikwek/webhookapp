@@ -141,11 +141,12 @@ def create_app(test_config=None):
                 return False
 
         # Register blueprints
-        from app.routes import dashboard, webhook, admin, automation
+        from app.routes import dashboard, webhook, admin, automation, exchange
         app.register_blueprint(dashboard.bp)
         app.register_blueprint(webhook.bp)
         app.register_blueprint(admin.bp)
         app.register_blueprint(automation.bp)
+        app.register_blueprint(exchange.exchange_bp)
 
         # Import debug blueprint here (after app is created) to avoid circular imports
         from app.routes.debug import debug as debug_blueprint

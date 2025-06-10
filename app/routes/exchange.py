@@ -11,6 +11,7 @@ import uuid
 import logging
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
+from app.services import allocation_service
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ def view_exchange(exchange_id: str):
     except Exception as e:
         logger.error(f"Error getting display name for current exchange {exchange_id}: {e}")
 
+    cred = None # Initialize cred to None
     if issubclass(current_exchange_adapter_cls, CcxtBaseAdapter):
         cred = next((c for c in all_creds if c.exchange == exchange_id), None)
         if cred and hasattr(current_exchange_adapter_cls, 'get_portfolio_value'):
@@ -92,6 +94,7 @@ def view_exchange(exchange_id: str):
                 current_exchange_data['success'] = portfolio_data.get('success', True)
                 if not current_exchange_data['success']:
                      current_exchange_data['error_message'] = portfolio_data.get('error', 'Failed to retrieve portfolio data.')
+                current_exchange_data['current_credential_id'] = cred.id # Pass credential ID
             except Exception as e:
                 logger.error(f"Error getting portfolio value for {exchange_id} (user {user_id}): {e}", exc_info=True)
                 flash(f"Error retrieving data for {current_exchange_display_name}: {e}", "danger")
@@ -101,6 +104,7 @@ def view_exchange(exchange_id: str):
             logger.warning(f"No credentials found for {exchange_id} for user {user_id} to fetch portfolio.")
             flash(f"Credentials for {current_exchange_display_name} not found.", "warning")
             current_exchange_data['error_message'] = f"Credentials for {current_exchange_display_name} not found."
+            current_exchange_data['current_credential_id'] = None
         else: 
             logger.error(f"Adapter {exchange_id} is CCXT but has no get_portfolio_value method.")
             flash(f"Cannot retrieve portfolio for {current_exchange_display_name}.", "danger")
@@ -160,6 +164,37 @@ def view_exchange(exchange_id: str):
     elif current_exchange_data.get('balances') is None:
         current_exchange_data['balances'] = [] # Ensure it's an iterable for the template if it was None
 
+    # Prepare strategy data for JavaScript
+    # Prepare main account assets data for JavaScript
+    main_account_assets_json_data = []
+    # Use 'cred' which is defined in the scope above for CCXT adapters
+    # Ensure 'cred' is defined and not None before trying to use it.
+    # 'cred' would be None if no matching credential was found or if not a CCXT adapter.
+    if current_exchange_data.get('balances') and final_cred:
+        for asset_balance_item in current_exchange_data['balances']:
+            asset_symbol = asset_balance_item.get('asset')
+            # Use 'unallocated' as it represents the freely transferable amount from the main account
+            available_balance = asset_balance_item.get('unallocated', 0.0) 
+            if asset_symbol and float(available_balance) > 0: # Only include assets with some balance
+                main_account_assets_json_data.append({
+                    "id": f"main_account::{final_cred.id}::{asset_symbol}", # Unique ID for JS
+                    "name": f"Main Account - {asset_symbol}",
+                    "asset_symbol": asset_symbol,
+                    "exchange_credential_id": final_cred.id,
+                    "available_balance": float(available_balance)
+                })
+
+    # Prepare strategy data for JavaScript
+    strategies_json_data = [
+        {
+            "id": strategy.id,
+            "name": strategy.name,
+            "exchange_credential_id": strategy.exchange_credential_id,
+            "base_asset_symbol": strategy.base_asset_symbol,
+            "quote_asset_symbol": strategy.quote_asset_symbol
+        }
+        for strategy in user_strategies
+    ]
 
     return render_template(
         'exchange.html',
@@ -168,6 +203,9 @@ def view_exchange(exchange_id: str):
         current_exchange_data=current_exchange_data,
         all_connected_exchanges=connected_exchanges_for_dropdown,
         user_strategies=user_strategies,  # Pass strategies to template
+        strategies_json_data=strategies_json_data,
+        main_account_assets_json_data=main_account_assets_json_data,
+        current_credential_id=cred.id if cred else None, # Pass JSON-ready strategy data
         title=f"{current_exchange_display_name} Details"
     )
 
@@ -230,5 +268,85 @@ def create_trading_strategy(exchange_id: str):
     
     # Should not be reached if only POST is allowed by the route decorator,
     # but as a fallback:
+    return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+
+
+@exchange_bp.route('/<string:exchange_id>/transfer', methods=['POST'])
+@login_required
+def transfer_assets(exchange_id: str):
+    user_id = current_user.id
+    try:
+        source_account_str = request.form.get('source_account')
+        destination_account_str = request.form.get('destination_account')
+        asset_symbol = request.form.get('asset_symbol_hidden') # Actual asset symbol from hidden field
+        amount_str = request.form.get('amount')
+
+        if not all([source_account_str, destination_account_str, asset_symbol, amount_str]):
+            flash('All fields are required for transfer.', 'danger')
+            return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+
+        try:
+            amount = Decimal(amount_str)
+            if amount <= Decimal('0'):
+                raise ValueError("Transfer amount must be positive.")
+        except (InvalidOperation, ValueError) as e:
+            flash(f'Invalid amount: {e}', 'danger')
+            return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+
+        source_type, source_id_str = source_account_str.split('::')
+        dest_type, dest_id_str = destination_account_str.split('::')
+
+        target_credential = ExchangeCredentials.query.filter_by(user_id=user_id, exchange=exchange_id).first()
+        if not target_credential:
+            flash(f"Invalid exchange context or credentials not found for {exchange_id}.", 'danger')
+            return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+        
+        current_credential_id = target_credential.id
+
+        if source_type == 'main_account' and dest_type == 'strategy':
+            strategy_id = int(dest_id_str)
+            strategy_to_allocate = TradingStrategy.query.filter_by(id=strategy_id, user_id=user_id, exchange_credential_id=current_credential_id).first()
+            if not strategy_to_allocate:
+                flash('Invalid strategy or strategy does not belong to this exchange credential.', 'danger')
+                return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+            
+            # Ensure the main account source matches the current credential context
+            if source_id_str != str(current_credential_id):
+                flash('Transfer source (Main Account) does not match the current exchange context.', 'danger')
+                return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+
+            success, msg = allocation_service.allocate_to_strategy(user_id, strategy_id, asset_symbol, amount)
+            if success:
+                flash(msg, 'success')
+            else:
+                flash(msg, 'danger')
+
+        elif source_type == 'strategy' and dest_type == 'main_account':
+            strategy_id = int(source_id_str)
+            if dest_id_str != str(current_credential_id):
+                 flash('Transfer destination (Main Account) does not match the current exchange context.', 'danger')
+                 return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+
+            strategy_to_deallocate = TradingStrategy.query.filter_by(id=strategy_id, user_id=user_id, exchange_credential_id=current_credential_id).first()
+            if not strategy_to_deallocate:
+                flash('Invalid strategy or strategy does not belong to this exchange credential.', 'danger')
+                return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+
+            success, msg = allocation_service.deallocate_from_strategy(user_id, strategy_id, asset_symbol, amount)
+            if success:
+                flash(msg, 'success')
+            else:
+                flash(msg, 'danger')
+        else:
+            flash('Invalid transfer direction. Only Main Account <-> Strategy is currently supported.', 'warning')
+
+    except allocation_service.AllocationError as e:
+        flash(str(e), 'danger')
+    except ValueError as e: 
+        flash(f'Invalid input: {str(e)}', 'danger')
+    except Exception as e:
+        logger.error(f"Unexpected error during asset transfer for user {user_id} on exchange {exchange_id}: {e}", exc_info=True)
+        flash('An unexpected error occurred during the transfer. Please try again.', 'danger')
+
     return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
 

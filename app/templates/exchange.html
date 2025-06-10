@@ -134,12 +134,21 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <button class="btn btn-sm btn-outline-primary" disabled>Transfer</button>
+                                <button class="btn btn-sm btn-outline-primary transfer-button"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#assetTransferModal"
+                                        data-transfer-type="main_to_strategy"
+                                        data-asset-symbol="{{ asset_balance.asset }}"
+                                        data-asset-name="{{ asset_balance.asset }}"
+                                        data-max-transferable="{{ asset_balance.get('unallocated', 0)|float }}"
+                                        data-credential-id="{{ current_exchange_data.current_credential_id }}">
+                                    Transfer
+                                </button>
                             </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="6" class="text-center text-muted p-4">
+                            <td colspan="6" class="text-center text-muted p-3">
                                 No assets with significant balances found on this exchange.
                             </td>
                         </tr>
@@ -210,7 +219,7 @@
                                 <th scope="col">Allocated Base</th>
                                 <th scope="col">Allocated Quote</th>
                                 <th scope="col">Status</th>
-                                <th scope="col">Actions</th>
+                                <th scope="col" class="text-end">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -227,8 +236,22 @@
                                         <span class="badge bg-secondary">Inactive</span>
                                     {% endif %}
                                 </td>
-                                <td>
-                                    <button class="btn btn-sm btn-outline-info" disabled title="Strategy details page coming soon">Details</button>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-info transfer-button"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#assetTransferModal"
+                                            data-transfer-type="strategy_to_main_or_strategy_asset_choice" {# Will be refined by JS #}
+                                            data-strategy-id="{{ strategy.id }}"
+                                            data-strategy-name="{{ strategy.name }}"
+                                            data-base-asset-symbol="{{ strategy.base_asset_symbol }}"
+                                            data-allocated-base="{{ strategy.allocated_base_asset_quantity|float }}"
+                                            data-quote-asset-symbol="{{ strategy.quote_asset_symbol }}"
+                                            data-allocated-quote="{{ strategy.allocated_quote_asset_quantity|float }}"
+                                            data-credential-id="{{ strategy.exchange_credential_id }}">
+                                        Transfer
+                                    </button>
+                                    <!-- Details button placeholder -->
+                                    <!-- <a href="#" class="btn btn-sm btn-info ms-1">Details</a> -->
                                 </td>
                             </tr>
                             {% endfor %}
@@ -243,7 +266,85 @@
         </div>
     </div>
 
+    <!-- Asset Transfer Modal -->
+    <div class="modal fade" id="assetTransferModal" tabindex="-1" aria-labelledby="assetTransferModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="assetTransferModalLabel">Transfer Assets</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="assetTransferForm" method="POST">
+                        <input type="hidden" id="transferAssetSymbolHidden" name="asset_symbol_hidden">
+                        <div class="mb-3">
+                            <label for="transferAssetDisplay" class="form-label">Asset</label>
+                            <p class="form-control-plaintext" id="transferAssetDisplay"><strong><!-- Asset Name --></strong></p>
+                        </div>
+                        <div class="mb-3">
+                            <label for="transferSourceAccount" class="form-label">Source Account</label>
+                            <select class="form-select" id="transferSourceAccount" name="source_account" required>
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="transferDestinationAccount" class="form-label">Destination Account</label>
+                            <select class="form-select" id="transferDestinationAccount" name="destination_account" required>
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="transferAmount" class="form-label">Amount</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="transferAmount" name="amount" step="any" placeholder="0.00" required>
+                                <button class="btn btn-outline-secondary" type="button" id="transferMaxButton">Max</button>
+                            </div>
+                            <div id="maxAmountHelp" class="form-text">Available to transfer: <span id="availableToTransfer">0.00000000</span> <span id="transferingAssetSymbolDisplay">ASSET</span></div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" form="assetTransferForm" class="btn btn-primary">Confirm Transfer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- End Asset Transfer Modal -->
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/exchange_transfers.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Pass strategy data to the JavaScript file
+        var strategiesData = {{ strategies_json_data | tojson | safe }};
+        var mainAccountAssetsData = {{ main_account_assets_json_data | tojson | safe }};
+        var currentCredentialIdFromTemplate = {{ current_credential_id | tojson | safe }};
+        // Simplified logging for clarity and potentially to help with linting
+        console.log('TEMPLATE LOG: strategiesData from Jinja (inside DOMContentLoaded):', strategiesData);
+        console.log('TEMPLATE LOG: mainAccountAssetsData from Jinja (inside DOMContentLoaded):', mainAccountAssetsData);
+        console.log('TEMPLATE LOG: currentCredentialIdFromTemplate from Jinja (inside DOMContentLoaded):', currentCredentialIdFromTemplate);
+
+        if (typeof window.setStrategiesData === 'function' && strategiesData) {
+            console.log('TEMPLATE LOG: Calling window.setStrategiesData (inside DOMContentLoaded) with:', strategiesData);
+            window.setStrategiesData(strategiesData);
+        }
+
+        if (typeof window.setMainAccountAssetsData === 'function' && mainAccountAssetsData) {
+            console.log('TEMPLATE LOG: Calling window.setMainAccountAssetsData (inside DOMContentLoaded) with:', mainAccountAssetsData);
+            window.setMainAccountAssetsData(mainAccountAssetsData);
+        }
+
+        if (typeof window.setCurrentCredentialId === 'function' && currentCredentialIdFromTemplate !== null && currentCredentialIdFromTemplate !== undefined) {
+            console.log('TEMPLATE LOG: Calling window.setCurrentCredentialId (inside DOMContentLoaded) with:', currentCredentialIdFromTemplate);
+            window.setCurrentCredentialId(currentCredentialIdFromTemplate);
+        }
+        // The redundant if/else for setStrategiesData has been removed.
+    });
+</script>
 {% endblock %}
 
 {% block styles %}

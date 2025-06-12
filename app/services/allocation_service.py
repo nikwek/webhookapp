@@ -64,74 +64,212 @@ def get_unallocated_balance(user_id: int, credential_id: int, asset_symbol: str)
     return max(Decimal('0'), unallocated) # Ensure it's not negative due to sync issues or errors
 
 
-def allocate_to_strategy(user_id: int, strategy_id: int, asset_symbol: str, amount_to_allocate: Decimal):
-    if amount_to_allocate <= Decimal('0'):
-        # Raising error instead of returning tuple for consistency in error handling
-        raise AllocationError("Allocation amount must be positive.")
+def execute_internal_asset_transfer(user_id: int, source_identifier: str, destination_identifier: str, asset_symbol_to_transfer: str, amount: Decimal):
+    """
+    Executes an internal transfer of assets between a user's main account and their trading strategies,
+    or between two trading strategies.
 
-    strategy = TradingStrategy.query.filter_by(id=strategy_id, user_id=user_id).first()
-    if not strategy:
-        raise AllocationError(f"Strategy with ID {strategy_id} not found for user {user_id}.")
+    The function handles three types of transfers:
+    1. Main Account -> Trading Strategy
+    2. Trading Strategy -> Main Account
+    3. Trading Strategy -> Trading Strategy
 
-    if asset_symbol != strategy.base_asset_symbol and asset_symbol != strategy.quote_asset_symbol:
-        raise AllocationError(f"Asset {asset_symbol} is not part of strategy {strategy.name}'s trading pair ({strategy.trading_pair}).")
+    Identifiers are used to specify the source and destination:
+    - Main Account: 'main::{credential_id}::{asset_symbol}' (e.g., 'main::11::BTC')
+    - Trading Strategy: 'strategy::{strategy_id}' (e.g., 'strategy::3')
 
-    # Check against unallocated balance
-    unallocated_balance = get_unallocated_balance(user_id, strategy.exchange_credential_id, asset_symbol)
-    if amount_to_allocate > unallocated_balance:
-        raise AllocationError(
-            f"Cannot allocate {amount_to_allocate} {asset_symbol}. "
-            f"Unallocated balance is {unallocated_balance:.8f} {asset_symbol}."
-        )
+    Args:
+        user_id (int): The ID of the user performing the transfer.
+        source_identifier (str): The identifier for the source account/strategy.
+        destination_identifier (str): The identifier for the destination account/strategy.
+        asset_symbol_to_transfer (str): The symbol of the asset being transferred (e.g., 'BTC').
+        amount (Decimal): The amount of the asset to transfer.
 
-    # Perform allocation
-    if asset_symbol == strategy.base_asset_symbol:
-        strategy.allocated_base_asset_quantity += amount_to_allocate
-    elif asset_symbol == strategy.quote_asset_symbol:
-        strategy.allocated_quote_asset_quantity += amount_to_allocate
-    
-    db.session.add(strategy)
+    Returns:
+        tuple[bool, str]: A tuple containing a boolean indicating success and a message.
+
+    Raises:
+        AllocationError: If the transfer is invalid for any reason (e.g., insufficient funds,
+                         invalid identifiers, mismatched assets).
+    """
+    logger.debug(f"Executing transfer: user_id={user_id}, source='{source_identifier}', dest='{destination_identifier}', asset='{asset_symbol_to_transfer}', amount={amount}")
+    source_parts = source_identifier.split('::')
+    dest_parts = destination_identifier.split('::')
+
+    # --- Validate and parse source ---
+    source_type, source_id = None, None
+    if len(source_parts) == 3 and source_parts[0] == 'main':
+        source_type, source_credential_id_str, source_asset_symbol = source_parts
+        source_id = int(source_credential_id_str)
+        # The asset in the identifier must match the asset being transferred.
+        if source_asset_symbol.upper() != asset_symbol_to_transfer.upper():
+            raise AllocationError(f"Asset symbol in source identifier ('{source_asset_symbol}') does not match asset being transferred ('{asset_symbol_to_transfer}').")
+    elif (len(source_parts) == 2 or len(source_parts) == 3) and source_parts[0] == 'strategy':
+        source_type = source_parts[0]  # 'strategy'
+        source_strategy_id_str = source_parts[1] # The actual ID string
+        source_id = int(source_strategy_id_str)
+        # The third part (source_parts[2]), if present, is an asset symbol.
+        # asset_symbol_to_transfer is the definitive asset for the transaction.
+    else:
+        raise AllocationError(f"Invalid source identifier format: '{source_identifier}'")
+
+    # --- Validate and parse destination ---
+    dest_type, dest_id = None, None
+    if len(dest_parts) == 3 and dest_parts[0] == 'main':
+        dest_type, dest_credential_id_str, dest_asset_symbol = dest_parts
+        dest_id = int(dest_credential_id_str)
+        # The asset in the identifier must match the asset being transferred.
+        if dest_asset_symbol.upper() != asset_symbol_to_transfer.upper():
+            raise AllocationError(f"Asset symbol in destination identifier ('{dest_asset_symbol}') does not match asset being transferred ('{asset_symbol_to_transfer}').")
+    elif (len(dest_parts) == 2 or len(dest_parts) == 3) and dest_parts[0] == 'strategy':
+        dest_type = dest_parts[0]  # 'strategy'
+        dest_strategy_id_str = dest_parts[1] # The actual ID string
+        dest_id = int(dest_strategy_id_str)
+        # The third part (dest_parts[2]), if present, is an asset symbol.
+    else:
+        raise AllocationError(f"Invalid destination identifier format: '{destination_identifier}'")
+
+
     try:
-        db.session.commit()
-        return True, f"Successfully allocated {amount_to_allocate} {asset_symbol} to {strategy.name}."
+        # --- Case 1: Main Account -> Trading Strategy --- 
+        if source_type == 'main' and dest_type == 'strategy':
+            source_credential_id = source_id
+            destination_strategy_id = dest_id
+
+            if amount <= Decimal('0'):
+                raise AllocationError("Transfer amount must be positive.")
+
+            strategy = TradingStrategy.query.filter_by(id=destination_strategy_id, user_id=user_id).first()
+            if not strategy:
+                raise AllocationError(f"Strategy with ID {destination_strategy_id} not found for user {user_id}.")
+
+            if strategy.exchange_credential_id != source_credential_id:
+                raise AllocationError(f"Strategy's associated credential ID ({strategy.exchange_credential_id}) does not match the source main account's credential ID ({source_credential_id}).")
+
+            if asset_symbol_to_transfer != strategy.base_asset_symbol and asset_symbol_to_transfer != strategy.quote_asset_symbol:
+                raise AllocationError(f"Asset {asset_symbol_to_transfer} is not part of strategy {strategy.name}'s trading pair ({strategy.trading_pair}).")
+
+            unallocated_balance = get_unallocated_balance(user_id, source_credential_id, asset_symbol_to_transfer)
+            if amount > unallocated_balance:
+                raise AllocationError(
+                    f"Cannot transfer {amount} {asset_symbol_to_transfer}. "
+                    f"Unallocated balance is {unallocated_balance:.8f} {asset_symbol_to_transfer} on the specified main account."
+                )
+
+            if asset_symbol_to_transfer == strategy.base_asset_symbol:
+                current_base_allocated = strategy.allocated_base_asset_quantity if strategy.allocated_base_asset_quantity is not None else Decimal('0.0')
+                strategy.allocated_base_asset_quantity = current_base_allocated + amount
+            elif asset_symbol_to_transfer == strategy.quote_asset_symbol:
+                current_quote_allocated = strategy.allocated_quote_asset_quantity if strategy.allocated_quote_asset_quantity is not None else Decimal('0.0')
+                strategy.allocated_quote_asset_quantity = current_quote_allocated + amount
+            
+            db.session.add(strategy)
+            db.session.commit()
+            logger.info(f"Successfully transferred {amount} {asset_symbol_to_transfer} from main account (cred ID: {source_credential_id}) to strategy {strategy.name} (ID: {destination_strategy_id}) for user {user_id}.")
+            return True, f"Successfully transferred {amount} {asset_symbol_to_transfer} to {strategy.name}."
+
+        # --- Case 2: Trading Strategy -> Main Account --- 
+        elif source_type == 'strategy' and dest_type == 'main':
+            source_strategy_id = source_id # Use already parsed integer ID
+            destination_credential_id = dest_id # Use already parsed integer ID
+
+            if amount <= Decimal('0'):
+                raise AllocationError("Transfer amount must be positive.")
+
+            strategy = TradingStrategy.query.filter_by(id=source_strategy_id, user_id=user_id).first()
+            if not strategy:
+                raise AllocationError(f"Source strategy with ID {source_strategy_id} not found for user {user_id}.")
+
+            if strategy.exchange_credential_id != destination_credential_id:
+                raise AllocationError(f"Strategy's associated credential ID ({strategy.exchange_credential_id}) does not match the destination main account's credential ID ({destination_credential_id}). Funds can only be transferred back to the strategy's parent main account.")
+
+            if asset_symbol_to_transfer == strategy.base_asset_symbol:
+                current_base_allocated = strategy.allocated_base_asset_quantity if strategy.allocated_base_asset_quantity is not None else Decimal('0.0')
+                if amount > current_base_allocated:
+                    raise AllocationError(f"Cannot transfer {amount} {asset_symbol_to_transfer}. Strategy {strategy.name} only has {current_base_allocated:.8f} {asset_symbol_to_transfer} allocated.")
+                strategy.allocated_base_asset_quantity = current_base_allocated - amount
+            elif asset_symbol_to_transfer == strategy.quote_asset_symbol:
+                current_quote_allocated = strategy.allocated_quote_asset_quantity if strategy.allocated_quote_asset_quantity is not None else Decimal('0.0')
+                if amount > current_quote_allocated:
+                    raise AllocationError(f"Cannot transfer {amount} {asset_symbol_to_transfer}. Strategy {strategy.name} only has {current_quote_allocated:.8f} {asset_symbol_to_transfer} allocated.")
+                strategy.allocated_quote_asset_quantity = current_quote_allocated - amount
+            else:
+                raise AllocationError(f"Asset {asset_symbol_to_transfer} is not part of strategy {strategy.name}'s trading pair ({strategy.trading_pair}).")
+            
+            db.session.add(strategy)
+            db.session.commit()
+            logger.info(f"Successfully transferred {amount} {asset_symbol_to_transfer} from strategy {strategy.name} (ID: {source_strategy_id}) to main account (cred ID: {destination_credential_id}) for user {user_id}.")
+            return True, f"Successfully transferred {amount} {asset_symbol_to_transfer} from {strategy.name} to Main Account."
+
+        # --- Case 3: Trading Strategy -> Trading Strategy --- 
+        elif source_type == 'strategy' and dest_type == 'strategy':
+            source_strategy_id = source_id
+            destination_strategy_id = dest_id
+
+            if amount <= Decimal('0'):
+                raise AllocationError("Transfer amount must be positive.")
+
+            if source_strategy_id == destination_strategy_id:
+                raise AllocationError("Source and destination strategies cannot be the same.")
+
+            source_strategy = TradingStrategy.query.filter_by(id=source_strategy_id, user_id=user_id).first()
+            destination_strategy = TradingStrategy.query.filter_by(id=destination_strategy_id, user_id=user_id).first()
+
+            if not source_strategy:
+                raise AllocationError(f"Source strategy with ID {source_strategy_id} not found for user {user_id}.")
+            if not destination_strategy:
+                raise AllocationError(f"Destination strategy with ID {destination_strategy_id} not found for user {user_id}.")
+
+            if source_strategy.exchange_credential_id != destination_strategy.exchange_credential_id:
+                raise AllocationError(f"Strategies must belong to the same main exchange account. Source: {source_strategy.exchange_credential_id}, Destination: {destination_strategy.exchange_credential_id}.")
+
+            # Validate asset compatibility for source strategy
+            if not (asset_symbol_to_transfer == source_strategy.base_asset_symbol or asset_symbol_to_transfer == source_strategy.quote_asset_symbol):
+                raise AllocationError(f"Asset {asset_symbol_to_transfer} is not part of source strategy {source_strategy.name}'s trading pair ({source_strategy.trading_pair}).")
+
+            # Validate asset compatibility for destination strategy
+            if not (asset_symbol_to_transfer == destination_strategy.base_asset_symbol or asset_symbol_to_transfer == destination_strategy.quote_asset_symbol):
+                raise AllocationError(f"Asset {asset_symbol_to_transfer} is not part of destination strategy {destination_strategy.name}'s trading pair ({destination_strategy.trading_pair}).")
+
+            # Decrease from source strategy
+            if asset_symbol_to_transfer == source_strategy.base_asset_symbol:
+                current_source_base_allocated = source_strategy.allocated_base_asset_quantity if source_strategy.allocated_base_asset_quantity is not None else Decimal('0.0')
+                if amount > current_source_base_allocated:
+                    raise AllocationError(f"Cannot transfer {amount} {asset_symbol_to_transfer}. Source strategy {source_strategy.name} only has {current_source_base_allocated:.8f} {asset_symbol_to_transfer} allocated.")
+                source_strategy.allocated_base_asset_quantity = current_source_base_allocated - amount
+            elif asset_symbol_to_transfer == source_strategy.quote_asset_symbol: # Must be quote if not base, due to earlier validation
+                current_source_quote_allocated = source_strategy.allocated_quote_asset_quantity if source_strategy.allocated_quote_asset_quantity is not None else Decimal('0.0')
+                if amount > current_source_quote_allocated:
+                    raise AllocationError(f"Cannot transfer {amount} {asset_symbol_to_transfer}. Source strategy {source_strategy.name} only has {current_source_quote_allocated:.8f} {asset_symbol_to_transfer} allocated.")
+                source_strategy.allocated_quote_asset_quantity = current_source_quote_allocated - amount
+            
+            # Increase for destination strategy
+            if asset_symbol_to_transfer == destination_strategy.base_asset_symbol:
+                current_dest_base_allocated = destination_strategy.allocated_base_asset_quantity if destination_strategy.allocated_base_asset_quantity is not None else Decimal('0.0')
+                destination_strategy.allocated_base_asset_quantity = current_dest_base_allocated + amount
+            elif asset_symbol_to_transfer == destination_strategy.quote_asset_symbol: # Must be quote if not base, due to earlier validation
+                current_dest_quote_allocated = destination_strategy.allocated_quote_asset_quantity if destination_strategy.allocated_quote_asset_quantity is not None else Decimal('0.0')
+                destination_strategy.allocated_quote_asset_quantity = current_dest_quote_allocated + amount
+
+            db.session.add(source_strategy)
+            db.session.add(destination_strategy)
+            db.session.commit()
+            logger.info(f"Successfully transferred {amount} {asset_symbol_to_transfer} from strategy {source_strategy.name} (ID: {source_strategy_id}) to strategy {destination_strategy.name} (ID: {destination_strategy_id}) for user {user_id}.")
+            return True, f"Successfully transferred {amount} {asset_symbol_to_transfer} from {source_strategy.name} to {destination_strategy.name}."
+        
+        else:
+            raise AllocationError("Unsupported transfer combination.")
+
+    except InvalidOperation: # Catches errors from Decimal conversion if IDs are not numeric
+        db.session.rollback()
+        raise AllocationError("Invalid ID format in source or destination identifier.")
+    except ValueError: # Catches errors from int() conversion if IDs are not numeric
+        db.session.rollback()
+        raise AllocationError("Invalid ID format in source or destination identifier.")
+    except AllocationError as e:
+        db.session.rollback()
+        raise e # Re-raise known allocation errors
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Database error during allocation: {e}", exc_info=True)
-        raise AllocationError(f"Could not save allocation due to a database error: {str(e)}")
-
-
-def deallocate_from_strategy(user_id: int, strategy_id: int, asset_symbol: str, amount_to_deallocate: Decimal):
-    if amount_to_deallocate <= Decimal('0'):
-        raise AllocationError("Deallocation amount must be positive.")
-
-    strategy = TradingStrategy.query.filter_by(id=strategy_id, user_id=user_id).first()
-    if not strategy:
-        raise AllocationError(f"Strategy with ID {strategy_id} not found for user {user_id}.")
-
-    if asset_symbol != strategy.base_asset_symbol and asset_symbol != strategy.quote_asset_symbol:
-        raise AllocationError(f"Asset {asset_symbol} is not part of strategy {strategy.name}'s trading pair ({strategy.trading_pair}).")
-
-    # Perform deallocation
-    if asset_symbol == strategy.base_asset_symbol:
-        if amount_to_deallocate > strategy.allocated_base_asset_quantity:
-            raise AllocationError(
-                f"Cannot deallocate {amount_to_deallocate} {asset_symbol}. "
-                f"Strategy {strategy.name} only has {strategy.allocated_base_asset_quantity:.8f} {asset_symbol} allocated."
-            )
-        strategy.allocated_base_asset_quantity -= amount_to_deallocate
-    elif asset_symbol == strategy.quote_asset_symbol:
-        if amount_to_deallocate > strategy.allocated_quote_asset_quantity:
-            raise AllocationError(
-                f"Cannot deallocate {amount_to_deallocate} {asset_symbol}. "
-                f"Strategy {strategy.name} only has {strategy.allocated_quote_asset_quantity:.8f} {asset_symbol} allocated."
-            )
-        strategy.allocated_quote_asset_quantity -= amount_to_deallocate
-    
-    db.session.add(strategy)
-    try:
-        db.session.commit()
-        return True, f"Successfully deallocated {amount_to_deallocate} {asset_symbol} from {strategy.name}."
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Database error during deallocation: {e}", exc_info=True)
-        raise AllocationError(f"Could not save deallocation due to a database error: {str(e)}")
+        logger.error(f"Unexpected error during internal asset transfer: {e}", exc_info=True)
+        raise AllocationError(f"An unexpected error occurred: {str(e)}")

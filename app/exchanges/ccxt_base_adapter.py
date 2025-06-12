@@ -12,7 +12,6 @@ our code can access them by name exactly matching the exchange id.
 from __future__ import annotations
 
 import logging
-import json  # Added for cache key generation
 
 from app import cache  # Added for caching
 import base64
@@ -282,6 +281,8 @@ class CcxtBaseAdapter(ExchangeAdapter):
         client = cls.get_client(user_id)
         if not client:
             return {
+                "success": False,
+                "error": f"Client not available for {cls.get_name()} user {user_id}",
                 "currency": target_currency,
                 "total_value": 0.0,
                 "balances": [],
@@ -300,7 +301,6 @@ class CcxtBaseAdapter(ExchangeAdapter):
             if client.has.get('loadMarkets'):
                 client.load_markets()
 
-            balances_data = None
             try:
                 logger.debug(f"{cls.get_name()}: Attempting to fetch balance.")
                 balances_data = client.fetch_balance()
@@ -309,25 +309,21 @@ class CcxtBaseAdapter(ExchangeAdapter):
                     f"{exchange_name}: Balances fetched. Type: {type(balances_data)}. "
                     f"Content (first 200 chars): {str(balances_data)[:200]}"
                 )
-            except IndexError as ie_fb:
-                logger.error(
-                    f"{cls.get_name()}: IndexError during fetch_balance: {ie_fb}",
-                    exc_info=True
-                )
-                raise # Re-raise to be caught by the main error handler
             except Exception as e_fb:
                 logger.error(
-                    f"{cls.get_name()}: Error during fetch_balance: {e_fb}",
+                    f"{cls.get_name()}: Error during fetch_balance: {type(e_fb).__name__} - {e_fb}",
                     exc_info=True
                 )
                 return {
+                    "success": False,
+                    "error": f"Failed to retrieve portfolio data from {cls.get_name()}: {type(e_fb).__name__} - {e_fb}",
                     "currency": target_currency,
                     "total_value": 0.0,
                     "balances": [],
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "pricing_errors": [{
                         "asset": "N/A",
-                        "error": f"Failed to fetch balance: {e_fb}"
+                        "error": f"Failed to retrieve portfolio data from exchange: {e_fb}"
                     }]
                 }
 
@@ -450,6 +446,8 @@ class CcxtBaseAdapter(ExchangeAdapter):
                             pricing_errors.append({"asset": asset_upper, "error": f"Failed to process price for {symbol}: {e_generic_ft}"})
             
             return {
+                "success": True,
+                "error": None,
                 "currency": target_currency,
                 "total_value": round(total_value_in_target_currency, 2),
                 "balances": detailed_asset_balances,
@@ -460,6 +458,8 @@ class CcxtBaseAdapter(ExchangeAdapter):
         except ccxt.NetworkError as e:
             logger.error(f"{cls.get_name()}: Network error in get_portfolio_value: {e}")
             return {
+                "success": False,
+                "error": f"Network error: {e}",
                 "currency": target_currency,
                 "total_value": 0.0,
                 "timestamp": datetime.now(timezone.utc).isoformat(),

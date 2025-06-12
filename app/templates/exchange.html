@@ -237,19 +237,33 @@
                                     {% endif %}
                                 </td>
                                 <td class="text-end">
-                                    <button class="btn btn-sm btn-outline-info transfer-button"
+                                    {# Button for Base Asset #}
+                                    {% if strategy.allocated_base_asset_quantity | float > 0 %}
+                                    <button class="btn btn-sm btn-outline-primary transfer-button mb-1"
                                             data-bs-toggle="modal"
                                             data-bs-target="#assetTransferModal"
-                                            data-transfer-type="strategy_to_main_or_strategy_asset_choice" {# Will be refined by JS #}
+                                            data-transfer-type="strategy_to_main"
                                             data-strategy-id="{{ strategy.id }}"
                                             data-strategy-name="{{ strategy.name }}"
-                                            data-base-asset-symbol="{{ strategy.base_asset_symbol }}"
-                                            data-allocated-base="{{ strategy.allocated_base_asset_quantity|float }}"
-                                            data-quote-asset-symbol="{{ strategy.quote_asset_symbol }}"
-                                            data-allocated-quote="{{ strategy.allocated_quote_asset_quantity|float }}"
+                                            data-asset-symbol="{{ strategy.base_asset_symbol }}"
                                             data-credential-id="{{ strategy.exchange_credential_id }}">
-                                        Transfer
+                                        Transfer {{ strategy.base_asset_symbol }}
                                     </button>
+                                    {% endif %}
+
+                                    {# Button for Quote Asset #}
+                                    {% if strategy.allocated_quote_asset_quantity | float > 0 %}
+                                    <button class="btn btn-sm btn-outline-secondary transfer-button"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#assetTransferModal"
+                                            data-transfer-type="strategy_to_main"
+                                            data-strategy-id="{{ strategy.id }}"
+                                            data-strategy-name="{{ strategy.name }}"
+                                            data-asset-symbol="{{ strategy.quote_asset_symbol }}"
+                                            data-credential-id="{{ strategy.exchange_credential_id }}">
+                                        Transfer {{ strategy.quote_asset_symbol }}
+                                    </button>
+                                    {% endif %}
                                     <!-- Details button placeholder -->
                                     <!-- <a href="#" class="btn btn-sm btn-info ms-1">Details</a> -->
                                 </td>
@@ -276,20 +290,20 @@
                 </div>
                 <div class="modal-body">
                     <form id="assetTransferForm" method="POST">
-                        <input type="hidden" id="transferAssetSymbolHidden" name="asset_symbol_hidden">
+                        <input type="hidden" id="transferAssetSymbolHidden" name="asset_symbol">
                         <div class="mb-3">
                             <label for="transferAssetDisplay" class="form-label">Asset</label>
                             <p class="form-control-plaintext" id="transferAssetDisplay"><strong><!-- Asset Name --></strong></p>
                         </div>
                         <div class="mb-3">
                             <label for="transferSourceAccount" class="form-label">Source Account</label>
-                            <select class="form-select" id="transferSourceAccount" name="source_account" required>
+                            <select class="form-select" id="transferSourceAccount" name="source_account_id" required>
                                 <!-- Options will be populated by JavaScript -->
                             </select>
                         </div>
                         <div class="mb-3">
                             <label for="transferDestinationAccount" class="form-label">Destination Account</label>
-                            <select class="form-select" id="transferDestinationAccount" name="destination_account" required>
+                            <select class="form-select" id="transferDestinationAccount" name="destination_account_id" required>
                                 <!-- Options will be populated by JavaScript -->
                             </select>
                         </div>

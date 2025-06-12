@@ -177,7 +177,7 @@ def view_exchange(exchange_id: str):
             available_balance = asset_balance_item.get('unallocated', 0.0) 
             if asset_symbol and float(available_balance) > 0: # Only include assets with some balance
                 main_account_assets_json_data.append({
-                    "id": f"main_account::{final_cred.id}::{asset_symbol}", # Unique ID for JS
+                    "id": f"main::{final_cred.id}::{asset_symbol}", # Unique ID for JS
                     "name": f"Main Account - {asset_symbol}",
                     "asset_symbol": asset_symbol,
                     "exchange_credential_id": final_cred.id,
@@ -191,7 +191,9 @@ def view_exchange(exchange_id: str):
             "name": strategy.name,
             "exchange_credential_id": strategy.exchange_credential_id,
             "base_asset_symbol": strategy.base_asset_symbol,
-            "quote_asset_symbol": strategy.quote_asset_symbol
+            "quote_asset_symbol": strategy.quote_asset_symbol,
+            "allocated_base_asset_quantity": float(strategy.allocated_base_asset_quantity or 0),
+            "allocated_quote_asset_quantity": float(strategy.allocated_quote_asset_quantity or 0)
         }
         for strategy in user_strategies
     ]
@@ -275,78 +277,49 @@ def create_trading_strategy(exchange_id: str):
 @login_required
 def transfer_assets(exchange_id: str):
     user_id = current_user.id
+    source_account_id_str = request.form.get('source_account_id')
+    destination_account_id_str = request.form.get('destination_account_id')
+    asset_symbol_from_form = request.form.get('asset_symbol')
+    amount_str = request.form.get('amount')
+
+    logger.info(f"Transfer attempt by user {user_id} on exchange {exchange_id}: Source: {source_account_id_str}, Dest: {destination_account_id_str}, Asset: {asset_symbol_from_form}, Amount: {amount_str}")
+
+    if not all([source_account_id_str, destination_account_id_str, asset_symbol_from_form, amount_str]):
+        flash('Missing required fields for transfer.', 'danger')
+        return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+
     try:
-        source_account_str = request.form.get('source_account')
-        destination_account_str = request.form.get('destination_account')
-        asset_symbol = request.form.get('asset_symbol_hidden') # Actual asset symbol from hidden field
-        amount_str = request.form.get('amount')
-
-        if not all([source_account_str, destination_account_str, asset_symbol, amount_str]):
-            flash('All fields are required for transfer.', 'danger')
-            return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
-
-        try:
-            amount = Decimal(amount_str)
-            if amount <= Decimal('0'):
-                raise ValueError("Transfer amount must be positive.")
-        except (InvalidOperation, ValueError) as e:
-            flash(f'Invalid amount: {e}', 'danger')
-            return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
-
-        source_type, source_id_str = source_account_str.split('::')
-        dest_type, dest_id_str = destination_account_str.split('::')
-
-        target_credential = ExchangeCredentials.query.filter_by(user_id=user_id, exchange=exchange_id).first()
-        if not target_credential:
-            flash(f"Invalid exchange context or credentials not found for {exchange_id}.", 'danger')
-            return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
-        
-        current_credential_id = target_credential.id
-
-        if source_type == 'main_account' and dest_type == 'strategy':
-            strategy_id = int(dest_id_str)
-            strategy_to_allocate = TradingStrategy.query.filter_by(id=strategy_id, user_id=user_id, exchange_credential_id=current_credential_id).first()
-            if not strategy_to_allocate:
-                flash('Invalid strategy or strategy does not belong to this exchange credential.', 'danger')
-                return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
-            
-            # Ensure the main account source matches the current credential context
-            if source_id_str != str(current_credential_id):
-                flash('Transfer source (Main Account) does not match the current exchange context.', 'danger')
-                return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
-
-            success, msg = allocation_service.allocate_to_strategy(user_id, strategy_id, asset_symbol, amount)
-            if success:
-                flash(msg, 'success')
-            else:
-                flash(msg, 'danger')
-
-        elif source_type == 'strategy' and dest_type == 'main_account':
-            strategy_id = int(source_id_str)
-            if dest_id_str != str(current_credential_id):
-                 flash('Transfer destination (Main Account) does not match the current exchange context.', 'danger')
-                 return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
-
-            strategy_to_deallocate = TradingStrategy.query.filter_by(id=strategy_id, user_id=user_id, exchange_credential_id=current_credential_id).first()
-            if not strategy_to_deallocate:
-                flash('Invalid strategy or strategy does not belong to this exchange credential.', 'danger')
-                return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
-
-            success, msg = allocation_service.deallocate_from_strategy(user_id, strategy_id, asset_symbol, amount)
-            if success:
-                flash(msg, 'success')
-            else:
-                flash(msg, 'danger')
-        else:
-            flash('Invalid transfer direction. Only Main Account <-> Strategy is currently supported.', 'warning')
-
-    except allocation_service.AllocationError as e:
+        amount = Decimal(amount_str)
+        if amount <= Decimal('0'): # Amount must be positive
+            # Using Decimal('0') for comparison with a Decimal type
+            raise ValueError("Transfer amount must be positive.")
+    except InvalidOperation:
+        flash('Invalid transfer amount format. Please enter a valid number.', 'danger')
+        return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+    except ValueError as e: # Catches the specific ValueError for non-positive amount
         flash(str(e), 'danger')
-    except ValueError as e: 
-        flash(f'Invalid input: {str(e)}', 'danger')
+        return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+
+    try:
+        success, message = allocation_service.execute_internal_asset_transfer(
+            user_id=user_id,
+            source_identifier=source_account_id_str,
+            destination_identifier=destination_account_id_str,
+            asset_symbol_to_transfer=asset_symbol_from_form,
+            amount=amount
+        )
+        if success:
+            flash(message, 'success')
+        else:
+            flash(message, 'danger')
+    except allocation_service.AllocationError as e:
+        logger.warning(f"AllocationError during transfer: {e}. User: {user_id}, Source: {source_account_id_str}, Dest: {destination_account_id_str}, Asset: {asset_symbol_from_form}, Amount: {amount}")
+        flash(str(e), 'danger')
+    except ValueError as e: # Catch potential errors from int() conversion within service or here
+        logger.error(f"Error processing transfer: {e}. Source: {source_account_id_str}, Dest: {destination_account_id_str}, Asset: {asset_symbol_from_form}, Amount: {amount_str}")
+        flash(f'Invalid source or destination format for transfer: {e}', 'danger')
     except Exception as e:
-        logger.error(f"Unexpected error during asset transfer for user {user_id} on exchange {exchange_id}: {e}", exc_info=True)
-        flash('An unexpected error occurred during the transfer. Please try again.', 'danger')
-
+        logger.error(f"Unexpected error during transfer: {e}", exc_info=True)
+        flash('An unexpected error occurred. Please try again.', 'danger')
+    
     return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
-

@@ -9,6 +9,7 @@ from app import db
 from app.models.trading import TradingStrategy
 import uuid
 import logging
+import json
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 from app.services import allocation_service
@@ -254,9 +255,17 @@ def create_trading_strategy(exchange_id: str):
                 base_asset_symbol=base_asset_symbol,
                 quote_asset_symbol=quote_asset_symbol,
                 webhook_id=str(uuid.uuid4()) # Generate a unique webhook_id
-                # allocated_base_asset_quantity and allocated_quote_asset_quantity default to 0.0
-                # webhook_template can be set later
             )
+
+            # Generate a default webhook template
+            default_webhook_template_dict = {
+                "action": "<buy_or_sell>",  # Placeholder: e.g., "buy", "sell"
+                "symbol": new_strategy.trading_pair, # Use actual trading pair
+                "quantity_percent": "<1_to_100>", # Placeholder: e.g., "100" for 100%
+                "strategy_webhook_id": new_strategy.webhook_id # Include the strategy's webhook_id
+            }
+            new_strategy.webhook_template = json.dumps(default_webhook_template_dict, indent=4)
+
             db.session.add(new_strategy)
             db.session.commit()
             flash(f'Trading strategy "{strategy_name}" created successfully!', 'success')
@@ -323,3 +332,99 @@ def transfer_assets(exchange_id: str):
         flash('An unexpected error occurred. Please try again.', 'danger')
     
     return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+
+
+@exchange_bp.route('/<string:exchange_id>/strategy/<int:strategy_id>')
+@login_required
+def view_strategy_details(exchange_id: str, strategy_id: int):
+    """Render the specific trading strategy details page."""
+    strategy = TradingStrategy.query.filter_by(id=strategy_id, user_id=current_user.id).first_or_404()
+
+    # Fetch exchange display name for breadcrumbs and titles
+    current_exchange_adapter_cls = ExchangeRegistry.get_adapter(exchange_id)
+    current_exchange_display_name = exchange_id  # Default
+    if current_exchange_adapter_cls:
+        try:
+            if hasattr(current_exchange_adapter_cls, 'get_display_name'):
+                current_exchange_display_name = current_exchange_adapter_cls.get_display_name()
+            elif hasattr(current_exchange_adapter_cls, 'get_name'): # Fallback
+                current_exchange_display_name = current_exchange_adapter_cls.get_name()
+        except Exception as e:
+            logger.error(f"Error getting display name for {exchange_id} on strategy page: {e}")
+
+    return render_template(
+        'strategy_details.html',
+        strategy=strategy,
+        exchange_id=exchange_id,
+        current_exchange_display_name=current_exchange_display_name,
+        title=f"Strategy: {strategy.name}"
+    )
+
+
+@exchange_bp.route('/<string:exchange_id>/strategy/<int:strategy_id>/delete', methods=['POST'])
+@login_required
+def delete_trading_strategy(exchange_id: str, strategy_id: int):
+    strategy = TradingStrategy.query.get_or_404(strategy_id)
+    
+    # Verify that the strategy belongs to the current user and the correct exchange
+    if strategy.exchange_credential.user_id != current_user.id or strategy.exchange_credential.exchange != exchange_id:
+        flash('Unauthorized access to strategy.', 'danger')
+        return redirect(url_for('dashboard.dashboard'))
+
+    try:
+        # By deleting the strategy, its previously allocated assets are now considered unallocated.
+        strategy_name = strategy.name # Store name before deletion for the flash message
+        db.session.delete(strategy)
+        db.session.commit()
+        flash(f'Successfully deleted strategy "{strategy_name}". Its assets are now part of your unallocated balance.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error deleting strategy {strategy.id}: {e}")
+        flash('An error occurred while deleting the strategy. Please try again.', 'danger')
+
+    return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+
+
+@exchange_bp.route('/<string:exchange_id>/strategy/<int:strategy_id>/edit_name', methods=['POST'])
+@login_required
+def edit_strategy_name(exchange_id: str, strategy_id: int):
+    strategy = TradingStrategy.query.get_or_404(strategy_id)
+
+    # Verify that the strategy belongs to the current user and the correct exchange credential
+    if not strategy.exchange_credential or strategy.exchange_credential.user_id != current_user.id or strategy.exchange_credential.exchange != exchange_id:
+        flash('Unauthorized to edit this strategy.', 'danger')
+        return redirect(url_for('dashboard.dashboard'))
+
+    new_name = request.form.get('new_strategy_name')
+    if not new_name or len(new_name.strip()) == 0:
+        flash('Strategy name cannot be empty.', 'danger')
+        return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))
+    
+    if len(new_name) > 100: # Assuming a max length for strategy name, adjust if necessary
+        flash('Strategy name is too long (maximum 100 characters).', 'danger')
+        return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))
+
+    # Check if another strategy with the same name already exists for this user and exchange credential
+    existing_strategy_with_name = TradingStrategy.query.filter(
+        TradingStrategy.user_id == current_user.id,
+        TradingStrategy.exchange_credential_id == strategy.exchange_credential_id,
+        TradingStrategy.name == new_name.strip(),
+        TradingStrategy.id != strategy_id # Exclude the current strategy itself
+    ).first()
+
+    if existing_strategy_with_name:
+        flash(f'Another strategy with the name "{new_name.strip()}" already exists for this exchange account.', 'danger')
+        return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))
+
+    try:
+        original_name = strategy.name
+        strategy.name = new_name.strip()
+        db.session.commit()
+        flash(f'Successfully updated strategy name from "{original_name}" to "{strategy.name}".', 'success')
+        logger.info(f"User {current_user.id} updated strategy name for strategy {strategy.id} from '{original_name}' to '{strategy.name}' on exchange {exchange_id}.")
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error updating strategy name for strategy {strategy.id}: {e}", exc_info=True)
+        flash('An error occurred while updating the strategy name. Please try again.', 'danger')
+
+    return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))

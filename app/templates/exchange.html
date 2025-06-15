@@ -194,8 +194,8 @@
                         </thead>
                         <tbody>
                             {% for strategy in user_strategies %}
-                            <tr>
-                                <td>{{ strategy.name }}</td>
+                            <tr style="cursor: pointer;" onclick="window.location='{{ url_for('exchange.view_strategy_details', exchange_id=current_exchange_id, strategy_id=strategy.id) }}';">
+                                <td><a href="{{ url_for('exchange.view_strategy_details', exchange_id=current_exchange_id, strategy_id=strategy.id) }}">{{ strategy.name }}</a></td>
                                 <td>{{ strategy.trading_pair }}</td>
                                 <td>{{ (strategy.allocated_base_asset_quantity | float) | round(8) }} {{ strategy.base_asset_symbol }}</td>
                                 <td>{{ (strategy.allocated_quote_asset_quantity | float) | round(8) }} {{ strategy.quote_asset_symbol }}</td>
@@ -216,7 +216,8 @@
                                             data-strategy-id="{{ strategy.id }}"
                                             data-strategy-name="{{ strategy.name }}"
                                             data-asset-symbol="{{ strategy.base_asset_symbol }}"
-                                            data-credential-id="{{ strategy.exchange_credential_id }}">
+                                            data-credential-id="{{ strategy.exchange_credential_id }}"
+                                            onclick="event.stopPropagation();">
                                         Transfer {{ strategy.base_asset_symbol }}
                                     </button>
                                     {% endif %}
@@ -230,7 +231,8 @@
                                             data-strategy-id="{{ strategy.id }}"
                                             data-strategy-name="{{ strategy.name }}"
                                             data-asset-symbol="{{ strategy.quote_asset_symbol }}"
-                                            data-credential-id="{{ strategy.exchange_credential_id }}">
+                                            data-credential-id="{{ strategy.exchange_credential_id }}"
+                                            onclick="event.stopPropagation();">
                                         Transfer {{ strategy.quote_asset_symbol }}
                                     </button>
                                     {% endif %}

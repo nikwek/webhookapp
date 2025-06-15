@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-4"> {# Added mb-4 for bottom margin #}
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex align-items-center">
+            <h1 class="mb-0 me-2">Strategy:</h1>
+            <div id="strategyNameContainer" class="d-flex align-items-center">
+                <span id="strategyNameDisplay" class="fw-normal h1 mb-0">{{ strategy.name }}</span>
+                <form id="editNameForm" action="{{ url_for('exchange.edit_strategy_name', exchange_id=exchange_id, strategy_id=strategy.id) }}" method="POST" class="d-inline d-none">
+                    {# This input is part of the form and will be shown/hidden with it #}
+                    <input type="text"
+                           id="strategyNameInput"
+                           name="new_strategy_name"
+                           class="form-control form-control-sm"
+                           value="{{ strategy.name }}"
+                           style="width: auto; vertical-align: middle;"
+                           required>
+                </form>
+                <button class="btn btn-link p-0 ms-2 text-secondary opacity-50 hover-opacity-100" id="editNameBtn" title="Edit Strategy Name" style="transition: opacity 0.2s;">
+                    <i class="fas fa-pencil-alt fa-sm"></i>
+                </button>
+                <button type="button" class="btn btn-link p-0 ms-2 d-none" id="saveNameBtn" title="Save Name">
+                    <i class="fas fa-check text-success fa-lg"></i>
+                </button>
+                <button type="button" class="btn btn-link p-0 ms-1 d-none" id="cancelNameBtn" title="Cancel Edit">
+                    <i class="fas fa-times text-danger fa-lg"></i>
+                </button>
+            </div>
+        </div>
+        <div>
+            <a href="{{ url_for('exchange.view_exchange', exchange_id=exchange_id) }}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-arrow-left me-2"></i>Back to {{ current_exchange_display_name }}
+            </a>
+            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteStrategyModal">
+                <i class="fas fa-trash-alt me-1"></i> Delete Strategy
+            </button>
+        </div>
+    </div>
+
+    <div class="card mb-4"> {# Added mb-4 for spacing #}
+        <div class="card-header">
+            <h5 class="mb-0">Strategy Details</h5> {# Used h5 for card header title #}
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <dl class="row">
+                        <dt class="col-sm-4">Name:</dt>
+                        <dd class="col-sm-8">{{ strategy.name }}</dd>
+
+                        <dt class="col-sm-4">Trading Pair:</dt>
+                        <dd class="col-sm-8">{{ strategy.trading_pair }}</dd>
+
+                        <dt class="col-sm-4">Exchange:</dt>
+                        <dd class="col-sm-8">{{ current_exchange_display_name }}</dd>
+
+                        <dt class="col-sm-4">Status:</dt>
+                        <dd class="col-sm-8">
+                            {% if strategy.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </dd>
+                    </dl>
+                </div>
+                <div class="col-md-6">
+                    <dl class="row">
+                        <dt class="col-sm-5">Allocated Base Asset:</dt>
+                        <dd class="col-sm-7">{{ (strategy.allocated_base_asset_quantity | float) | round(8) }} {{ strategy.base_asset_symbol }}</dd>
+
+                        <dt class="col-sm-5">Allocated Quote Asset:</dt>
+                        <dd class="col-sm-7">{{ (strategy.allocated_quote_asset_quantity | float) | round(8) }} {{ strategy.quote_asset_symbol }}</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Webhook Details Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Webhook Details</h5>
+        </div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Webhook URL:</dt>
+                <dd class="col-sm-9 mb-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control form-control-sm" value="{{ request.host_url.rstrip('/') }}{{ url_for('webhook.webhook', automation_id=strategy.webhook_id) }}" id="webhookUrl" readonly>
+                        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="copyToClipboard('webhookUrl', this)" title="Copy Webhook URL">
+                            <i class="fas fa-copy me-1"></i>Copy URL
+                        </button>
+                    </div>
+                </dd>
+
+                <dt class="col-sm-3">Webhook Template:</dt>
+                <dd class="col-sm-9">
+                    {% if strategy.webhook_template %}
+                        <div class="position-relative">
+                            <pre class="mb-0" id="webhookTemplatePre"><code id="webhookTemplateCode">{{ strategy.webhook_template }}</code></pre>
+                            <button class="btn btn-sm btn-outline-secondary position-absolute top-0 end-0 mt-1 me-1" type="button" onclick="copyToClipboard('webhookTemplateCode', this, true)" title="Copy Webhook Template">
+                                <i class="fas fa-copy me-1"></i>Copy Template
+                            </button>
+                        </div>
+                    {% else %}
+                        <span class="text-muted">Not set. Create a new strategy to generate a default template.</span>
+                    {% endif %}
+                </dd>
+            </dl>
+        </div>
+    </div>
+
+    <!-- Performance Chart -->
+    <div class="card mb-4"> {# Added mb-4 for spacing #}
+        <div class="card-header">
+            <h5 class="mb-0">Performance</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-0">Performance chart will be displayed here (Phase 4.5).</p> {# Added mb-0 #}
+            <!-- Placeholder for actual chart -->
+        </div>
+    </div>
+
+    <!-- Webhook Logs -->
+    <div class="card mb-4"> {# Added mb-4 for spacing #}
+        <div class="card-header">
+            <h5 class="mb-0">Webhook Logs</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-0">Webhook logs will be displayed here (Phase 5.2).</p> {# Added mb-0 #}
+            <!-- Placeholder for actual logs table -->
+        </div>
+    </div>
+
+</div>
+
+<!-- Delete Strategy Modal -->
+<div class="modal fade" id="deleteStrategyModal" tabindex="-1" aria-labelledby="deleteStrategyModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteStrategyModalLabel">Confirm Strategy Deletion</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete the strategy "<strong>{{ strategy.name }}</strong>"?</p>
+        <p class="text-danger"><strong>Warning:</strong> This action cannot be undone. Any allocated assets will be returned to your main account balance.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form action="{{ url_for('exchange.delete_trading_strategy', exchange_id=exchange_id, strategy_id=strategy.id) }}" method="POST" class="d-inline">
+          <button type="submit" class="btn btn-danger">Yes, Delete Strategy</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const strategyNameDisplay = document.getElementById('strategyNameDisplay');
+    const editNameForm = document.getElementById('editNameForm'); // This is the form element
+    const strategyNameInput = document.getElementById('strategyNameInput'); // Input is inside the form
+    const editNameBtn = document.getElementById('editNameBtn');
+    const saveNameBtn = document.getElementById('saveNameBtn');
+    const cancelNameBtn = document.getElementById('cancelNameBtn');
+
+    if (editNameBtn && strategyNameDisplay && editNameForm && strategyNameInput && saveNameBtn && cancelNameBtn) {
+        editNameBtn.addEventListener('click', function() {
+            strategyNameDisplay.classList.add('d-none');
+            editNameBtn.classList.add('d-none');
+
+            editNameForm.classList.remove('d-none');
+            strategyNameInput.value = strategyNameDisplay.textContent.trim(); // Set current value
+            saveNameBtn.classList.remove('d-none');
+            cancelNameBtn.classList.remove('d-none');
+            strategyNameInput.focus();
+            strategyNameInput.select();
+        });
+
+        cancelNameBtn.addEventListener('click', function() {
+            editNameForm.classList.add('d-none');
+            saveNameBtn.classList.add('d-none');
+            cancelNameBtn.classList.add('d-none');
+
+            strategyNameDisplay.classList.remove('d-none');
+            editNameBtn.classList.remove('d-none');
+            // No need to reset input value if form is not submitted
+        });
+
+        saveNameBtn.addEventListener('click', function() {
+            // Basic validation to prevent submitting an empty name from the frontend
+            if (strategyNameInput.value.trim() === '') {
+                // Optionally, show a small inline error or rely on backend flash message
+                alert('Strategy name cannot be empty.'); // Simple alert, can be improved
+                strategyNameInput.focus();
+                return;
+            }
+            editNameForm.submit(); // Submit the form
+        });
+
+        strategyNameInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Prevent default form submission if any other listener exists
+                saveNameBtn.click(); // Trigger save button click
+            }
+        });
+
+        strategyNameInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                cancelNameBtn.click(); // Trigger cancel button click
+            }
+        });
+    }
+});
+
+function copyToClipboard(elementId, buttonElement, isPreformatted = false) {
+    const textToCopy = isPreformatted ? document.getElementById(elementId).innerText : document.getElementById(elementId).value;
+    navigator.clipboard.writeText(textToCopy).then(function() {
+        const originalButtonHTML = buttonElement.innerHTML;
+        buttonElement.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+        buttonElement.classList.remove('btn-outline-secondary');
+        buttonElement.classList.add('btn-success');
+        setTimeout(function() {
+            buttonElement.innerHTML = originalButtonHTML;
+            buttonElement.classList.remove('btn-success');
+            buttonElement.classList.add('btn-outline-secondary');
+        }, 2000);
+    }, function(err) {
+        console.error('Could not copy text: ', err);
+        // Fallback or alert
+        const originalButtonHTML = buttonElement.innerHTML;
+        buttonElement.innerHTML = '<i class="fas fa-times me-1"></i>Failed';
+        buttonElement.classList.remove('btn-outline-secondary');
+        buttonElement.classList.add('btn-danger');
+        setTimeout(function() {
+            buttonElement.innerHTML = originalButtonHTML;
+            buttonElement.classList.remove('btn-danger');
+            buttonElement.classList.add('btn-outline-secondary');
+        }, 2000);
+    });
+}
+</script>
+{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    .fw-normal { font-weight: normal; }
+    dt { font-weight: bold; }
+    dd { margin-bottom: .5rem; }
+    pre code {
+        display: block;
+        padding: .5rem;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: .25rem;
+        font-size: 0.875em; /* smaller font for code blocks */
+        word-break: break-all;
+        white-space: pre-wrap; /* Ensures long lines wrap */
+    }
+</style>
+{% endblock %}

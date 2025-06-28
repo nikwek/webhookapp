@@ -1,6 +1,6 @@
 # app/routes/exchange.py
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash
+from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app
 from flask_security import login_required, current_user
 from app.models.exchange_credentials import ExchangeCredentials
 from app.exchanges.ccxt_base_adapter import CcxtBaseAdapter # Needed for issubclass check
@@ -13,6 +13,7 @@ import json
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 from app.services import allocation_service
+
 
 logger = logging.getLogger(__name__)
 
@@ -258,11 +259,12 @@ def create_trading_strategy(exchange_id: str):
             )
 
             # Generate a default webhook template
+            ticker_format = new_strategy.trading_pair.replace('/', '-')
             default_webhook_template_dict = {
-                "action": "<buy_or_sell>",  # Placeholder: e.g., "buy", "sell"
-                "symbol": new_strategy.trading_pair, # Use actual trading pair
-                "quantity_percent": "<1_to_100>", # Placeholder: e.g., "100" for 100%
-                "strategy_webhook_id": new_strategy.webhook_id # Include the strategy's webhook_id
+                "action": "{{strategy.action}}",
+                "ticker": ticker_format,
+                "timestamp": "{{timenow}}",
+                "message": "Optional message"
             }
             new_strategy.webhook_template = json.dumps(default_webhook_template_dict, indent=4)
 
@@ -352,11 +354,16 @@ def view_strategy_details(exchange_id: str, strategy_id: int):
         except Exception as e:
             logger.error(f"Error getting display name for {exchange_id} on strategy page: {e}")
 
+    # Get the base application URL from config, fallback to request URL
+    # Use .get() to avoid KeyError if not set, and provide a sensible fallback.
+    application_url = current_app.config.get('APPLICATION_URL', request.host_url)
+
     return render_template(
         'strategy_details.html',
         strategy=strategy,
         exchange_id=exchange_id,
         current_exchange_display_name=current_exchange_display_name,
+        application_url=application_url,
         title=f"Strategy: {strategy.name}"
     )
 

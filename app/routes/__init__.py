@@ -4,6 +4,9 @@
 from flask import Blueprint, redirect, url_for
 from flask_security import current_user
 
+
+
+
 bp = Blueprint('main', __name__)
 
 @bp.route('/login-redirect')

@@ -194,7 +194,7 @@
                         </thead>
                         <tbody>
                             {% for strategy in user_strategies %}
-                            <tr style="cursor: pointer;" onclick="window.location='{{ url_for('exchange.view_strategy_details', exchange_id=current_exchange_id, strategy_id=strategy.id) }}';">
+                            <tr style="cursor: pointer;" onclick="window.location='{{ url_for('exchange.view_strategy_details', exchange_id=current_exchange_id, strategy_id=strategy.id) }}'">
                                 <td><a href="{{ url_for('exchange.view_strategy_details', exchange_id=current_exchange_id, strategy_id=strategy.id) }}">{{ strategy.name }}</a></td>
                                 <td>{{ strategy.trading_pair }}</td>
                                 <td>{{ (strategy.allocated_base_asset_quantity | float) | round(8) }} {{ strategy.base_asset_symbol }}</td>

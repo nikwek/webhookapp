@@ -1,4 +1,5 @@
 # app/__init__.py
+from dotenv import load_dotenv
 from flask import Flask, flash, jsonify, render_template, request
 from flask_security import user_authenticated, Security, SQLAlchemyUserDatastore
 from flask_security.forms import RegisterFormV2
@@ -16,6 +17,9 @@ from app.forms.custom_2fa_form import Custom2FACodeForm
 from datetime import datetime
 import os
 import logging
+
+# Load environment variables from .env file
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -141,24 +145,39 @@ def create_app(test_config=None):
                 return False
 
         # Register blueprints
-        from app.routes import dashboard, webhook, admin, automation, exchange
-        app.register_blueprint(dashboard.bp)
-        app.register_blueprint(webhook.bp)
-        app.register_blueprint(admin.bp)
-        app.register_blueprint(automation.bp)
-        app.register_blueprint(exchange.exchange_bp)
+        # The order of registration can be important.
+        # Main blueprint (with API routes) is registered first.
+        from app.routes import bp as main_blueprint
+        app.register_blueprint(main_blueprint)
 
-        # Import debug blueprint here (after app is created) to avoid circular imports
+        from app.routes.auth import bp as auth_blueprint
+        app.register_blueprint(auth_blueprint)
+
+        from app.routes.dashboard import bp as dashboard_blueprint
+        app.register_blueprint(dashboard_blueprint, url_prefix='/dashboard')
+
+        from app.routes.webhook import bp as webhook_blueprint
+        app.register_blueprint(webhook_blueprint)
+
+        # For the following blueprints, the url_prefix is defined in the
+        # Blueprint() constructor, so we don't repeat it here.
+        from app.routes.exchange import exchange_bp
+        app.register_blueprint(exchange_bp)
+
+        from app.routes.two_factor import bp as two_factor_blueprint
+        app.register_blueprint(two_factor_blueprint)
+
+        from app.routes.admin import bp as admin_blueprint
+        app.register_blueprint(admin_blueprint)
+
+        from app.routes.automation import bp as automation_blueprint
+        app.register_blueprint(automation_blueprint)
+
         from app.routes.debug import debug as debug_blueprint
         app.register_blueprint(debug_blueprint)
 
-        # Register auth routes blueprint
-        from app.routes.auth import bp as auth_bp
-        app.register_blueprint(auth_bp)
-
-        # Register two factor blueprint
-        from app.routes.two_factor import bp as two_factor_bp
-        app.register_blueprint(two_factor_bp)
+        from app.routes.api import api_bp
+        app.register_blueprint(api_bp)
 
         # Register error handlers
         @app.errorhandler(404)

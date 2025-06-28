@@ -3,14 +3,13 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-<div class="container mt-4 mb-4"> {# Added mb-4 for bottom margin #}
+<div class="container mt-4 mb-4" data-strategy-id="{{ strategy.id }}">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div class="d-flex align-items-center">
             <h1 class="mb-0 me-2">Strategy:</h1>
             <div id="strategyNameContainer" class="d-flex align-items-center">
                 <span id="strategyNameDisplay" class="fw-normal h1 mb-0">{{ strategy.name }}</span>
                 <form id="editNameForm" action="{{ url_for('exchange.edit_strategy_name', exchange_id=exchange_id, strategy_id=strategy.id) }}" method="POST" class="d-inline d-none">
-                    {# This input is part of the form and will be shown/hidden with it #}
                     <input type="text"
                            id="strategyNameInput"
                            name="new_strategy_name"
@@ -40,9 +39,9 @@
         </div>
     </div>
 
-    <div class="card mb-4"> {# Added mb-4 for spacing #}
+    <div class="card mb-4">
         <div class="card-header">
-            <h5 class="mb-0">Strategy Details</h5> {# Used h5 for card header title #}
+            <h5 class="mb-0">Strategy Details</h5>
         </div>
         <div class="card-body">
             <div class="row">
@@ -80,6 +79,8 @@
         </div>
     </div>
 
+
+
     <!-- Webhook Details Card -->
     <div class="card mb-4">
         <div class="card-header">
@@ -90,7 +91,7 @@
                 <dt class="col-sm-3">Webhook URL:</dt>
                 <dd class="col-sm-9 mb-3">
                     <div class="input-group">
-                        <input type="text" class="form-control form-control-sm" value="{{ request.host_url.rstrip('/') }}{{ url_for('webhook.webhook', automation_id=strategy.webhook_id) }}" id="webhookUrl" readonly>
+                        <input type="text" class="form-control form-control-sm" value="{{ application_url.rstrip('/') }}{{ url_for('webhook.webhook', automation_id=strategy.webhook_id) }}" id="webhookUrl" readonly>
                         <button class="btn btn-outline-secondary btn-sm" type="button" onclick="copyToClipboard('webhookUrl', this)" title="Copy Webhook URL">
                             <i class="fas fa-copy me-1"></i>Copy URL
                         </button>
@@ -115,28 +116,217 @@
     </div>
 
     <!-- Performance Chart -->
-    <div class="card mb-4"> {# Added mb-4 for spacing #}
+    <div class="card mb-4">
         <div class="card-header">
             <h5 class="mb-0">Performance</h5>
         </div>
         <div class="card-body">
-            <p class="text-muted mb-0">Performance chart will be displayed here (Phase 4.5).</p> {# Added mb-0 #}
-            <!-- Placeholder for actual chart -->
+            <p class="text-muted mb-0">Performance chart will be displayed here (Phase 4.5).</p>
         </div>
     </div>
 
     <!-- Webhook Logs -->
-    <div class="card mb-4"> {# Added mb-4 for spacing #}
-        <div class="card-header">
-            <h5 class="mb-0">Webhook Logs</h5>
-        </div>
-        <div class="card-body">
-            <p class="text-muted mb-0">Webhook logs will be displayed here (Phase 5.2).</p> {# Added mb-0 #}
-            <!-- Placeholder for actual logs table -->
-        </div>
+    <div id="strategy-logs-container">
+        <!-- React component will be mounted here -->
     </div>
 
 </div>
+
+<!-- Delete Strategy Modal -->
+<div class="modal fade" id="deleteStrategyModal" tabindex="-1" aria-labelledby="deleteStrategyModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteStrategyModalLabel">Confirm Deletion</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete the strategy "<strong>{{ strategy.name }}</strong>"?</p>
+        <p class="text-danger">This action cannot be undone. Any assets allocated to this strategy will be returned to your main account balance.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form action="{{ url_for('exchange.delete_trading_strategy', exchange_id=exchange_id, strategy_id=strategy.id) }}" method="POST">
+          <button type="submit" class="btn btn-danger">Delete Strategy</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# React component for logs - needs to be wrapped in raw to prevent Jinja from parsing JSX #}
+{% raw %}
+<script type="text/babel">
+
+    const StrategyLogs = () => {
+        const [logs, setLogs] = React.useState([]);
+        const [isLoading, setIsLoading] = React.useState(false);
+        const [error, setError] = React.useState(null);
+        const [expandedRows, setExpandedRows] = React.useState(new Set());
+        const [currentPage, setCurrentPage] = React.useState(1);
+        const [totalPages, setTotalPages] = React.useState(1);
+        const [totalLogs, setTotalLogs] = React.useState(0);
+        const [itemsPerPage, setItemsPerPage] = React.useState(20);
+
+        const strategyId = document.querySelector('[data-strategy-id]').dataset.strategyId;
+
+        const fetchLogs = React.useCallback(async (page, perPage) => {
+            if (!strategyId) {
+                setError("Strategy ID is not available.");
+                setIsLoading(false);
+                return;
+            }
+            setIsLoading(true);
+            setError(null);
+            try {
+                const apiUrl = `/api/strategy/${strategyId}/logs?page=${page}&per_page=${perPage}`;
+                const response = await fetch(apiUrl, { credentials: 'same-origin' });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ message: 'Failed to fetch logs.' }));
+                    throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                setLogs(data?.logs || []);
+                setCurrentPage(data?.pagination?.page || 1);
+                setTotalPages(data?.pagination?.pages || 1);
+                setTotalLogs(data?.pagination?.total || 0);
+                setItemsPerPage(data?.pagination?.per_page || 20);
+            } catch (e) {
+                console.error("Error fetching strategy logs:", e);
+                setError(e.message);
+                setLogs([]);
+            } finally {
+                setIsLoading(false);
+            }
+        }, [strategyId]);
+
+        React.useEffect(() => {
+            fetchLogs(currentPage, itemsPerPage);
+        }, [fetchLogs, currentPage, itemsPerPage]);
+
+        const toggleRow = (logId) => {
+            setExpandedRows(prev => {
+                const newSet = new Set(prev);
+                newSet.has(logId) ? newSet.delete(logId) : newSet.add(logId);
+                return newSet;
+            });
+        };
+
+        const handleRefresh = () => fetchLogs(currentPage, itemsPerPage);
+        const handlePageChange = (newPage) => {
+            if (newPage >= 1 && newPage <= totalPages) setCurrentPage(newPage);
+        };
+        const handleItemsPerPageChange = (event) => {
+            setItemsPerPage(parseInt(event.target.value, 10));
+            setCurrentPage(1);
+        };
+        
+        const formatJsonDisplay = (data) => {
+            try {
+                if (typeof data === 'string') {
+                    try {
+                        return JSON.stringify(JSON.parse(data), null, 2);
+                    } catch (e) {
+                        return data;
+                    }
+                }
+                return JSON.stringify(data, null, 2);
+            } catch (e) {
+                return String(data); // Fallback
+            }
+        };
+
+        return (
+            <div className="card mb-4">
+                <div className="card-header d-flex justify-content-between align-items-center bg-transparent border-bottom">
+                    <h5 className="mb-0">Webhook Activity</h5>
+                    <button className="btn btn-secondary btn-sm" onClick={handleRefresh} disabled={isLoading} title="Refresh Logs">
+                        {isLoading ? (
+                            <><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...</>
+                        ) : (
+                            <><i className="fas fa-sync-alt me-1"></i> Refresh</>
+                        )}
+                    </button>
+                </div>
+                <div className="card-body p-0">
+                    <div className="table-responsive">
+                        <table className="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th className="text-nowrap" style={{width: "200px"}}>Timestamp (UTC)</th>
+                                    <th style={{width: "15%"}}>Exchange</th>
+                                    <th style={{width: "25%"}}>Strategy</th>
+                                    <th>Information</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {isLoading && logs.length === 0 ? (
+                                    <tr><td colSpan="4" className="text-center py-4"><div className="spinner-border spinner-border-sm" role="status"><span className="visually-hidden">Loading...</span></div><span className="ms-2">Loading logs...</span></td></tr>
+                                ) : logs.length === 0 && !isLoading ? (
+                                    <tr><td colSpan="4" className="text-center py-4">No webhook logs found for this strategy.</td></tr>
+                                ) : (
+                                    logs.map((log) => (
+                                        <React.Fragment key={log.id}>
+                                            <tr onClick={() => toggleRow(log.id)} style={{cursor: 'pointer'}}>
+                                                <td className="text-nowrap">
+                                                    {new Date(log.timestamp).toLocaleString('en-GB', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', '')}
+                                                    <i className={`fas ${expandedRows.has(log.id) ? 'fa-chevron-down' : 'fa-chevron-right'} fa-xs ms-2 text-muted`}></i>
+                                                </td>
+                                                <td>{log.exchange_name}</td>
+                                                <td>{log.strategy_name}</td>
+                                                <td>{log.information || (log.payload ? "Webhook received" : "Log entry")}</td>
+                                            </tr>
+                                            {expandedRows.has(log.id) && (
+                                                <tr>
+                                                    <td colSpan="4" className="p-0">
+                                                        <div className="p-3 bg-light border-top border-bottom">
+                                                            {log.payload && <div className="mb-2"><h6 className="mb-1 small text-muted fw-bold">Webhook Payload:</h6><pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log.payload)}</code></pre></div>}
+                                                            {log.raw_response && <div className="mb-0"><h6 className="mb-1 small text-muted fw-bold">Processing Response / Info:</h6><pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log.raw_response)}</code></pre></div>}
+                                                            {!log.payload && !log.raw_response && <p className="text-muted small mb-0">No detailed data available.</p>}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                    {error && <div className="alert alert-danger m-3 mb-0" role="alert">Error: {error}</div>}
+                </div>
+                {totalLogs > 0 && (
+                    <div className="card-footer d-flex justify-content-between align-items-center">
+                        <div>
+                            <span className="me-2 small text-muted">Show:</span>
+                            <select className="form-select form-select-sm d-inline-block" style={{width: "auto"}} value={itemsPerPage} onChange={handleItemsPerPageChange} disabled={isLoading}>
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                            <span className="ms-2 small text-muted">Page {currentPage} of {totalPages}. Total logs: {totalLogs}.</span>
+                        </div>
+                        <nav>
+                            <ul className="pagination pagination-sm mb-0">
+                                <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}><button className="page-link" onClick={() => handlePageChange(currentPage - 1)} disabled={isLoading || currentPage === 1}>Previous</button></li>
+                                <li className={`page-item ${currentPage === totalPages || totalPages === 0 ? 'disabled' : ''}`}><button className="page-link" onClick={() => handlePageChange(currentPage + 1)} disabled={isLoading || currentPage === totalPages || totalPages === 0}>Next</button></li>
+                            </ul>
+                        </nav>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    const logsContainer = document.getElementById('strategy-logs-container');
+    if (logsContainer) {
+        ReactDOM.render(<StrategyLogs />, logsContainer);
+    } else {
+        console.error('STRATEGY_DETAILS_LOG: Fatal - could not find logsContainer element for React.');
+    }
+</script>
+{% endraw %}
 
 <!-- Delete Strategy Modal -->
 <div class="modal fade" id="deleteStrategyModal" tabindex="-1" aria-labelledby="deleteStrategyModalLabel" aria-hidden="true">
@@ -164,108 +354,94 @@
 
 {% block scripts %}
 {{ super() }}
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const strategyNameDisplay = document.getElementById('strategyNameDisplay');
-    const editNameForm = document.getElementById('editNameForm'); // This is the form element
-    const strategyNameInput = document.getElementById('strategyNameInput'); // Input is inside the form
-    const editNameBtn = document.getElementById('editNameBtn');
-    const saveNameBtn = document.getElementById('saveNameBtn');
-    const cancelNameBtn = document.getElementById('cancelNameBtn');
+    // Edit/save/cancel for strategy name
+    const display = document.getElementById('strategyNameDisplay');
+    const form = document.getElementById('editNameForm');
+    const input = document.getElementById('strategyNameInput');
+    const editBtn = document.getElementById('editNameBtn');
+    const saveBtn = document.getElementById('saveNameBtn');
+    const cancelBtn = document.getElementById('cancelNameBtn');
+    const originalName = display.textContent;
 
-    if (editNameBtn && strategyNameDisplay && editNameForm && strategyNameInput && saveNameBtn && cancelNameBtn) {
-        editNameBtn.addEventListener('click', function() {
-            strategyNameDisplay.classList.add('d-none');
-            editNameBtn.classList.add('d-none');
+    editBtn.addEventListener('click', () => {
+        display.classList.add('d-none');
+        editBtn.classList.add('d-none');
+        form.classList.remove('d-none');
+        saveBtn.classList.remove('d-none');
+        cancelBtn.classList.remove('d-none');
+        input.focus();
+        input.select();
+    });
 
-            editNameForm.classList.remove('d-none');
-            strategyNameInput.value = strategyNameDisplay.textContent.trim(); // Set current value
-            saveNameBtn.classList.remove('d-none');
-            cancelNameBtn.classList.remove('d-none');
-            strategyNameInput.focus();
-            strategyNameInput.select();
-        });
+    cancelBtn.addEventListener('click', () => {
+        display.classList.remove('d-none');
+        editBtn.classList.remove('d-none');
+        form.classList.add('d-none');
+        saveBtn.classList.add('d-none');
+        cancelBtn.classList.add('d-none');
+        input.value = originalName;
+    });
 
-        cancelNameBtn.addEventListener('click', function() {
-            editNameForm.classList.add('d-none');
-            saveNameBtn.classList.add('d-none');
-            cancelNameBtn.classList.add('d-none');
-
-            strategyNameDisplay.classList.remove('d-none');
-            editNameBtn.classList.remove('d-none');
-            // No need to reset input value if form is not submitted
-        });
-
-        saveNameBtn.addEventListener('click', function() {
-            // Basic validation to prevent submitting an empty name from the frontend
-            if (strategyNameInput.value.trim() === '') {
-                // Optionally, show a small inline error or rely on backend flash message
-                alert('Strategy name cannot be empty.'); // Simple alert, can be improved
-                strategyNameInput.focus();
-                return;
-            }
-            editNameForm.submit(); // Submit the form
-        });
-
-        strategyNameInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault(); // Prevent default form submission if any other listener exists
-                saveNameBtn.click(); // Trigger save button click
-            }
-        });
-
-        strategyNameInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                cancelNameBtn.click(); // Trigger cancel button click
-            }
-        });
-    }
+    saveBtn.addEventListener('click', () => {
+        form.requestSubmit();
+    });
 });
 
-function copyToClipboard(elementId, buttonElement, isPreformatted = false) {
-    const textToCopy = isPreformatted ? document.getElementById(elementId).innerText : document.getElementById(elementId).value;
-    navigator.clipboard.writeText(textToCopy).then(function() {
-        const originalButtonHTML = buttonElement.innerHTML;
+function copyToClipboard(elementId, buttonElement, isCode = false) {
+    const textToCopy = isCode 
+        ? document.getElementById(elementId).innerText 
+        : document.getElementById(elementId).value;
+
+    const showSuccess = () => {
+        const originalIcon = buttonElement.innerHTML;
+        const originalTitle = buttonElement.title;
         buttonElement.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
         buttonElement.classList.remove('btn-outline-secondary');
         buttonElement.classList.add('btn-success');
-        setTimeout(function() {
-            buttonElement.innerHTML = originalButtonHTML;
+        buttonElement.title = 'Copied to clipboard';
+        setTimeout(() => {
+            buttonElement.innerHTML = originalIcon;
             buttonElement.classList.remove('btn-success');
             buttonElement.classList.add('btn-outline-secondary');
+            buttonElement.title = originalTitle;
         }, 2000);
-    }, function(err) {
-        console.error('Could not copy text: ', err);
-        // Fallback or alert
-        const originalButtonHTML = buttonElement.innerHTML;
-        buttonElement.innerHTML = '<i class="fas fa-times me-1"></i>Failed';
-        buttonElement.classList.remove('btn-outline-secondary');
-        buttonElement.classList.add('btn-danger');
-        setTimeout(function() {
-            buttonElement.innerHTML = originalButtonHTML;
-            buttonElement.classList.remove('btn-danger');
-            buttonElement.classList.add('btn-outline-secondary');
-        }, 2000);
-    });
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+        // Use modern clipboard API in secure contexts
+        navigator.clipboard.writeText(textToCopy).then(showSuccess).catch(err => {
+            console.error('Failed to copy with modern API: ', err);
+            alert('Failed to copy to clipboard.');
+        });
+    } else {
+        // Fallback for non-secure contexts or older browsers
+        const textArea = document.createElement("textarea");
+        textArea.value = textToCopy;
+        textArea.style.position = "fixed"; // Prevent scrolling to bottom of page in MS Edge.
+        textArea.style.top = "0";
+        textArea.style.left = "0";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+                showSuccess();
+            } else {
+                console.error('Fallback copy was unsuccessful');
+                alert('Failed to copy to clipboard.');
+            }
+        } catch (err) {
+            console.error('Failed to copy with fallback: ', err);
+            alert('Failed to copy to clipboard.');
+        }
+        document.body.removeChild(textArea);
+    }
 }
 </script>
-{% endblock %}
 
-{% block styles %}
-{{ super() }}
-<style>
-    .fw-normal { font-weight: normal; }
-    dt { font-weight: bold; }
-    dd { margin-bottom: .5rem; }
-    pre code {
-        display: block;
-        padding: .5rem;
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: .25rem;
-        font-size: 0.875em; /* smaller font for code blocks */
-        word-break: break-all;
-        white-space: pre-wrap; /* Ensures long lines wrap */
-    }
-</style>
 {% endblock %}

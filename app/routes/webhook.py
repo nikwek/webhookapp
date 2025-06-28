@@ -5,8 +5,10 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from app.models.webhook import WebhookLog
 from app.models.automation import Automation
+from app.models.trading import TradingStrategy
 from app.services.webhook_processor import EnhancedWebhookProcessor as WebhookProcessor
 from app import db, csrf
+from sqlalchemy import or_
 from datetime import datetime, timezone
 import os
 import logging
@@ -17,47 +19,37 @@ bp = Blueprint('webhook', __name__)
 
 @bp.route('/webhook', methods=['POST'])
 @limiter.limit("60/minute", key_func=lambda: request.args.get('automation_id'))
-@csrf.exempt 
+@csrf.exempt
 def webhook():
     if request.content_length > 10 * 1024:  # 10KB limit
         return jsonify({'error': 'Payload too large'}), 413
+
+    # The identifier is passed as a query parameter, historically named 'automation_id'
+    # but now used for both automations and strategies via their webhook_id.
+    webhook_identifier = request.args.get('automation_id')
     
-    automation_id = request.args.get('automation_id')
-    logger.info(f"Received webhook for automation_id: {automation_id}")
-    
-    if not automation_id:
+    if not webhook_identifier:
+        logger.warning("Webhook request received without 'automation_id' parameter.")
+        # The parameter is still named 'automation_id' for backward compatibility
         return jsonify({'error': 'Missing automation_id parameter'}), 400
 
-    automation = Automation.query.filter_by(automation_id=automation_id).first()
-    logger.info(f"Found automation: {automation}")
-    
-    if not automation:
-        return jsonify({'error': 'Automation not found'}), 404
-
-    if not automation.is_active:
-        return jsonify({'error': 'Automation is not active'}), 403
+    logger.info(f"Received webhook for identifier: {webhook_identifier}")
 
     # Parse the webhook payload
     try:
         payload = request.get_json(force=True)
-        logger.info(f"Webhook payload: {payload}")
+        logger.info(f"Webhook payload for identifier {webhook_identifier}: {payload}")
     except Exception as e:
-        logger.error(f"Failed to parse JSON payload: {e}")
+        logger.error(f"Failed to parse JSON payload for identifier {webhook_identifier}: {e}")
         return jsonify({'error': 'Invalid JSON payload'}), 400
     
-    # Process the webhook using the WebhookProcessor
+    # Process the webhook using the updated WebhookProcessor
     processor = WebhookProcessor()
-    result = processor.process_webhook(automation_id, payload)
+    # The processor now handles identifying the target (strategy or automation)
+    # and returns a tuple of (response_dict, status_code)
+    result, status_code = processor.process_webhook(identifier=webhook_identifier, payload=payload)
     
-    # Update last_run timestamp
-    automation.last_run = datetime.now(timezone.utc)
-    try:
-        db.session.commit()
-    except Exception as e:
-        logger.error(f"Error updating last_run timestamp: {e}")
-        db.session.rollback()
-    
-    return jsonify(result)
+    return jsonify(result), status_code
 
 
 @bp.route('/static/js/components/WebhookLogs.jsx')
@@ -77,14 +69,24 @@ def get_logs():
     per_page = min(per_page, max_per_page)
     
     # Get logs with pagination and optimize query
+    # Corrected query: Fetch logs for EITHER automations OR strategies owned by the user
     pagination = (WebhookLog.query
-                 .join(Automation)
-                 .filter(Automation.user_id == current_user.id)
+                 .outerjoin(Automation, WebhookLog.automation_id == Automation.automation_id)
+                 .outerjoin(TradingStrategy, WebhookLog.strategy_id == TradingStrategy.id)
+                 .filter(
+                     or_(
+                         Automation.user_id == current_user.id,
+                         TradingStrategy.user_id == current_user.id
+                     )
+                 )
                  .order_by(WebhookLog.timestamp.desc())
                  .paginate(page=page, per_page=per_page, error_out=False, max_per_page=max_per_page))
     
+    # The to_dict() method now provides a generic 'source_name'
+    logs_data = [log.to_dict() for log in pagination.items]
+
     return jsonify({
-        'logs': [log.to_dict() for log in pagination.items],
+        'logs': logs_data,
         'pagination': {
             'page': pagination.page,
             'per_page': pagination.per_page,

@@ -255,7 +255,7 @@
                     .filter(log => {
                         const searchStr = searchTerm.toLowerCase();
                         return (
-                            log.automation_name.toLowerCase().includes(searchStr) ||
+                            log.source_name.toLowerCase().includes(searchStr) ||
                             JSON.stringify(log.payload).toLowerCase().includes(searchStr)
                         );
                     })
@@ -312,11 +312,11 @@
                                         )}
                                     </th>
                                     <th 
-                                        onClick={() => handleSort('automation_name')}
+                                        onClick={() => handleSort('source_name')}
                                         className="cursor-pointer"
                                     >
-                                        Automation
-                                        {sortConfig.key === 'automation_name' && (
+                                        Source
+                                        {sortConfig.key === 'source_name' && (
                                             <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
                                         )}
                                     </th>
@@ -349,11 +349,11 @@
                                     
                                     return (
                                         <tr 
-                                            key={`${log.timestamp}-${log.automation_name}`}
+                                            key={log.id}
                                             className={`webhook-type-${action.toLowerCase()}`}
                                         >
                                             <td>{new Date(log.timestamp).toLocaleString()}</td>
-                                            <td>{log.automation_name}</td>
+                                            <td>{log.source_name}</td>
                                             <td>{action}</td>
                                             <td>{ticker}</td>
                                             <td>

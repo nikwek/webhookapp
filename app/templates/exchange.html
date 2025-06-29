@@ -319,12 +319,194 @@
         </div>
     </div>
     <!-- End Asset Transfer Modal -->
+    
+    <!-- Webhook Logs -->    
+    <div class="card mb-4 mt-4">
+        <div class="card-body p-0">
+            <div id="exchange-logs-container" data-exchange-id="{{ exchange_id }}">
+                <!-- React component will be mounted here -->
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 {{ super() }}
 <script src="{{ url_for('static', filename='js/exchange_transfers.js') }}"></script>
+
+{# React component for exchange logs - wrapped in raw to prevent Jinja from parsing JSX #}
+{% raw %}
+<script type="text/babel">
+    const ExchangeLogs = () => {
+        const [logs, setLogs] = React.useState([]);
+        const [isLoading, setIsLoading] = React.useState(false);
+        const [error, setError] = React.useState(null);
+        const [expandedRows, setExpandedRows] = React.useState(new Set());
+        const [currentPage, setCurrentPage] = React.useState(1);
+        const [totalPages, setTotalPages] = React.useState(1);
+        const [totalLogs, setTotalLogs] = React.useState(0);
+        const [itemsPerPage, setItemsPerPage] = React.useState(20);
+
+        const exchangeId = document.getElementById('exchange-logs-container').dataset.exchangeId;
+
+        const fetchLogs = React.useCallback(async (page, perPage) => {
+            if (!exchangeId) {
+                setError("Exchange ID is not available.");
+                setIsLoading(false);
+                return;
+            }
+            setIsLoading(true);
+            setError(null);
+            try {
+                const apiUrl = `/api/exchange/${exchangeId}/logs?page=${page}&per_page=${perPage}`;
+                const response = await fetch(apiUrl, { credentials: 'same-origin' });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ message: 'Failed to fetch logs.' }));
+                    throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                setLogs(data?.logs || []);
+                setCurrentPage(data?.pagination?.page || 1);
+                setTotalPages(data?.pagination?.pages || 1);
+                setTotalLogs(data?.pagination?.total || 0);
+                setItemsPerPage(data?.pagination?.per_page || 20);
+            } catch (e) {
+                console.error("Error fetching exchange logs:", e);
+                setError(e.message);
+                setLogs([]);
+            } finally {
+                setIsLoading(false);
+            }
+        }, [exchangeId]);
+
+        React.useEffect(() => {
+            fetchLogs(currentPage, itemsPerPage);
+        }, [fetchLogs, currentPage, itemsPerPage]);
+
+        const handleRefresh = () => fetchLogs(currentPage, itemsPerPage);
+        const handlePageChange = (newPage) => {
+            if (newPage >= 1 && newPage <= totalPages) setCurrentPage(newPage);
+        };
+        const handleItemsPerPageChange = (event) => {
+            setItemsPerPage(parseInt(event.target.value, 10));
+            setCurrentPage(1);
+        };
+
+        const toggleRow = (logId) => {
+            setExpandedRows(prev => {
+                const newSet = new Set(prev);
+                newSet.has(logId) ? newSet.delete(logId) : newSet.add(logId);
+                return newSet;
+            });
+        };
+
+        const formatJsonDisplay = (data) => {
+            try {
+                if (typeof data === 'string') {
+                    try {
+                        return JSON.stringify(JSON.parse(data), null, 2);
+                    } catch (e) {
+                        return data;
+                    }
+                }
+                return JSON.stringify(data, null, 2);
+            } catch (e) {
+                return String(data); // Fallback
+            }
+        };
+
+        return (
+            <div className="card mb-4">
+                <div className="card-header d-flex justify-content-between align-items-center bg-transparent border-bottom">
+                    <h5 className="mb-0">Webhook Activity</h5>
+                    <button className="btn btn-secondary btn-sm" onClick={handleRefresh} disabled={isLoading} title="Refresh Logs">
+                        {isLoading ? (
+                            <><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...</>
+                        ) : (
+                            <><i className="fas fa-sync-alt me-1"></i> Refresh</>
+                        )}
+                    </button>
+                </div>
+                <div className="card-body p-0">
+                    <div className="table-responsive">
+                        <table className="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th className="text-nowrap" style={{width: "200px"}}>Timestamp (UTC)</th>
+                                    <th style={{width: "15%"}}>Exchange</th>
+                                    <th style={{width: "25%"}}>Strategy</th>
+                                    <th>Information</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {isLoading && logs.length === 0 ? (
+                                    <tr><td colSpan="4" className="text-center py-4"><div className="spinner-border spinner-border-sm" role="status"><span className="visually-hidden">Loading...</span></div><span className="ms-2">Loading logs...</span></td></tr>
+                                ) : logs.length === 0 && !isLoading ? (
+                                    <tr><td colSpan="4" className="text-center py-4">No webhook logs found for this exchange.</td></tr>
+                                ) : (
+                                    logs.map((log) => (
+                                        <React.Fragment key={log.id}>
+                                            <tr onClick={() => toggleRow(log.id)} style={{cursor: 'pointer'}}>
+                                                <td className="text-nowrap">
+                                                    {new Date(log.timestamp).toLocaleString('en-GB', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', '')}
+                                                    <i className={`fas ${expandedRows.has(log.id) ? 'fa-chevron-down' : 'fa-chevron-right'} fa-xs ms-2 text-muted`}></i>
+                                                </td>
+                                                <td>{log.exchange_name}</td>
+                                                <td>{log.strategy_name}</td>
+                                                <td>{log.information || (log.payload ? "Webhook received" : "Log entry")}</td>
+                                            </tr>
+                                            {expandedRows.has(log.id) && (
+                                                <tr>
+                                                    <td colSpan="4" className="p-0">
+                                                        <div className="p-3 bg-light border-top border-bottom">
+                                                            {log.payload && <div className="mb-2"><h6 className="mb-1 small text-muted fw-bold">Webhook Payload:</h6><pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log.payload)}</code></pre></div>}
+                                                            {log.raw_response && <div className="mb-0"><h6 className="mb-1 small text-muted fw-bold">Processing Response / Info:</h6><pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log.raw_response)}</code></pre></div>}
+                                                            {!log.payload && !log.raw_response && <p className="text-muted small mb-0">No detailed data available.</p>}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                    {error && <div className="alert alert-danger m-3 mb-0" role="alert">Error: {error}</div>}
+                </div>
+                {totalLogs > 0 && (
+                    <div className="card-footer d-flex justify-content-between align-items-center">
+                        <div>
+                            <span className="me-2 small text-muted">Show:</span>
+                            <select className="form-select form-select-sm d-inline-block" style={{width: "auto"}} value={itemsPerPage} onChange={handleItemsPerPageChange} disabled={isLoading}>
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                            <span className="ms-2 small text-muted">Page {currentPage} of {totalPages}. Total logs: {totalLogs}.</span>
+                        </div>
+                        <nav>
+                            <ul className="pagination pagination-sm mb-0">
+                                <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}><button className="page-link" onClick={() => handlePageChange(currentPage - 1)} disabled={isLoading || currentPage === 1}>Previous</button></li>
+                                <li className={`page-item ${currentPage === totalPages || totalPages === 0 ? 'disabled' : ''}`}><button className="page-link" onClick={() => handlePageChange(currentPage + 1)} disabled={isLoading || currentPage === totalPages || totalPages === 0}>Next</button></li>
+                            </ul>
+                        </nav>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    const logsContainer = document.getElementById('exchange-logs-container');
+    if (logsContainer) {
+        ReactDOM.render(<ExchangeLogs />, logsContainer);
+    } else {
+        console.error('EXCHANGE_LOGS: Fatal - could not find logsContainer element for React.');
+    }
+</script>
+{% endraw %}
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // Pass strategy data to the JavaScript file

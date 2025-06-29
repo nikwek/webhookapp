@@ -58,6 +58,12 @@ def view_exchange(exchange_id: str):
         'error_message': None
     }
 
+    # Initialize these variables that will be used in the template regardless of path
+    user_strategies = []
+    strategies_json_data = []
+    main_account_assets_json_data = []
+    current_credential_id = None
+
     if not current_exchange_adapter_cls:
         logger.warning(f"No adapter found for selected exchange: {exchange_id}, user: {user_id}")
         flash(f"Could not load data for exchange '{exchange_id}'. Adapter not found.", "danger")
@@ -68,6 +74,10 @@ def view_exchange(exchange_id: str):
             current_exchange_display_name=current_exchange_display_name,
             current_exchange_data=current_exchange_data,
             all_connected_exchanges=connected_exchanges_for_dropdown,
+            user_strategies=user_strategies,
+            strategies_json_data=strategies_json_data,
+            main_account_assets_json_data=main_account_assets_json_data,
+            current_credential_id=current_credential_id,
             title=f"{current_exchange_display_name} Details"
         )
 
@@ -202,6 +212,7 @@ def view_exchange(exchange_id: str):
 
     return render_template(
         'exchange.html',
+        exchange_id=exchange_id,  # Added for the logs section data attribute
         current_exchange_id=exchange_id,
         current_exchange_display_name=current_exchange_display_name,
         current_exchange_data=current_exchange_data,

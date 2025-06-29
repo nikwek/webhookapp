@@ -2,6 +2,7 @@
 
 from app.exchanges.registry import ExchangeRegistry
 from app.exchanges.ccxt_base_adapter import CcxtBaseAdapter
+from app.exchanges.ccxt_coinbase_adapter import CcxtCoinbaseAdapter
 import logging
 import os
 
@@ -41,9 +42,17 @@ def initialize_exchange_adapters():
 
     exchange_ids = cfg_exchanges or DEFAULT_CCXT_EXCHANGES
 
+    # Register our custom Coinbase adapter first
+    ExchangeRegistry.register(CcxtCoinbaseAdapter)
+    
+    # Register the rest of the exchanges dynamically
     for exch_id in exchange_ids:
+        # Skip Coinbase as we have a custom implementation
+        if exch_id in ["coinbase", "coinbase-ccxt"]:
+            continue
+            
         try:
-            # Dynamically create subclass
+            # Dynamically create subclass for other exchanges
             AdapterCls = type(  # noqa: N806
                 f"{exch_id.capitalize()}CcxtAdapter",
                 (CcxtBaseAdapter,),

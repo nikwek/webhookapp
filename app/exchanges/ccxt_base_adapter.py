@@ -260,9 +260,15 @@ class CcxtBaseAdapter(ExchangeAdapter):
         price = payload.get("price") if order_type == "limit" else None
 
         try:
+            # Generic order options
+            options = {}
+            
+            # The exchange-specific adapters should override this method to handle
+            # special cases for their particular exchange before calling super()
+            
             # Step 1: Create the order
             initial_order = client.create_order(
-                trading_pair, order_type, side, amount, price
+                trading_pair, order_type, side, amount, price, params=options
             )
             order_id = initial_order.get("id")
             logger.info(f"Submitted order {order_id} to {cls.get_name()}. Initial response: {initial_order}")

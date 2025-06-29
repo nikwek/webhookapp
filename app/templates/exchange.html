@@ -207,33 +207,20 @@
                                     {% endif %}
                                 </td>
                                 <td class="text-end">
-                                    {# Button for Base Asset #}
-                                    {% if strategy.allocated_base_asset_quantity | float > 0 %}
-                                    <button class="btn btn-sm btn-outline-primary transfer-button mb-1"
+                                    {% if strategy.allocated_base_asset_quantity | float > 0 or strategy.allocated_quote_asset_quantity | float > 0 %}
+                                    <button class="btn btn-sm btn-outline-primary strategy-transfer-button"
                                             data-bs-toggle="modal"
                                             data-bs-target="#assetTransferModal"
                                             data-transfer-type="strategy_to_main"
                                             data-strategy-id="{{ strategy.id }}"
                                             data-strategy-name="{{ strategy.name }}"
-                                            data-asset-symbol="{{ strategy.base_asset_symbol }}"
+                                            data-base-asset-symbol="{{ strategy.base_asset_symbol }}"
+                                            data-base-asset-quantity="{{ strategy.allocated_base_asset_quantity | float }}"
+                                            data-quote-asset-symbol="{{ strategy.quote_asset_symbol }}"
+                                            data-quote-asset-quantity="{{ strategy.allocated_quote_asset_quantity | float }}"
                                             data-credential-id="{{ strategy.exchange_credential_id }}"
                                             onclick="event.stopPropagation();">
-                                        Transfer {{ strategy.base_asset_symbol }}
-                                    </button>
-                                    {% endif %}
-
-                                    {# Button for Quote Asset #}
-                                    {% if strategy.allocated_quote_asset_quantity | float > 0 %}
-                                    <button class="btn btn-sm btn-outline-secondary transfer-button"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#assetTransferModal"
-                                            data-transfer-type="strategy_to_main"
-                                            data-strategy-id="{{ strategy.id }}"
-                                            data-strategy-name="{{ strategy.name }}"
-                                            data-asset-symbol="{{ strategy.quote_asset_symbol }}"
-                                            data-credential-id="{{ strategy.exchange_credential_id }}"
-                                            onclick="event.stopPropagation();">
-                                        Transfer {{ strategy.quote_asset_symbol }}
+                                        Transfer
                                     </button>
                                     {% endif %}
                                     <!-- Details button placeholder -->
@@ -297,8 +284,10 @@
                     <form id="assetTransferForm" method="POST">
                         <input type="hidden" id="transferAssetSymbolHidden" name="asset_symbol">
                         <div class="mb-3">
-                            <label for="transferAssetDisplay" class="form-label">Asset</label>
-                            <p class="form-control-plaintext" id="transferAssetDisplay"><strong><!-- Asset Name --></strong></p>
+                            <label for="transferAssetSelect" class="form-label">Asset</label>
+                            <select class="form-select" id="transferAssetSelect" required>
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
                         </div>
                         <div class="mb-3">
                             <label for="transferSourceAccount" class="form-label">Source Account</label>

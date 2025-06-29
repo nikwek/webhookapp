@@ -12,6 +12,7 @@ from sqlalchemy import or_
 from datetime import datetime, timezone
 import os
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day", "50 per hour"])
@@ -38,7 +39,32 @@ def webhook():
     # Parse the webhook payload
     try:
         payload = request.get_json(force=True)
-        logger.info(f"Webhook payload for identifier {webhook_identifier}: {payload}")
+        
+        # Debug payload type and content
+        logger.info(f"Webhook payload type: {type(payload)}")
+        
+        # Ensure payload is a dict
+        if payload is None:
+            payload = {}
+            logger.warning("Payload is None, using empty dict instead")
+        elif not isinstance(payload, dict) and not isinstance(payload, list):
+            # Try to convert to dict if it's somehow a string
+            try:
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
+                    logger.warning(f"Converted string payload to dict: {payload}")
+                else:
+                    logger.warning(f"Unexpected payload type: {type(payload)}, attempting to convert to dict")
+                    payload = {"raw_data": str(payload)}
+            except Exception as e:
+                logger.error(f"Failed to convert payload to dict: {e}")
+                payload = {"raw_data": str(payload)}
+        
+        # Format the webhook payload for clearer log readability
+        formatted_payload = json.dumps(payload, indent=2) if payload else "{}" 
+        logger.info(f"Webhook received for {webhook_identifier}")
+        logger.info(f"Webhook Payload:\n{formatted_payload}")
+        logger.info(f"Final payload type before processing: {type(payload)}")
     except Exception as e:
         logger.error(f"Failed to parse JSON payload for identifier {webhook_identifier}: {e}")
         return jsonify({'error': 'Invalid JSON payload'}), 400
@@ -47,7 +73,9 @@ def webhook():
     processor = WebhookProcessor()
     # The processor now handles identifying the target (strategy or automation)
     # and returns a tuple of (response_dict, status_code)
+    logger.info(f"Passing payload of type {type(payload)} to processor")
     result, status_code = processor.process_webhook(identifier=webhook_identifier, payload=payload)
+    logger.info(f"Webhook processing complete with status code: {status_code}")
     
     return jsonify(result), status_code
 

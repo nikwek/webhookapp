@@ -1,17 +1,13 @@
 # app/services/webhook_processor.py
 import json
-import logging
 import uuid
+import logging
+from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Dict, Any
 
 from app import db
-from app.models import (
-    Automation,
-    ExchangeCredentials,
-    TradingStrategy,
-    WebhookLog,
-)
+from app.models import TradingStrategy, Automation, WebhookLog
 from app.services.exchange_service import ExchangeService
 
 logger = logging.getLogger(__name__)
@@ -32,6 +28,7 @@ class EnhancedWebhookProcessor:
         """
         self.identifier = identifier
         logger.info(f"Received webhook for identifier: {identifier}")
+        logger.info(f"Webhook Payload:\n{json.dumps(payload, indent=2)}")
 
         strategy = TradingStrategy.query.filter_by(webhook_id=identifier).first()
         if strategy:
@@ -54,6 +51,9 @@ class EnhancedWebhookProcessor:
 
     def _process_for_strategy(self, strategy: TradingStrategy, payload: Dict[str, Any]):
         """Processes a webhook for a Trading Strategy."""
+        logger.info(f"Processing webhook for strategy {strategy.id} (name: {strategy.name})")
+        logger.info(f"Webhook Payload:\n{json.dumps(payload, indent=2)}")
+        
         try:
             action = payload['action']
             ticker = payload.get('ticker')
@@ -141,8 +141,11 @@ class EnhancedWebhookProcessor:
                 message=f"Trade {kwargs.get('action')} for {kwargs.get('trading_pair')}",
                 trade_result=trade_result,
                 client_order_id=kwargs.get('client_order_id'),
+                payload=kwargs.get('payload')  # Include the original payload
             )
 
+            # Log the full trade result for debugging
+            logger.info(f"Processing Response / Info:\n{json.dumps(trade_result, indent=2, default=str)}")
             return trade_result, 200
 
         except Exception as e:
@@ -153,32 +156,71 @@ class EnhancedWebhookProcessor:
                 status='error',
                 message=f"Failed trade {kwargs.get('action')}. Error: {e}",
                 trade_result={'error': str(e)},
+                payload=kwargs.get('payload'),  # Include the original payload
+                client_order_id=kwargs.get('client_order_id')
             )
             return {"success": False, "message": f"An internal error occurred: {e}"}, 500
 
-    def _log_and_commit(self, automation_id=None, strategy_id=None, status='success', message=None, payload=None, trade_result=None, client_order_id=None):
-        # Finalize the transaction by logging the outcome and committing the session.
+    def _serialize_decimal(self, obj):
+        """Helper method to convert Decimal objects to float for JSON serialization."""
+        if isinstance(obj, Decimal):
+            return float(obj)
+        elif isinstance(obj, dict):
+            return {k: self._serialize_decimal(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._serialize_decimal(item) for item in obj]
+        return obj
+            
+    def _log_and_commit(
+        self,
+        strategy_id=None,
+        automation_id=None,
+        target_type="strategy",
+        payload=None,
+        trading_pair=None,
+        status="success",
+        message="",
+        order_id=None,
+        client_order_id=None,
+        trade_result=None,
+    ):
+        """Log webhook event and commit to database."""
         try:
-            # Determine target_type based on which ID is present
-            target_type = None
-            if strategy_id:
-                target_type = 'strategy'
-            elif automation_id:
-                target_type = 'automation'
+            # First log the original payload for debugging
+            logger.info(f"DEBUG - Before serialization - Payload type: {type(payload)}, Content: {payload}")
+            
+            # Convert any Decimal objects in payload and trade_result to float
+            payload_to_store = self._serialize_decimal(payload)
+            trade_result_to_store = self._serialize_decimal(trade_result)
 
-            log = WebhookLog(
-                automation_id=automation_id,
+            # Convert dictionaries to JSON strings for database storage
+            if payload_to_store and isinstance(payload_to_store, dict):
+                payload_to_store = json.dumps(payload_to_store)
+
+            if trade_result_to_store and isinstance(trade_result_to_store, dict):
+                trade_result_to_store = json.dumps(trade_result_to_store)
+                
+            # Log the serialized data types before database storage
+            logger.info(f"DEBUG - Before WebhookLog creation - Storing payload type: {type(payload_to_store)}, trade_result type: {type(trade_result_to_store)}")
+            
+            webhook_log = WebhookLog(
                 strategy_id=strategy_id,
+                automation_id=automation_id,
                 target_type=target_type,
+                payload=payload_to_store,  # Now this should be a JSON string if it was a dict
+                trading_pair=trading_pair,
                 status=status,
                 message=message,
-                payload=payload,
-                order_id=trade_result.get('orderId') if trade_result else None, 
+                order_id=order_id,
                 client_order_id=client_order_id,
-                raw_response=json.dumps(trade_result, default=str) if trade_result else None,
-                trading_pair=trade_result.get('symbol') if trade_result else payload.get('ticker'),
+                raw_response=trade_result_to_store,  # Now this should be a JSON string if it was a dict
+                timestamp=datetime.utcnow()
             )
-            db.session.add(log)
+            db.session.add(webhook_log)
+            
+            # Log the values after creating the WebhookLog
+            logger.info(f"DEBUG - After WebhookLog creation - Log payload attribute type: {type(webhook_log.payload)}, Content: {webhook_log.payload}")
+            
             db.session.commit()
             identifier = self.identifier or (strategy_id or automation_id)
             logger.info(f"Successfully processed and logged webhook for identifier: {identifier}")

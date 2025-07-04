@@ -26,9 +26,13 @@ class WebhookLog(db.Model):
     client_order_id = db.Column(db.String(36), nullable=True)
     raw_response = db.Column(db.Text, nullable=True)
     
-    # Relationships
-    automation = db.relationship('Automation', backref=db.backref('webhook_logs', lazy=True))
-    strategy = db.relationship('TradingStrategy', backref=db.backref('webhook_logs', lazy=True))
+    # Store strategy and exchange names directly for better historical tracking
+    strategy_name = db.Column(db.String(100), nullable=True)
+    exchange_name = db.Column(db.String(50), nullable=True)
+    
+    # Relationships - using passive_deletes to preserve logs when strategies/automations are deleted
+    automation = db.relationship('Automation', backref=db.backref('webhook_logs', lazy=True), passive_deletes=True)
+    strategy = db.relationship('TradingStrategy', backref=db.backref('webhook_logs', lazy=True), passive_deletes=True)
 
     def __repr__(self):
         if self.automation_id:
@@ -68,8 +72,6 @@ class WebhookLog(db.Model):
                 response_dict = {'error': 'Invalid JSON in response'}
         elif self.raw_response:
             response_dict = self.raw_response
-
-        # Extract values from payload if available
         action = payload_dict.get('action')
         ticker = payload_dict.get('ticker')
         message = payload_dict.get('message')
@@ -81,29 +83,17 @@ class WebhookLog(db.Model):
         if not message and self.message:
             message = self.message
         
-        payload_dict = {}
-        if self.payload and isinstance(self.payload, str):
-            try:
-                payload_dict = json.loads(self.payload)
-            except json.JSONDecodeError:
-                payload_dict = {'error': 'Invalid JSON in payload'}
-        elif self.payload:
-            payload_dict = self.payload
-
-        response_dict = {}
-        if self.raw_response and isinstance(self.raw_response, str):
-            try:
-                response_dict = json.loads(self.raw_response)
-            except json.JSONDecodeError:
-                response_dict = {'error': 'Invalid JSON in response'}
-        elif self.raw_response:
-            response_dict = self.raw_response
-
-        return {
+        # Debug output for exchange name
+        actual_exchange = self.exchange_name if self.exchange_name else 'None'
+        
+        result = {
             'id': self.id,
             'automation_id': self.automation_id,
             'strategy_id': self.strategy_id,
             'source_name': source_name,
+            # Store raw exchange name plus debug information
+            'strategy_name': self.strategy_name if self.strategy_name else 'Unknown',
+            'exchange_name': actual_exchange,  # Return the actual value, not 'Unknown'
             'payload': payload_dict,
             'timestamp': self.timestamp.isoformat() if self.timestamp else None,
             'action': action,
@@ -112,5 +102,11 @@ class WebhookLog(db.Model):
             'status': self.status,
             'order_id': self.order_id,
             'client_order_id': self.client_order_id,
-            'raw_response': response_dict
+            'raw_response': response_dict,
+            # Add debug information
+            '_debug': {
+                'raw_exchange_name': actual_exchange,
+                'id': self.id
+            }
         }
+        return result

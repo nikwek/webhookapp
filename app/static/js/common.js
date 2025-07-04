@@ -80,6 +80,28 @@ window.WebhookManager = window.WebhookManager || {
         });
     },
 
+    // Utility to pretty-print JSON objects or strings in logs
+    formatJsonDisplay: function(data) {
+        if (data === null || data === undefined) {
+            return '';
+        }
+        let obj = data;
+        // If the incoming value is a string, attempt to parse as JSON to indent it
+        if (typeof obj === 'string') {
+            try {
+                obj = JSON.parse(obj);
+            } catch (e) {
+                // leave as is if not valid JSON
+                return obj;
+            }
+        }
+        try {
+            return JSON.stringify(obj, null, 2);
+        } catch (e) {
+            return String(obj);
+        }
+    },
+
     initializeEventListeners: function() {
         // Status button handlers
         document.querySelectorAll('.status-button').forEach(button => {
@@ -152,6 +174,9 @@ window.WebhookManager = window.WebhookManager || {
         passwordConfirm.addEventListener("input", checkPasswordMatch);
     }
 };
+
+// Expose helper globally for convenience
+window.formatJsonDisplay = window.WebhookManager.formatJsonDisplay.bind(window.WebhookManager);
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {

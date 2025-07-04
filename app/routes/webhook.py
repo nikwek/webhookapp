@@ -88,41 +88,8 @@ def serve_component():
 @bp.route('/api/logs')
 @login_required
 def get_logs():
-    """API endpoint to get webhook logs with pagination"""
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
-    max_per_page = 100  # Limit maximum number of items per page
-    
-    # Apply limits to prevent excessive resource usage
-    per_page = min(per_page, max_per_page)
-    
-    # Get logs with pagination and optimize query
-    # Corrected query: Fetch logs for EITHER automations OR strategies owned by the user
-    pagination = (WebhookLog.query
-                 .outerjoin(Automation, WebhookLog.automation_id == Automation.automation_id)
-                 .outerjoin(TradingStrategy, WebhookLog.strategy_id == TradingStrategy.id)
-                 .filter(
-                     or_(
-                         Automation.user_id == current_user.id,
-                         TradingStrategy.user_id == current_user.id
-                     )
-                 )
-                 .order_by(WebhookLog.timestamp.desc())
-                 .paginate(page=page, per_page=per_page, error_out=False, max_per_page=max_per_page))
-    
-    # The to_dict() method now provides a generic 'source_name'
-    logs_data = [log.to_dict() for log in pagination.items]
-
-    return jsonify({
-        'logs': logs_data,
-        'pagination': {
-            'page': pagination.page,
-            'per_page': pagination.per_page,
-            'total': pagination.total,
-            'pages': pagination.pages,
-            'has_next': pagination.has_next,
-            'has_prev': pagination.has_prev,
-            'next_num': pagination.next_num,
-            'prev_num': pagination.prev_num
-        }
-    })
+    """Proxy endpoint retained for backward compatibility.
+    Delegates to the unified get_all_logs implementation in routes.api so all
+    legacy strategy logs are included while preserving existing URL."""
+    from .api import get_all_logs  # Local import to avoid circular dependency
+    return get_all_logs()

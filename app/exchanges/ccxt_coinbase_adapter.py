@@ -1,6 +1,7 @@
 # app/exchanges/ccxt_coinbase_adapter.py
 
 import logging
+import time
 from typing import Dict, Any, Optional
 
 import ccxt
@@ -87,12 +88,56 @@ class CcxtCoinbaseAdapter(CcxtBaseAdapter):
                 # Log the successful order
                 logger.info(f"Placed Coinbase market BUY order for {trading_pair} with cost ${cost:.2f}")
                 
-                # Return the order details
+                # Get the order ID for follow-up
+                order_id = initial_order["id"]
+                
+                # Now fetch the complete order details with filled amount
+                # Market orders execute quickly, but we'll add a small retry mechanism
+                max_retries = 3
+                retry_delay = 1.0  # seconds
+                complete_order = None
+                
+                for attempt in range(max_retries):
+                    try:
+                        logger.info(f"Fetching complete order details for order ID {order_id} (attempt {attempt+1}/{max_retries})")
+                        complete_order = client.fetchOrder(order_id, trading_pair)
+                        
+                        # Check if we have the filled amount
+                        if complete_order.get('filled') is not None:
+                            logger.info(f"Successfully retrieved filled amount: {complete_order.get('filled')}")
+                            break
+                            
+                        logger.info(f"Order not yet filled, retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 1.5  # Increase delay for next attempt
+                    except Exception as fetch_error:
+                        logger.error(f"Error fetching order details: {fetch_error}")
+                        time.sleep(retry_delay)
+                        retry_delay *= 1.5  # Increase delay for next attempt
+                
+                # Use the complete order if available, otherwise fall back to initial order
+                final_order = complete_order if complete_order else initial_order
+                
+                # If we still don't have filled amount, calculate it from cost and price
+                if final_order.get('filled') is None and final_order.get('cost') is None:
+                    logger.info(f"Order details incomplete, using calculated values")
+                    # We know the cost because we set it
+                    final_order['cost'] = cost
+                    # Estimate filled amount (will be slightly off due to fees)
+                    estimated_filled = cost / current_price
+                    final_order['filled'] = estimated_filled
+                    logger.info(f"Estimated filled amount: {estimated_filled} from cost ${cost:.2f}")
+                
+                # Return the enhanced order details
                 return {
                     "success": True,
-                    "order_id": initial_order["id"],
+                    "order_id": order_id,
                     "client_order_id": client_order_id,
-                    "order": initial_order
+                    "order": final_order,
+                    # Add these fields directly at the top level for easier access
+                    "filled": final_order.get('filled'),
+                    "cost": final_order.get('cost'),
+                    "price": current_price
                 }
             except Exception as exc:
                 logger.error(f"Error using createMarketBuyOrderWithCost for {trading_pair}: {exc}")

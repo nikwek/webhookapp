@@ -73,6 +73,9 @@ def create_app(test_config=None):
     mail.init_app(app)
     sess.init_app(app)
 
+    # Enable SQLAlchemy echo to log all SQL statements executed
+    app.config['SQLALCHEMY_ECHO'] = True
+
     # Initialize Flask-Caching
     app.config.setdefault('CACHE_TYPE', 'SimpleCache') # Default to SimpleCache if not set in config
     app.config.setdefault('CACHE_DEFAULT_TIMEOUT', 300) # Default 5 mins if not set

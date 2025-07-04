@@ -122,6 +122,15 @@ def dashboard():
         processed_ok = False
         currency = "USD"
 
+        # Count trading strategies associated with this exchange for the current user
+        strategy_count = TradingStrategy.query.join(
+            ExchangeCredentials,
+            TradingStrategy.exchange_credential_id == ExchangeCredentials.id
+        ).filter(
+            TradingStrategy.user_id == user_id,
+            ExchangeCredentials.exchange == ex_name
+        ).count()
+
         if adapter_cls and issubclass(adapter_cls, CcxtBaseAdapter):
             ccxt_cred = next(
                 (c for c in all_creds if c.exchange == ex_name), None
@@ -155,7 +164,8 @@ def dashboard():
                 'value': round(total_value, 2),
                 'currency': currency,
                 'errors': pricing_errors,
-                'logo': f"{ex_name}.svg"
+                'logo': f"{ex_name}.svg",
+                'investment_strategy_count': strategy_count
             })
 
     # Check if the user has credentials for ANY exchange

@@ -420,6 +420,46 @@ class EnhancedWebhookProcessor:
                     cost = filled * estimated_price
                     logger.warning(f"Cost not available, using estimate: {cost}")
         
+        # ------------------------------
+        # Calculate total fees (in quote currency)
+        # ------------------------------
+        total_fees = Decimal('0')
+        try:
+            fee_entries = []
+            # CCXT order format: single fee dict under 'fee' or list under 'fees'
+            if 'fee' in order_data and order_data['fee']:
+                fee_entries.append(order_data['fee'])
+            if 'fees' in order_data and order_data['fees']:
+                fee_entries.extend(order_data['fees'])
+            # Some exchanges (e.g., Coinbase) expose fee at the top level too
+            if 'fee' in trade_result and trade_result['fee']:
+                fee_entries.append(trade_result['fee'])
+            if 'fees' in trade_result and trade_result['fees']:
+                fee_entries.extend(trade_result['fees'])
+            # As a last-resort, look for info.total_fees (string) inside order_data.info
+            info = order_data.get('info', {}) if isinstance(order_data, dict) else {}
+            if isinstance(info, dict) and info.get('total_fees'):
+                fee_entries.append({'cost': info.get('total_fees'), 'currency': strategy.quote_asset_symbol})
+
+            for fee_item in fee_entries:
+                if not fee_item:
+                    continue
+                fee_cost = fee_item.get('cost') if isinstance(fee_item, dict) else None
+                fee_currency = fee_item.get('currency') if isinstance(fee_item, dict) else None
+                # Only count fees denominated in the quote asset
+                if fee_cost is None:
+                    continue
+                if fee_currency is None and strategy.quote_asset_symbol:
+                    fee_currency = strategy.quote_asset_symbol  # assume quote
+                if (not fee_currency) or (not strategy.quote_asset_symbol):
+                    continue
+                if fee_currency.upper() == strategy.quote_asset_symbol.upper():
+                    total_fees += Decimal(str(fee_cost))
+        except Exception as e:
+            logger.warning(f"Could not parse fee information from order: {e}")
+            total_fees = Decimal('0')
+
+        # ------------------------------
         # Convert cost to Decimal safely
         if cost is not None and not isinstance(cost, Decimal):
             try:
@@ -430,6 +470,19 @@ class EnhancedWebhookProcessor:
                 cost = filled * estimated_price
                 logger.error(f"Using fallback cost calculation: {cost}, exception: {str(e)}")
         
+        # ------------------------------
+        # If the exchange returned cost *after* fees, prefer that
+        # ------------------------------
+        total_after_fees = None
+        try:
+            info = order_data.get('info', {}) if isinstance(order_data, dict) else {}
+            val_after_fees = info.get('total_value_after_fees') if isinstance(info, dict) else None
+            if val_after_fees is not None:
+                total_after_fees = Decimal(str(val_after_fees))
+        except Exception as e:
+            logger.debug(f"Could not parse total_value_after_fees: {e}")
+            total_after_fees = None
+
         # Now update the portfolio
         if action.lower() == 'buy':
             # For buy: Add base asset, subtract quote asset (cost)
@@ -441,12 +494,16 @@ class EnhancedWebhookProcessor:
                 strategy.allocated_quote_asset_quantity = Decimal('0.0')
                 logger.info("Setting quote asset to zero after 100% buy")
             else:
-                # Traditional approach - subtract cost from quote asset
-                strategy.allocated_quote_asset_quantity -= cost
-                # Ensure we don't go negative
+                # Traditional approach - subtract cost and fees from quote asset
+                quote_spent = total_after_fees if total_after_fees is not None else (cost + total_fees)
+                strategy.allocated_quote_asset_quantity -= quote_spent
+                # Clamp tiny negatives caused by rounding
                 if strategy.allocated_quote_asset_quantity < 0:
-                    logger.warning("Quote asset quantity went negative after buy. Setting to 0.")
-                    strategy.allocated_quote_asset_quantity = Decimal('0.0')
+                    if strategy.allocated_quote_asset_quantity > Decimal('-0.00000001'):
+                        strategy.allocated_quote_asset_quantity = Decimal('0.0')
+                    else:
+                        logger.warning("Quote asset quantity went negative after buy. Setting to 0.")
+                        strategy.allocated_quote_asset_quantity = Decimal('0.0')
         elif action.lower() == 'sell':
             # For sell: Subtract base asset, add quote asset (proceeds)
             
@@ -461,8 +518,9 @@ class EnhancedWebhookProcessor:
                 if strategy.allocated_base_asset_quantity < 0:
                     logger.warning("Base asset quantity went negative after sell. Setting to 0.")
                     strategy.allocated_base_asset_quantity = Decimal('0.0')
-            # Add proceeds to quote asset
-            strategy.allocated_quote_asset_quantity += cost
+            # Add proceeds to quote asset (net of fees)
+            net_proceeds = total_after_fees if total_after_fees is not None else (cost - total_fees)
+            strategy.allocated_quote_asset_quantity += net_proceeds
         
         # Log the portfolio changes
         logger.info(
@@ -470,3 +528,74 @@ class EnhancedWebhookProcessor:
             f"Base: {original_base} -> {strategy.allocated_base_asset_quantity}. "
             f"Quote: {original_quote} -> {strategy.allocated_quote_asset_quantity}"
         )
+
+        # After updating portfolio, check overall allocations vs actual balances
+        try:
+            self._check_portfolio_drift(strategy)
+        except Exception as e:
+            logger.error(f"Error while checking portfolio drift: {e}")
+
+    def _check_portfolio_drift(self, strategy: TradingStrategy):
+        """Compare summed strategy allocations with live exchange balances.
+
+        If allocated quantities across all strategies tied to the same
+        exchange credentials exceed the actual on-chain balances, log a
+        warning so the user can rebalance.  This acts as a guard against
+        rounding errors or manual withdrawals performed directly on the
+        exchange UI.
+        """
+        creds = strategy.exchange_credential
+        if not creds:
+            logger.warning("Drift check skipped – strategy %s has no exchange_credential", strategy.id)
+            return
+
+        exchange = creds.exchange
+        portfolio_name = creds.portfolio_name or "default"
+
+        # Fetch live balances via the adapter
+        client = ExchangeService.get_client(strategy.user_id, exchange, portfolio_name)
+        if client is None:
+            logger.warning(
+                "Drift check skipped – no client for user %s exchange %s portfolio %s",
+                strategy.user_id,
+                exchange,
+                portfolio_name,
+            )
+            return
+
+        try:
+            balances = client.fetch_balance()
+        except Exception as exc:
+            logger.warning(
+                "Drift check: fetch_balance failed for user %s exchange %s – %s",
+                strategy.user_id,
+                exchange,
+                exc,
+            )
+            return
+
+        total_balances = balances.get("total", {}) or {}
+
+        # Aggregate allocated quantities for *all* strategies using the same credentials
+        related_strategies = TradingStrategy.query.filter_by(exchange_credential_id=creds.id).all()
+        aggregated: dict[str, Decimal] = {}
+        for strat in related_strategies:
+            base_sym = (strat.base_asset_symbol or "").upper()
+            quote_sym = (strat.quote_asset_symbol or "").upper()
+            if base_sym:
+                aggregated[base_sym] = aggregated.get(base_sym, Decimal("0")) + Decimal(str(strat.allocated_base_asset_quantity))
+            if quote_sym:
+                aggregated[quote_sym] = aggregated.get(quote_sym, Decimal("0")) + Decimal(str(strat.allocated_quote_asset_quantity))
+
+        tolerance = Decimal("0.00000001")  # 1e-8 tolerance for float noise
+        for asset, allocated_qty in aggregated.items():
+            live_qty = Decimal(str(total_balances.get(asset, 0)))
+            if allocated_qty - live_qty > tolerance:
+                logger.warning(
+                    "ALLOCATION DRIFT – User %s asset %s over-allocated. Allocated=%s Live=%s."
+                    " Consider rebalancing strategies or transferring funds.",
+                    strategy.user_id,
+                    asset,
+                    allocated_qty,
+                    live_qty,
+                )

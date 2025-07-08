@@ -340,6 +340,15 @@ class CcxtBaseAdapter(ExchangeAdapter):
         # password, uid, and **kwargs are added to match the base adapter's signature
         # and to allow passing these credentials if an exchange requires them.
         try:
+            # Some exchanges (e.g. Coinbase Advanced Trade) expect the API secret
+            # to be a PEM-encoded private key.  If the user pasted it into a single-line
+            # input field the newlines get escaped as literal "\n" sequences, which
+            # breaks the key parser inside CCXT and surfaces as a vague "index out of
+            # range" error.  Convert those escaped newlines back to real newline
+            # characters before instantiating the exchange client.
+            if api_secret and "\\n" in api_secret and "\n" not in api_secret:
+                api_secret = api_secret.replace("\\n", "\n").strip()
+
             exchange_class = cls._get_exchange_class()
             
             params = {"apiKey": api_key, "secret": api_secret}

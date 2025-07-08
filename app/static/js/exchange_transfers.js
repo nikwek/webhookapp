@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', function () {
             transferForm.action = `/exchange/${currentExchangeId}/transfer`;
             
             // Set modal title
-            modalTitle.textContent = `Transfer from ${strategyName}`;
+            modalTitle.textContent = 'Transfer Assets';
             
             // Clear previous selections
             sourceAccountSelect.innerHTML = '';
@@ -57,19 +57,21 @@ document.addEventListener('DOMContentLoaded', function () {
             assetSelect.innerHTML = '';
             
             // Add base asset option if available
-            if (baseAssetSymbol && baseAssetQuantity > 0) {
-                const baseOption = new Option(`${baseAssetSymbol} (Bal: ${baseAssetQuantity.toFixed(8)})`, baseAssetSymbol);
+            if (baseAssetSymbol) {
+                const baseQty = isNaN(baseAssetQuantity) ? 0 : baseAssetQuantity;
+                const baseOption = new Option(`${baseAssetSymbol} (Bal: ${baseQty.toFixed(8)})`, baseAssetSymbol);
                 assetSelect.add(baseOption);
             }
             
             // Add quote asset option if available
-            if (quoteAssetSymbol && quoteAssetQuantity > 0) {
-                const quoteOption = new Option(`${quoteAssetSymbol} (Bal: ${quoteAssetQuantity.toFixed(8)})`, quoteAssetSymbol);
+            if (quoteAssetSymbol) {
+                const quoteQty = isNaN(quoteAssetQuantity) ? 0 : quoteAssetQuantity;
+                const quoteOption = new Option(`${quoteAssetSymbol} (Bal: ${quoteQty.toFixed(8)})`, quoteAssetSymbol);
                 assetSelect.add(quoteOption);
             }
             
             // Enable the asset dropdown if there are multiple options
-            assetSelect.disabled = assetSelect.options.length <= 1;
+            assetSelect.disabled = false;
             
             // Set up asset selection change handler
             assetSelect.onchange = function() {
@@ -106,7 +108,7 @@ document.addEventListener('DOMContentLoaded', function () {
             transferForm.action = `/exchange/${currentExchangeId}/transfer`;
             
             // Set modal title
-            modalTitle.textContent = `Transfer ${assetName} from Main Account`;
+            modalTitle.textContent = 'Transfer Assets';
             
             // Clear previous selections
             sourceAccountSelect.innerHTML = '';
@@ -118,15 +120,8 @@ document.addEventListener('DOMContentLoaded', function () {
             // Pre-select the source main account
             sourceAccountSelect.value = `main::${credentialId}::${assetSymbol}`;
             
-            // Set asset dropdown with just this asset
-            assetSelect.innerHTML = '';
-            assetSelect.add(new Option(`${assetName}`, assetSymbol));
-            assetSelect.disabled = true; // Only one option, so disable
-            
-            // Set form fields
-            assetSymbolHiddenInput.value = assetSymbol;
-            availableToTransferSpan.textContent = maxTransferable.toFixed(8);
-            transferingAssetSymbolDisplaySpan.textContent = assetSymbol;
+            // Populate asset dropdown generically based on selected source (main account)
+            handleSourceAccountChange(sourceAccountSelect.value);
             
             // Populate destinations (strategies compatible with this asset)
             populateDestinationsForMainToStrategy(assetSymbol, credentialId);
@@ -191,15 +186,12 @@ document.addEventListener('DOMContentLoaded', function () {
                         addedStrategyIds.add(strategy.id);
                         
                         // Check if strategy has any assets with balance
-                        const hasBaseBalance = strategy.base_asset_symbol && parseFloat(strategy.allocated_base_asset_quantity) > 0;
-                        const hasQuoteBalance = strategy.quote_asset_symbol && parseFloat(strategy.allocated_quote_asset_quantity) > 0;
+                        const hasBaseBalance = !!strategy.base_asset_symbol;
+                        const hasQuoteBalance = !!strategy.quote_asset_symbol;
                         
-                        // Only add if it has at least one asset with balance
-                        if (hasBaseBalance || hasQuoteBalance) {
-                            const optionId = `strategy::${strategy.id}`;
-                            const optionText = `${strategy.name}`;
-                            sourceAccountSelect.add(new Option(optionText, optionId));
-                        }
+                        const optionId = `strategy::${strategy.id}`;
+                        const optionText = `${strategy.name}`;
+                        sourceAccountSelect.add(new Option(optionText, optionId));
                     }
                 }
             });
@@ -239,15 +231,30 @@ document.addEventListener('DOMContentLoaded', function () {
             );
             
             if (mainAsset) {
-                // Set asset dropdown with just this asset
+                // Populate asset dropdown with ALL main account assets for this exchange
                 assetSelect.innerHTML = '';
-                assetSelect.add(new Option(assetSymbol, assetSymbol));
-                assetSelect.disabled = true;
+                allMainAccountAssetsOnPage.filter(a => String(a.exchange_credential_id) === String(credentialId)).forEach(a => {
+                    assetSelect.add(new Option(`${a.asset_symbol} (Bal: ${parseFloat(a.available_balance).toFixed(8)})`, a.asset_symbol));
+                });
+                assetSelect.disabled = false;
+                // Ensure the originally selected asset is highlighted
+                assetSelect.value = assetSymbol;
+
+                // Attach change handler to update available amount and destinations dynamically
+                assetSelect.onchange = function() {
+                    const selectedSymbol = assetSelect.value;
+                    const selectedAsset = allMainAccountAssetsOnPage.find(a => a.asset_symbol === selectedSymbol && String(a.exchange_credential_id) === String(credentialId));
+                    const availAmt = selectedAsset ? parseFloat(selectedAsset.available_balance) : 0;
+                    assetSymbolHiddenInput.value = selectedSymbol;
+                    availableToTransferSpan.textContent = Number(availAmt).toFixed(8);
+                    transferingAssetSymbolDisplaySpan.textContent = selectedSymbol;
+                    populateDestinationsForMainToStrategy(selectedSymbol, credentialId);
+                };
                 
                 // Update form fields
                 const availableAmount = parseFloat(mainAsset.available_balance);
                 assetSymbolHiddenInput.value = assetSymbol;
-                availableToTransferSpan.textContent = availableAmount.toFixed(8);
+                availableToTransferSpan.textContent = Number(availableAmount || 0).toFixed(8);
                 transferingAssetSymbolDisplaySpan.textContent = assetSymbol;
                 
                 // Populate destinations
@@ -256,7 +263,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 console.error('Main account asset not found:', assetSymbol);
                 assetSelect.innerHTML = '';
                 assetSelect.add(new Option('Error: Asset not found', ''));
-                assetSelect.disabled = true;
+                assetSelect.disabled = false;
             }
         } else if (sourceType === 'strategy') {
             // Handle strategy source
@@ -267,15 +274,16 @@ document.addEventListener('DOMContentLoaded', function () {
             
             if (strategy) {
                 // Update available assets for this strategy
-                const hasBaseBalance = strategy.base_asset_symbol && parseFloat(strategy.allocated_base_asset_quantity) > 0;
-                const hasQuoteBalance = strategy.quote_asset_symbol && parseFloat(strategy.allocated_quote_asset_quantity) > 0;
+                const hasBaseBalance = !!strategy.base_asset_symbol;
+                const hasQuoteBalance = !!strategy.quote_asset_symbol;
                 
                 // Populate asset dropdown
                 assetSelect.innerHTML = '';
                 assetSelect.disabled = false;
                 
                 if (hasBaseBalance) {
-                    const baseAmount = parseFloat(strategy.allocated_base_asset_quantity);
+                    const baseAmountRaw = parseFloat(strategy.allocated_base_asset_quantity);
+                    const baseAmount = isNaN(baseAmountRaw) ? 0 : baseAmountRaw;
                     assetSelect.add(new Option(
                         `${strategy.base_asset_symbol} (Bal: ${baseAmount.toFixed(8)})`,
                         strategy.base_asset_symbol
@@ -283,7 +291,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 
                 if (hasQuoteBalance && strategy.quote_asset_symbol !== strategy.base_asset_symbol) {
-                    const quoteAmount = parseFloat(strategy.allocated_quote_asset_quantity);
+                    const quoteAmountRaw = parseFloat(strategy.allocated_quote_asset_quantity);
+                    const quoteAmount = isNaN(quoteAmountRaw) ? 0 : quoteAmountRaw;
                     assetSelect.add(new Option(
                         `${strategy.quote_asset_symbol} (Bal: ${quoteAmount.toFixed(8)})`,
                         strategy.quote_asset_symbol
@@ -291,7 +300,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 
                 // Enable dropdown if multiple options
-                assetSelect.disabled = assetSelect.options.length <= 1;
+                assetSelect.disabled = false;
                 
                 // Set up asset change handler
                 assetSelect.onchange = function() {
@@ -319,12 +328,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 console.error('Strategy not found:', strategyId);
                 assetSelect.innerHTML = '';
                 assetSelect.add(new Option('Error: Strategy not found', ''));
-                assetSelect.disabled = true;
+                assetSelect.disabled = false;
             }
         } else {
             console.error('Unknown source type:', sourceType);
             assetSelect.innerHTML = '';
-            assetSelect.disabled = true;
+            assetSelect.disabled = false;
         }
     }
     
@@ -345,7 +354,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         
         assetSymbolHiddenInput.value = selectedAsset;
-        availableToTransferSpan.textContent = availableAmount.toFixed(8);
+        availableToTransferSpan.textContent = Number(availableAmount || 0).toFixed(8);
         transferingAssetSymbolDisplaySpan.textContent = selectedAsset;
         
         // Populate destinations for this strategy and asset
@@ -375,18 +384,6 @@ document.addEventListener('DOMContentLoaded', function () {
         let mainAccountAdded = false;
         
         // Try to find a matching main account asset first
-        allMainAccountAssetsOnPage.forEach(mainAsset => {
-            if (mainAsset.asset_symbol === sourceAssetSymbol && 
-                String(mainAsset.exchange_credential_id) === String(sourceStrategy.exchange_credential_id)) {
-                
-                const optionValue = `main::${mainAsset.exchange_credential_id}::${mainAsset.asset_symbol}`;
-                const optionText = `Main Account - ${mainAsset.asset_symbol} (Bal: ${parseFloat(mainAsset.available_balance).toFixed(8)})`;
-                destinationAccountSelect.add(new Option(optionText, optionValue));
-                mainAccountAdded = true;
-            }
-        });
-        
-        // If no matching main asset was found, still add Main Account as an option
         if (!mainAccountAdded && sourceStrategy.exchange_credential_id) {
             const optionValue = `main::${sourceStrategy.exchange_credential_id}::${sourceAssetSymbol}`;
             const optionText = `Main Account - ${sourceAssetSymbol}`;
@@ -417,22 +414,16 @@ document.addEventListener('DOMContentLoaded', function () {
         
         destinationAccountSelect.innerHTML = '';
         
-        // Add compatible strategies as destinations
-        let strategiesAdded = false;
-        
         allStrategiesOnPage.forEach(strategy => {
             if (String(strategy.exchange_credential_id) === String(credentialId)) {
-                if (strategy.base_asset_symbol === assetSymbol || strategy.quote_asset_symbol === assetSymbol) {
-                    const optionValue = `strategy::${strategy.id}`;
-                    const optionText = strategy.name;
-                    destinationAccountSelect.add(new Option(optionText, optionValue));
-                    strategiesAdded = true;
-                }
+                const optionValue = `strategy::${strategy.id}`;
+                const optionText = strategy.name;
+                destinationAccountSelect.add(new Option(optionText, optionValue));
             }
         });
         
-        if (!strategiesAdded) {
-            destinationAccountSelect.add(new Option('No compatible strategies found', ''));
+        if (destinationAccountSelect.options.length === 0) {
+            destinationAccountSelect.add(new Option('No strategies found', ''));
             destinationAccountSelect.disabled = true;
         } else {
             destinationAccountSelect.disabled = false;

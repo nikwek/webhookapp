@@ -1,5 +1,23 @@
 // Common utilities for webhook manager
 window.WebhookManager = window.WebhookManager || {
+    // Disable a submit button and optionally show a loading indicator
+    setButtonLoading: function(button, processingText = 'Working...') {
+        if (!button) return;
+        button.disabled = true;
+        // If it's a <button>, we can embed spinner HTML; if it's <input>, fall back to text swap
+        if (button.tagName === 'BUTTON') {
+            // Preserve original html for potential restore
+            if (!button.dataset.originalContent) {
+                button.dataset.originalContent = button.innerHTML;
+            }
+            button.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> ${processingText}`;
+        } else if (button.tagName === 'INPUT') {
+            if (!button.dataset.originalValue) {
+                button.dataset.originalValue = button.value;
+            }
+            button.value = processingText;
+        }
+    },
     // CSRF token fetch wrapper
     fetchWithCSRF: function(url, options = {}) {
         const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
@@ -103,6 +121,20 @@ window.WebhookManager = window.WebhookManager || {
     },
 
     initializeEventListeners: function() {
+        // Global form submit handler to prevent double-submits
+        document.querySelectorAll('form').forEach(form => {
+            if (form.dataset.preventDoubleSubmit) return; // guard against double wiring
+            form.dataset.preventDoubleSubmit = 'true';
+            form.addEventListener('submit', () => {
+                const submitButtons = form.querySelectorAll('button[type="submit"], input[type="submit"]');
+                submitButtons.forEach(btn => {
+                    const loadingText = btn.dataset.loadingText || (btn.value || btn.innerText || 'Processing...');
+                    WebhookManager.setButtonLoading(btn, loadingText);
+                });
+            }, { once: true });
+        });
+
+        // Status button handlers
         // Status button handlers
         document.querySelectorAll('.status-button').forEach(button => {
             if (!button.hasListener) {

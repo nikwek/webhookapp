@@ -10,6 +10,7 @@ from app.models.trading import TradingStrategy
 import uuid
 import logging
 import json
+import re
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 from app.services import allocation_service
@@ -187,7 +188,7 @@ def view_exchange(exchange_id: str):
             asset_symbol = asset_balance_item.get('asset')
             # Use 'unallocated' as it represents the freely transferable amount from the main account
             available_balance = asset_balance_item.get('unallocated', 0.0) 
-            if asset_symbol and float(available_balance) > 0: # Only include assets with some balance
+            if asset_symbol and float(total_on_exchange) > 0:
                 main_account_assets_json_data.append({
                     "id": f"main::{final_cred.id}::{asset_symbol}", # Unique ID for JS
                     "name": f"Main Account - {asset_symbol}",
@@ -237,13 +238,36 @@ def create_trading_strategy(exchange_id: str):
             flash('Strategy Name and Trading Pair are required.', 'danger')
             return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
 
-        # Basic validation for trading_pair format (e.g., SYMBOL/SYMBOL)
-        # More robust validation (e.g., checking if pair exists on exchange) can be added later
-        if '/' not in trading_pair or len(trading_pair.split('/')) != 2:
-            flash('Invalid Trading Pair format. Please use SYMBOL/SYMBOL (e.g., BTC/USDT).', 'danger')
+        # Parse and normalize the trading pair. Accept '/', '-', or whitespace as separators.
+        trading_pair_clean = trading_pair.strip().upper()
+        # Split by one or more of space, slash, or dash
+        pair_components = re.split(r'[\s/\-]+', trading_pair_clean)
+        if len(pair_components) != 2 or not pair_components[0] or not pair_components[1]:
+            flash('Invalid trading pair. Enter something like BTC/USDT, BTC-USDT, or BTC USDT.', 'danger')
             return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
 
-        base_asset_symbol, quote_asset_symbol = trading_pair.upper().split('/')
+        base_asset_symbol, quote_asset_symbol = pair_components[0], pair_components[1]
+        trading_pair_normalized = f"{base_asset_symbol}/{quote_asset_symbol}"
+        # Override the original variable so downstream code continues to work
+        trading_pair = trading_pair_normalized
+
+        # Validate that the trading pair actually exists on the selected exchange using the adapter (if available)
+        adapter_cls = ExchangeRegistry.get_adapter(exchange_id)
+        if adapter_cls and hasattr(adapter_cls, 'get_trading_pairs'):
+            try:
+                available_pairs = adapter_cls.get_trading_pairs(user_id=current_user.id)
+                available_pair_ids_upper = {p.get('id', '').upper() for p in available_pairs}
+                if trading_pair.upper() not in available_pair_ids_upper:
+                    flash(f"Trading pair '{trading_pair.upper()}' is not available on {exchange_id.capitalize()}. Please double-check the symbols.", 'danger')
+                    logger.warning(f"User {current_user.id} attempted to create strategy with unsupported pair '{trading_pair}' on {exchange_id}.")
+                    return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+            except Exception as e_pair:
+                # Do not block creation but log error; continue silently if exchange validation fails
+                logger.error(f"Error validating trading pair '{trading_pair}' for exchange {exchange_id}: {e_pair}")
+        else:
+            logger.info(f"Adapter for {exchange_id} does not support get_trading_pairs; skipping pair existence validation.")
+
+        # base_asset_symbol, quote_asset_symbol, and trading_pair have already been set above after normalization
 
         # Find the ExchangeCredentials for the user and this exchange_id
         # Assuming one credential per user per exchange for simplicity here.

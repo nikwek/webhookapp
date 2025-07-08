@@ -258,7 +258,7 @@
                         <div class="mb-3">
                             <label for="trading_pair_modal" class="form-label">Trading Pair</label>
                             <input type="text" class="form-control" id="trading_pair_modal" name="trading_pair" placeholder="e.g., BTC/USDT" aria-describedby="tradingPairHelpModal" required>
-                            <div id="tradingPairHelpModal" class="form-text">Use a forward slash (/) to separate symbols, e.g., BTC/USDT.</div>
+                            <div id="tradingPairHelpModal" class="form-text">Separate symbols with /, -, or space (e.g., BTC/USDT, BTC-USDT, BTC USDT).</div>
                         </div>
                         <!-- The submit button will be in the modal-footer -->
                     </form>
@@ -282,6 +282,7 @@
                 </div>
                 <div class="modal-body">
                     <form id="assetTransferForm" method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                         <input type="hidden" id="transferAssetSymbolHidden" name="asset_symbol">
                         <div class="mb-3">
                             <label for="transferAssetSelect" class="form-label">Asset</label>
@@ -290,13 +291,13 @@
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label for="transferSourceAccount" class="form-label">Source Account</label>
+                            <label for="transferSourceAccount" class="form-label">Source</label>
                             <select class="form-select" id="transferSourceAccount" name="source_account_id" required>
                                 <!-- Options will be populated by JavaScript -->
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label for="transferDestinationAccount" class="form-label">Destination Account</label>
+                            <label for="transferDestinationAccount" class="form-label">Destination</label>
                             <select class="form-select" id="transferDestinationAccount" name="destination_account_id" required>
                                 <!-- Options will be populated by JavaScript -->
                             </select>

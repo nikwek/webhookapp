@@ -223,7 +223,15 @@
                                         Transfer
                                     </button>
                                     {% endif %}
-                                    <!-- Details button placeholder -->
+                                    <form method="POST" action="{{ url_for('exchange.toggle_strategy_active', exchange_id=current_exchange_id, strategy_id=strategy.id) }}" class="d-inline" onclick="event.stopPropagation();">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        {% if strategy.is_active %}
+        <button type="submit" class="btn btn-sm btn-outline-secondary ms-1">Pause</button>
+        {% else %}
+        <button type="submit" class="btn btn-sm btn-outline-success ms-1">Resume</button>
+        {% endif %}
+    </form>
+    <!-- Details button placeholder -->
                                     <!-- <a href="#" class="btn btn-sm btn-info ms-1">Details</a> -->
                                 </td>
                             </tr>

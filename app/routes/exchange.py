@@ -437,6 +437,32 @@ def delete_trading_strategy(exchange_id: str, strategy_id: int):
     return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
 
 
+@exchange_bp.route('/<string:exchange_id>/strategy/<int:strategy_id>/toggle_active', methods=['POST'])
+@login_required
+def toggle_strategy_active(exchange_id: str, strategy_id: int):
+    """Toggle a trading strategy between Active and Paused."""
+    strategy = TradingStrategy.query.get_or_404(strategy_id)
+
+    # Validate ownership and exchange match
+    if (not strategy.exchange_credential or
+            strategy.exchange_credential.user_id != current_user.id or
+            strategy.exchange_credential.exchange != exchange_id):
+        flash('Unauthorized access to strategy.', 'danger')
+        return redirect(url_for('dashboard.dashboard'))
+
+    try:
+        strategy.is_active = not strategy.is_active
+        db.session.commit()
+        flash_msg = f'Strategy "{strategy.name}" is now {"Active" if strategy.is_active else "Paused"}.'
+        flash(flash_msg, 'success')
+        logger.info(f"User {current_user.id} toggled strategy {strategy.id} to {'active' if strategy.is_active else 'paused'}.")
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error toggling strategy {strategy.id} active state: {e}", exc_info=True)
+        flash('An error occurred while updating the strategy status. Please try again.', 'danger')
+
+    return redirect(request.referrer or url_for('exchange.view_exchange', exchange_id=exchange_id))
+
 @exchange_bp.route('/<string:exchange_id>/strategy/<int:strategy_id>/edit_name', methods=['POST'])
 @login_required
 def edit_strategy_name(exchange_id: str, strategy_id: int):

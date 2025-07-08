@@ -63,6 +63,14 @@
                             {% else %}
                                 <span class="badge bg-secondary">Inactive</span>
                             {% endif %}
+                            <form method="POST" action="{{ url_for('exchange.toggle_strategy_active', exchange_id=exchange_id, strategy_id=strategy.id) }}" class="d-inline ms-2">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                {% if strategy.is_active %}
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">Pause</button>
+                                {% else %}
+                                <button type="submit" class="btn btn-sm btn-outline-success">Resume</button>
+                                {% endif %}
+                            </form>
                         </dd>
                     </dl>
                 </div>

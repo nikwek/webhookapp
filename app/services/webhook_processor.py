@@ -53,6 +53,14 @@ class EnhancedWebhookProcessor:
         """Processes a webhook for a Trading Strategy."""
         logger.info(f"Processing webhook for strategy {strategy.id} (name: {strategy.name})")
         logger.info(f"Webhook Payload:\n{json.dumps(payload, indent=2)}")
+
+        # If the strategy is paused/inactive, ignore the webhook gracefully
+        if not strategy.is_active:
+            msg = f"Strategy {strategy.id} is currently paused – webhook ignored."
+            logger.info(msg)
+            self._log_and_commit(strategy_id=strategy.id, status='ignored', message=msg, payload=payload)
+            # Return 403 Forbidden so the caller knows the strategy is not accepting webhooks
+            return {"success": False, "message": msg}, 403
         
         try:
             action = payload['action']

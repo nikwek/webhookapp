@@ -61,7 +61,7 @@
             {% set security_endpoints = ['security.two_factor_verify_code', 'security.two_factor_token_validation', 'security.mf_recovery'] %}
             {% set is_security_page = request.endpoint in security_endpoints %}
             
-            {% if not is_security_page %}
+            {% if not (disable_global_flashes|default(false)) %}
                 {% with messages = get_flashed_messages(with_categories=true) %}
                     {% if messages %}
                         {% for category, message in messages %}

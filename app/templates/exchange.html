@@ -265,7 +265,10 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" form="createStrategyForm" class="btn btn-primary">Create Strategy</button>
+                    <button type="submit" form="createStrategyForm" id="createStrategySubmitBtn" class="btn btn-primary d-flex align-items-center">
+                        <span class="btn-text">Create Strategy</span>
+                        <span class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -314,7 +317,10 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" form="assetTransferForm" class="btn btn-primary">Confirm Transfer</button>
+                    <button type="submit" form="assetTransferForm" id="confirmTransferBtn" class="btn btn-primary d-flex align-items-center">
+                        <span class="btn-text">Confirm Transfer</span>
+                        <span class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -427,7 +433,30 @@
                                             </td>
                                             <td>{log.exchange_name}</td>
                                             <td>{log.strategy_name}</td>
-                                            <td>{log.information || (log.payload ? "Webhook received" : "Log entry")}</td>
+                                            <td>
+                                                <div className="d-flex justify-content-between">
+                                                    <div>
+                                                        {log.action && (
+                                                            <span className={`badge ${log.action.toLowerCase() === 'buy' ? 'bg-success' : 'bg-danger'} me-2`}>
+                                                                {log.action.toUpperCase()}
+                                                            </span>
+                                                        )}
+                                                        <strong>{log.ticker || log.trading_pair || ''}</strong>
+                                                        {log.message && <span className="ms-2 text-muted">{log.message}</span>}
+                                                    </div>
+                                                    <div>
+                                                        {log.status && (
+                                                            <span className={`badge ${
+                                                                log.status.toLowerCase() === 'success' ? 'bg-success' :
+                                                                log.status.toLowerCase() === 'error' ? 'bg-danger' :
+                                                                log.status.toLowerCase() === 'filled' ? 'bg-primary' : 'bg-secondary'
+                                                            }`}>
+                                                                {log.status.charAt(0).toUpperCase() + log.status.slice(1).toLowerCase()}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
                                         </tr>
                                         {expandedRows.has(log.id) && (
                                             <tr>
@@ -520,6 +549,44 @@
             window.setCurrentCredentialId(currentCredentialIdFromTemplate);
         }
         // The redundant if/else for setStrategiesData has been removed.
+
+        // Disable submit button and show spinner when creating strategy
+        const createStrategyForm = document.getElementById('createStrategyForm');
+        if (createStrategyForm) {
+            createStrategyForm.addEventListener('submit', function () {
+                const submitBtn = document.getElementById('createStrategySubmitBtn');
+                if (submitBtn && !submitBtn.disabled) {
+                    submitBtn.disabled = true;
+                    const spinner = submitBtn.querySelector('.spinner-border');
+                    const btnText = submitBtn.querySelector('.btn-text');
+                    if (spinner) {
+                        spinner.classList.remove('d-none');
+                    }
+                    if (btnText) {
+                        btnText.textContent = 'Creating...';
+                    }
+                }
+            });
+        }
+
+        // Disable confirm transfer button & show spinner on transfer submit
+        const assetTransferForm = document.getElementById('assetTransferForm');
+        if (assetTransferForm) {
+            assetTransferForm.addEventListener('submit', function () {
+                const confirmBtn = document.getElementById('confirmTransferBtn');
+                if (confirmBtn && !confirmBtn.disabled) {
+                    confirmBtn.disabled = true;
+                    const spinner = confirmBtn.querySelector('.spinner-border');
+                    const btnText = confirmBtn.querySelector('.btn-text');
+                    if (spinner) {
+                        spinner.classList.remove('d-none');
+                    }
+                    if (btnText) {
+                        btnText.textContent = 'Transferring...';
+                    }
+                }
+            });
+        }
     });
 </script>
 {% endblock %}

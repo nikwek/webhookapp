@@ -282,6 +282,16 @@ def create_trading_strategy(exchange_id: str):
             logger.warning(f"User {current_user.id} tried to create strategy for {exchange_id} but has no credentials.")
             return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
 
+        # Prevent duplicate strategy names per exchange credential
+        existing = TradingStrategy.query.filter_by(
+            user_id=current_user.id,
+            exchange_credential_id=credential.id,
+            name=strategy_name
+        ).first()
+        if existing:
+            flash(f'A trading strategy named "{strategy_name}" already exists for this exchange.', 'warning')
+            return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+
         try:
             new_strategy = TradingStrategy(
                 user_id=current_user.id,

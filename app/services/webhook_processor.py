@@ -168,9 +168,15 @@ class EnhancedWebhookProcessor:
                     trade_result=raw_order,
                 )
 
+            # Determine status for logging
+            status_value = (
+                str(trade_result.get('trade_status') or '')
+                or ('success' if trade_result.get('success', False) else 'error')
+            )
+            
             self._log_and_commit(
                 strategy_id=kwargs.get('target_id'),
-                status='success',
+                status=status_value,
                 message=f"Trade {kwargs.get('action')} for {kwargs.get('trading_pair')}",
                 trade_result=trade_result,
                 client_order_id=kwargs.get('client_order_id'),

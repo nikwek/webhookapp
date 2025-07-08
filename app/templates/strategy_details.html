@@ -250,7 +250,30 @@
                                         </td>
                                         <td>{log.exchange_name || "Unknown"}</td> {/* Ensure this line accesses the correct field */}
                                         <td>{log.strategy_name || "Unknown"}</td> {/* Ensure this line accesses the correct field */}
-                                        <td>{log.information || (log.payload ? "Webhook received" : "Log entry")}</td>
+                                        <td>
+                                                <div className="d-flex justify-content-between">
+                                                    <div>
+                                                        {log.action && (
+                                                            <span className={`badge ${log.action.toLowerCase() === 'buy' ? 'bg-success' : 'bg-danger'} me-2`}>
+                                                                {log.action.toUpperCase()}
+                                                            </span>
+                                                        )}
+                                                        <strong>{log.ticker || log.trading_pair || ''}</strong>
+                                                        {log.message && <span className="ms-2 text-muted">{log.message}</span>}
+                                                    </div>
+                                                    <div>
+                                                        {log.status && (
+                                                            <span className={`badge ${
+                                                                log.status.toLowerCase() === 'success' ? 'bg-success' :
+                                                                log.status.toLowerCase() === 'error' ? 'bg-danger' :
+                                                                log.status.toLowerCase() === 'filled' ? 'bg-primary' : 'bg-secondary'
+                                                            }`}>
+                                                                {log.status.charAt(0).toUpperCase() + log.status.slice(1).toLowerCase()}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
                                     </tr>
                                     {expandedRows.has(log.id) && (
                                         <tr>

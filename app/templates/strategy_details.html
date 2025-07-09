@@ -168,6 +168,12 @@
 <script type="text/babel">
 
     const UnifiedWebhookLogs = ({ strategyName, strategyId, exchangeName }) => {
+        const userTz = window.APP_USER_TZ || 'UTC';
+        const formatTimestamp = (ts) => {
+            const d = new Date(ts);
+            const localeStr = d.toLocaleString('en-CA', { timeZone: userTz, hour12: false }).replace(',', '');
+            return localeStr.replace(/-/g, '/');
+        };
         const [logs, setLogs] = React.useState([]);
         const [isLoading, setIsLoading] = React.useState(false);
         const [error, setError] = React.useState(null);
@@ -256,7 +262,7 @@
                                 <React.Fragment key={log.id}>
                                     <tr onClick={() => toggleRow(log.id)} style={{cursor: 'pointer'}}>
                                         <td className="text-nowrap">
-                                            {new Date(log.timestamp).toLocaleString('en-GB', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', '')}
+                                            {formatTimestamp(log.timestamp)}
                                             <i className={`fas ${expandedRows.has(log.id) ? 'fa-chevron-down' : 'fa-chevron-right'} fa-xs ms-2 text-muted`}></i>
                                         </td>
                                         <td>{log.exchange_name || "Unknown"}</td> {/* Ensure this line accesses the correct field */}

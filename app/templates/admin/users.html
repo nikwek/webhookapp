@@ -29,7 +29,7 @@
             <thead>
                 <tr>
                     <th>Login</th>
-                    <th>Automations</th>
+                    <th>Strategies</th>
                     <th>Last Activity (UTC)</th>
                     <th>Actions</th>
                 </tr>
@@ -38,7 +38,7 @@
                 {% for user in users %}
                 <tr>
                     <td>{{ user.email }}</td>
-                    <td>{{ user.automation_count }}</td>
+                    <td>{{ user.strategy_count }}</td>
                     <td>{{ user.last_activity.strftime('%Y-%m-%d %H:%M:%S') if user.last_activity else 'Never' }}</td>
                     <td>
                         <button class="btn btn-warning btn-sm" onclick="confirmAction('reset', {{ user.id }})">
@@ -87,7 +87,7 @@
 <script>
 function confirmAction(action, userId) {
     const messages = {
-        reset: "Are you sure you want to reset all automation logs for this user?",
+        reset: "Are you sure you want to reset all strategy data and logs for this user?",
         suspend: "Are you sure you want to toggle the suspension status for this user?",
         delete: "Are you sure you want to delete this user? This action cannot be undone."
     };

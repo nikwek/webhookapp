@@ -36,9 +36,14 @@
                                     href="{{ url_for('admin.users') }}">Users</a>
                                 </li>
                                 <li class="nav-item">
-                                    <a class="nav-link {% if request.endpoint == 'admin.automations' %}active{% endif %}" 
-                                    href="{{ url_for('admin.automations') }}">Automations</a>
+                                    <a class="nav-link {% if request.endpoint == 'admin.exchanges' %}active{% endif %}"
+                                    href="{{ url_for('admin.exchanges') }}">Exchanges</a>
                                 </li>
+                                <li class="nav-item">
+                                    <a class="nav-link {% if request.endpoint == 'admin.strategies' %}active{% endif %}"
+                                    href="{{ url_for('admin.strategies') }}">Trading Strategies</a>
+                                </li>
+
                             {% endif %}
                             <li class="nav-item">
                                 <a class="nav-link {% if request.endpoint == 'dashboard.settings' %}active{% endif %}" 
@@ -56,6 +61,11 @@
                 </div>
             </div>
         </nav>
+        {% if current_user.is_authenticated %}
+        <script>
+            window.APP_USER_TZ = "{{ current_user.timezone or 'UTC' }}";
+        </script>
+        {% endif %}
         <!-- Alert messages - avoid duplicates on security pages that handle their own flashes -->
         <div class="container mt-3">
             {% set security_endpoints = ['security.two_factor_verify_code', 'security.two_factor_token_validation', 'security.mf_recovery'] %}

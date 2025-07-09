@@ -82,6 +82,37 @@
           </div>
         </div>
         
+        <!-- Timezone Preference Section -->
+        <div class="col-md-8 mx-auto mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">Display Timezone</h4>
+                    {% if current_user.timezone %}
+                    <span class="badge bg-success">{{ current_user.timezone }}</span>
+                    {% else %}
+                    <span class="badge bg-secondary">UTC (default)</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="form_name" value="timezone_form">
+                        <div class="mb-3">
+                            <label for="timezone-select" class="form-label">Preferred Timezone</label>
+                            <select id="timezone-select" name="timezone" class="form-select">
+                                {% for tz in timezones %}
+                                <option value="{{ tz }}" {% if tz == (current_user.timezone or 'UTC') %}selected{% endif %}>{{ tz }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Save Timezone</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
         <!-- Password Change Section -->
         <div class="col-md-8 mx-auto mb-4">
             <div class="card">

@@ -29,7 +29,7 @@ def flash_form_errors(form):
 
 bp = Blueprint('dashboard', __name__)
 
-@bp.route('/dashboard')
+@bp.route('/')
 @login_required
 def dashboard():
     """Render the dashboard page for non-admin users."""
@@ -213,7 +213,19 @@ def settings():
         submitted_form_name = request.form.get('form_name')
         logger.info("Submitted form_name: '%s'", submitted_form_name)
 
-        if submitted_form_name == 'ccxt_form':
+        if submitted_form_name == 'timezone_form':
+            tz_value = request.form.get('timezone')
+            logger.info("Updating timezone preference to %s", tz_value)
+            try:
+                current_user.timezone = tz_value
+                db.session.commit()
+                flash('Timezone preference saved.', 'success')
+                return redirect(url_for('dashboard.settings'))
+            except Exception as e:
+                logger.error("Error saving timezone: %s", e, exc_info=True)
+                db.session.rollback()
+                flash(f'Error saving timezone: {e}', 'danger')
+        elif submitted_form_name == 'ccxt_form':
             form_exchange = request.form.get('exchange')
             logger.info("Validating ccxt_form for exchange: %s", form_exchange)
             if ccxt_form.validate_on_submit():
@@ -327,13 +339,17 @@ def settings():
             'logo': logo_filename_get,
         })
 
+    from zoneinfo import available_timezones
+    timezones_list = sorted(available_timezones())
+
     return render_template(
         'settings.html',
         ccxt_form=ccxt_form,
         connected_exchanges=connected_exchanges_display_data,
         user_creds_map=exchange_creds_map,
         available_exchange_adapters=available_exchange_adapters,
-        user=current_user
+        user=current_user,
+        timezones=timezones_list
     )
 
 

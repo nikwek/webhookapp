@@ -254,8 +254,16 @@ def get_all_logs():
 
         logger.info(f"Fetching logs – page:{page} per_page:{per_page} exchange:{exchange_filter} strategy:{strategy_filter} search:{search_term}")
 
-        # Build a base query
-        logs_query = WebhookLog.query
+        # Build a base query restricted to current user's data only
+        from ..models import Automation  # local import to avoid circular deps
+        logs_query = WebhookLog.query.filter(
+            or_(
+                # Logs linked to strategies owned by the user
+                WebhookLog.strategy.has(TradingStrategy.user_id == current_user.id),
+                # Logs linked to automations owned by the user (legacy)
+                WebhookLog.automation.has(Automation.user_id == current_user.id)
+            )
+        )
         # Apply filters if provided
         if exchange_filter:
             # Match logs by explicit exchange_name OR by strategies linked to credentials on this exchange

@@ -33,6 +33,9 @@ class User(db.Model, UserMixin):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_activity = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
+    # Preferred display timezone (IANA tz string, e.g. "America/Los_Angeles")
+    timezone = db.Column(db.String(64), nullable=True)
+    
     # Two-Factor Authentication fields (match existing DB columns)
     tf_primary_method = db.Column(db.String(64))
     tf_totp_secret = db.Column(db.String(255))

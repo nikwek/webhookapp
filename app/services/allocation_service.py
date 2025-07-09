@@ -3,7 +3,7 @@
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict
 from app import db
-from app.models.trading import TradingStrategy
+from app.models.trading import TradingStrategy, AssetTransferLog
 from app.models.exchange_credentials import ExchangeCredentials
 from app.exchanges.registry import ExchangeRegistry
 import logging
@@ -164,6 +164,18 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 strategy.allocated_quote_asset_quantity = current_quote_allocated + amount
             
             db.session.add(strategy)
+
+            # Record transfer log
+            log_entry = AssetTransferLog(
+                user_id=user_id,
+                source_identifier=source_identifier,
+                destination_identifier=destination_identifier,
+                asset_symbol=asset_symbol_to_transfer,
+                amount=amount,
+                strategy_id_from=None,
+                strategy_id_to=destination_strategy_id,
+            )
+            db.session.add(log_entry)
             db.session.commit()
             logger.info(f"Successfully transferred {amount} {asset_symbol_to_transfer} from main account (cred ID: {source_credential_id}) to strategy {strategy.name} (ID: {destination_strategy_id}) for user {user_id}.")
             return True, f"Successfully transferred {amount} {asset_symbol_to_transfer} to {strategy.name}."
@@ -197,6 +209,18 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 raise AllocationError(f"Asset {asset_symbol_to_transfer} is not part of strategy {strategy.name}'s trading pair ({strategy.trading_pair}).")
             
             db.session.add(strategy)
+
+            # Record transfer log
+            log_entry = AssetTransferLog(
+                user_id=user_id,
+                source_identifier=source_identifier,
+                destination_identifier=destination_identifier,
+                asset_symbol=asset_symbol_to_transfer,
+                amount=amount,
+                strategy_id_from=source_strategy_id,
+                strategy_id_to=None,
+            )
+            db.session.add(log_entry)
             db.session.commit()
             logger.info(f"Successfully transferred {amount} {asset_symbol_to_transfer} from strategy {strategy.name} (ID: {source_strategy_id}) to main account (cred ID: {destination_credential_id}) for user {user_id}.")
             return True, f"Successfully transferred {amount} {asset_symbol_to_transfer} from {strategy.name} to Main Account."
@@ -251,6 +275,17 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 current_dest_quote_allocated = destination_strategy.allocated_quote_asset_quantity if destination_strategy.allocated_quote_asset_quantity is not None else Decimal('0.0')
                 destination_strategy.allocated_quote_asset_quantity = current_dest_quote_allocated + amount
 
+
+            log_entry = AssetTransferLog(
+                user_id=user_id,
+                source_identifier=source_identifier,
+                destination_identifier=destination_identifier,
+                asset_symbol=asset_symbol_to_transfer,
+                amount=amount,
+                strategy_id_from=source_strategy_id,
+                strategy_id_to=destination_strategy_id,
+            )
+            db.session.add(log_entry)
             db.session.add(source_strategy)
             db.session.add(destination_strategy)
             db.session.commit()

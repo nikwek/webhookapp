@@ -395,7 +395,7 @@
         return (
             <div className="card mb-4">
                 <div className="card-header d-flex justify-content-between align-items-center bg-transparent border-bottom">
-                    <h5 className="mb-0">Webhook Activity</h5>
+                    <h5 className="mb-0">Activity</h5>
                     <button className="btn btn-secondary btn-sm" onClick={fetchLogs} disabled={isLoading} title="Refresh Logs">
                         {isLoading ? (
                             <><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...</>
@@ -422,7 +422,7 @@
                             <tr>
                                 <th className="text-nowrap" style={{width: "200px"}}>Timestamp (UTC)</th>
                                 <th style={{width: "15%"}}>Exchange</th>
-                                <th style={{width: "25%"}}>Strategy</th>
+                                <th style={{width: "25%"}}>Account</th>
                                 <th>Information</th>
                             </tr>
                         </thead>
@@ -440,12 +440,12 @@
                                                 <i className={`fas ${expandedRows.has(log.id) ? 'fa-chevron-down' : 'fa-chevron-right'} fa-xs ms-2 text-muted`}></i>
                                             </td>
                                             <td>{log.exchange_name}</td>
-                                            <td>{log.strategy_name}</td>
+                                            <td>{log.account_name || log.strategy_name}</td>
                                             <td>
                                                 <div className="d-flex justify-content-between">
                                                     <div>
                                                         {log.action && (
-                                                            <span className={`badge ${log.action.toLowerCase() === 'buy' ? 'bg-success' : 'bg-danger'} me-2`}>
+                                                            <span className={`badge ${log.action.toLowerCase() === 'buy' ? 'bg-success' : log.action.toLowerCase() === 'transfer' ? 'bg-warning text-dark' : 'bg-danger'} me-2`}>
                                                                 {log.action.toUpperCase()}
                                                             </span>
                                                         )}
@@ -472,7 +472,7 @@
                                                     <div className="p-3 bg-light border-top border-bottom">
                                                         {log.payload && <div className="mb-2"><h6 className="mb-1 small text-muted fw-bold">Webhook Payload:</h6><pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log.payload)}</code></pre></div>}
                                                         {log.raw_response && <div className="mb-0"><h6 className="mb-1 small text-muted fw-bold">Processing Response / Info:</h6><pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log.raw_response)}</code></pre></div>}
-                                                        {!log.payload && !log.raw_response && <p className="text-muted small mb-0">No detailed data available.</p>}
+                                                        {!log.payload && !log.raw_response && <pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log)}</code></pre>}
                                                     </div>
                                                 </td>
                                             </tr>

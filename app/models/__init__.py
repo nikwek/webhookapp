@@ -9,6 +9,7 @@ from app.models.webhook import WebhookLog
 from app.models.exchange_credentials import ExchangeCredentials
 from app.models.portfolio import Portfolio
 from .account_cache import AccountCache
+from app.models.trading import AssetTransferLog
 from app.models.trading import TradingStrategy, StrategyValueHistory
 
 # Update __all__ if you're using it
@@ -21,5 +22,6 @@ __all__ = [
     'Portfolio',
     'AccountCache',
     'TradingStrategy',
-    'StrategyValueHistory'
+    'StrategyValueHistory',
+    'AssetTransferLog'
 ]

@@ -6,11 +6,19 @@ from sqlalchemy.orm import joinedload
 import sys
 
 from .. import db
-from ..models import ExchangeCredentials, TradingStrategy, StrategyValueHistory, WebhookLog
+from ..models import ExchangeCredentials, TradingStrategy, StrategyValueHistory, WebhookLog, AssetTransferLog
 from .automation import api_login_required
 import logging
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
+
+def _trim_decimal(value: Decimal) -> str:
+    """Return string of Decimal without insignificant trailing zeros."""
+    s = format(value, 'f')
+    if '.' in s:
+        s = s.rstrip('0').rstrip('.')
+    return s
 
 api_bp = Blueprint('api', __name__)
 
@@ -68,6 +76,70 @@ def get_strategy_logs(strategy_id: int):
             log_dict['strategy_name'] = strategy.name
             log_dict['exchange_name'] = strategy.exchange_credential.exchange
             logs_data.append(log_dict)
+
+        # ----- Add asset transfer logs -----
+        transfer_rows = AssetTransferLog.query.filter(
+            AssetTransferLog.user_id == current_user.id,
+            or_(AssetTransferLog.strategy_id_from == strategy_id, AssetTransferLog.strategy_id_to == strategy_id)
+        ).order_by(AssetTransferLog.timestamp.desc()).all()
+
+        # Build name lookup for involved strategy IDs (to handle deleted strategies)
+        involved_ids = {row.strategy_id_from for row in transfer_rows if row.strategy_id_from}
+        involved_ids.update({row.strategy_id_to for row in transfer_rows if row.strategy_id_to})
+        name_lookup = {}
+        if involved_ids:
+            existing_strategies = TradingStrategy.query.filter(TradingStrategy.id.in_(involved_ids)).all()
+            name_lookup = {s.id: s.name for s in existing_strategies}
+
+        for row in transfer_rows:
+            src_desc = "Main Account" if row.strategy_id_from is None else (
+                "This Strategy" if row.strategy_id_from == strategy_id else name_lookup.get(row.strategy_id_from, "(deleted)"))
+            dst_desc = "Main Account" if row.strategy_id_to is None else (
+                "This Strategy" if row.strategy_id_to == strategy_id else name_lookup.get(row.strategy_id_to, "(deleted)"))
+            amount_str = _trim_decimal(row.amount)
+            message = f"to {dst_desc} | {amount_str} {row.asset_symbol}"
+            logs_data.append({
+                'id': f"transfer-{row.id}",
+                'timestamp': row.timestamp.isoformat(),
+                'exchange_name': strategy.exchange_credential.exchange,
+                'strategy_name': strategy.name,
+                'account_name': src_desc,
+                'action': 'TRANSFER',
+                'ticker': row.asset_symbol,
+                'message': message,
+                'status': 'success',
+                'payload': None,
+                'raw_response': None,
+            })
+
+        # Optional search filter (case-insensitive)
+        search_term = request.args.get('search')
+        if search_term:
+            term_lower = search_term.lower()
+            logs_data = [l for l in logs_data if term_lower in (str(l.get('message', '')).lower() + str(l.get('ticker', '')).lower())]
+
+        # Sort combined list by timestamp desc
+        from datetime import datetime
+        logs_data.sort(key=lambda l: datetime.fromisoformat(l['timestamp']), reverse=True)
+
+        # Manual pagination over combined list
+        import math
+        total_logs = len(logs_data)
+        total_pages = max(1, math.ceil(total_logs / per_page))
+        page = max(1, min(page, total_pages))
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_logs = logs_data[start_idx:end_idx]
+
+        # Replace original pagination variables so existing return block continues to work
+        class _DummyPag:
+            def __init__(self, page, per_page, total, pages):
+                self.page = page
+                self.per_page = per_page
+                self.total = total
+                self.pages = pages
+        pagination = _DummyPag(page, per_page, total_logs, total_pages)
+        logs_data = paginated_logs
 
         # logger.debug(str(pagination))
         for log in logs_data:
@@ -232,11 +304,13 @@ def get_all_logs():
             page=page, per_page=per_page, error_out=False
         )
 
-        logger.info(f"Total logs: {pagination.total}, Pages: {pagination.pages}, Current Page: {pagination.page}")
+                # Fetch ALL matching webhook logs (drop db-level pagination since we'll combine with transfers)
+        webhook_rows = logs_query.order_by(WebhookLog.timestamp.desc()).all()
 
-        # Convert logs to dictionaries using the model's to_dict method
+                # Build logs_data from webhook rows
+        # Build logs_data from ALL matching webhook rows (no db pagination)
         logs_data = []
-        for log in pagination.items:
+        for log in webhook_rows:
             log_dict = log.to_dict()
             # Populate missing strategy/exchange names if possible
             if not log_dict.get('strategy_name') or log_dict['strategy_name'] == 'Unknown':
@@ -251,19 +325,86 @@ def get_all_logs():
                     log_dict['exchange_name'] = log.automation.exchange_credential.exchange
             logs_data.append(log_dict)
 
-        # logger.debug(str(pagination))
-        for log in logs_data:
-            pass  # debug removed
+        # ----- Append AssetTransferLog rows -----
+        from sqlalchemy import false as _false  # utility
+        strategy_ids_for_exchange = locals().get('strategy_ids_for_exchange', [])
+        transfer_query = AssetTransferLog.query.filter(AssetTransferLog.user_id == current_user.id)
+        if exchange_filter:
+            if strategy_ids_for_exchange:
+                transfer_query = transfer_query.filter(or_(AssetTransferLog.strategy_id_from.in_(strategy_ids_for_exchange),
+                                                           AssetTransferLog.strategy_id_to.in_(strategy_ids_for_exchange)))
+            else:
+                transfer_query = transfer_query.filter(_false())
+        if strategy_id_filter:
+            transfer_query = transfer_query.filter(or_(AssetTransferLog.strategy_id_from == strategy_id_filter,
+                                                       AssetTransferLog.strategy_id_to == strategy_id_filter))
+        elif strategy_filter:
+            strat_obj = TradingStrategy.query.filter_by(user_id=current_user.id, name=strategy_filter).first()
+            if strat_obj:
+                transfer_query = transfer_query.filter(or_(AssetTransferLog.strategy_id_from == strat_obj.id,
+                                                           AssetTransferLog.strategy_id_to == strat_obj.id))
+
+        transfer_rows = transfer_query.order_by(AssetTransferLog.timestamp.desc()).all()
+
+        # Build lookup maps for strategies involved in transfers
+        involved_ids = {row.strategy_id_from for row in transfer_rows if row.strategy_id_from}
+        involved_ids.update({row.strategy_id_to for row in transfer_rows if row.strategy_id_to})
+        name_lookup = {}
+        exch_lookup = {}
+        if involved_ids:
+            strats = TradingStrategy.query.filter(TradingStrategy.id.in_(involved_ids)).all()
+            name_lookup = {s.id: s.name for s in strats}
+            exch_lookup = {s.id: (s.exchange_credential.exchange if s.exchange_credential else None) for s in strats}
+
+        for row in transfer_rows:
+            # Skip main→main transfers where both strategy ids are null
+            if row.strategy_id_from is None and row.strategy_id_to is None:
+                continue
+            src_desc = 'Main Account' if row.strategy_id_from is None else name_lookup.get(row.strategy_id_from, '(deleted)')
+            dst_desc = 'Main Account' if row.strategy_id_to is None else name_lookup.get(row.strategy_id_to, '(deleted)')
+            if search_term and search_term.lower() not in (src_desc + dst_desc + row.asset_symbol).lower():
+                continue
+            amount_str = _trim_decimal(row.amount)
+            message = f"to {dst_desc} | {amount_str} {row.asset_symbol}"
+            exch_val = None
+            if row.strategy_id_from and exch_lookup.get(row.strategy_id_from):
+                exch_val = exch_lookup[row.strategy_id_from]
+            elif row.strategy_id_to and exch_lookup.get(row.strategy_id_to):
+                exch_val = exch_lookup[row.strategy_id_to]
+
+            logs_data.append({
+                'id': f"transfer-{row.id}",
+                'timestamp': row.timestamp.isoformat(),
+                'exchange_name': exch_val,
+                'strategy_name': src_desc,
+                'account_name': src_desc,
+                'action': 'TRANSFER',
+                'ticker': row.asset_symbol,
+                'message': message,
+                'status': 'success',
+                'payload': None,
+                'raw_response': None,
+            })
+
+        # ----- Final sort & in-memory pagination -----
+        from datetime import datetime as _dt
+        logs_data.sort(key=lambda l: _dt.fromisoformat(l['timestamp']), reverse=True)
+        import math
+        total_logs = len(logs_data)
+        total_pages = max(1, math.ceil(total_logs / per_page)) if total_logs else 1
+        page = max(1, min(page, total_pages))
+        start_idx = (page - 1) * per_page
+        paginated_logs = logs_data[start_idx:start_idx + per_page]
 
         return jsonify({
-            'logs': logs_data,
-            'totalPages': pagination.pages,
-            'totalLogs': pagination.total,
+            'logs': paginated_logs,
+            'totalPages': total_pages,
+            'totalLogs': total_logs,
             'pagination': {
-                'page': pagination.page,
-                'per_page': pagination.per_page,
-                'total': pagination.total,
-                'pages': pagination.pages,
+                'page': page,
+                'per_page': per_page,
+                'total': total_logs,
+                'pages': total_pages,
             }
         })
     except Exception as e:
@@ -354,15 +495,92 @@ def get_exchange_logs(exchange_id: str):
                 log_dict['exchange_name'] = log.automation.exchange_credential.exchange
             logs_data.append(log_dict)
 
+        # ----- Include AssetTransferLogs for this exchange -----
+        # Build list of transfer records touching strategies on this exchange or their main account
+        cred_ids = credential_ids  # already determined above
+        # Build filter: user match AND (strategy involvement OR main-account involvement)
+        base_filter = AssetTransferLog.user_id == current_user.id
+        strategy_cond = None
+        main_cond = None
+        if strategy_ids:
+            strategy_cond = or_(
+                AssetTransferLog.strategy_id_from.in_(strategy_ids),
+                AssetTransferLog.strategy_id_to.in_(strategy_ids)
+            )
+        if cred_ids:
+            main_like_clauses = [
+                AssetTransferLog.source_identifier.like(f"main::{cid}::%") for cid in cred_ids
+            ] + [
+                AssetTransferLog.destination_identifier.like(f"main::{cid}::%") for cid in cred_ids
+            ]
+            main_cond = or_(*main_like_clauses)
+
+        # Combine conditions so that either branch qualifies
+        if strategy_cond is not None and main_cond is not None:
+            final_cond = or_(strategy_cond, main_cond)
+        elif strategy_cond is not None:
+            final_cond = strategy_cond
+        elif main_cond is not None:
+            final_cond = main_cond
+        else:
+            final_cond = None  # No extra filtering – unlikely but safe fallback
+
+        query_filters = [base_filter]
+        if final_cond is not None:
+            query_filters.append(final_cond)
+
+        transfer_rows = AssetTransferLog.query.filter(and_(*query_filters)).order_by(AssetTransferLog.timestamp.desc()).all()
+
+        # Map strategy id -> name for quick lookup (handle deleted)
+        strat_name_lookup = {s.id: s.name for s in strategies}
+
+        def describe_side(sid, identifier):
+            if sid is None:
+                return "Main Account"
+            return strat_name_lookup.get(sid, "(deleted)")
+
+        for t in transfer_rows:
+            # Skip transfers that do not involve any strategy (main account to main account)
+            if t.strategy_id_from is None and t.strategy_id_to is None:
+                continue
+            src_desc = describe_side(t.strategy_id_from, t.source_identifier)
+            dst_desc = describe_side(t.strategy_id_to, t.destination_identifier)
+            amount_str = _trim_decimal(t.amount)
+            message = f"to {dst_desc} | {amount_str} {t.asset_symbol}"
+            logs_data.append({
+                'id': f"transfer-{t.id}",
+                'timestamp': t.timestamp.isoformat(),
+                'exchange_name': exchange_id,
+                'strategy_name': src_desc,  # retain for compatibility
+                'account_name': src_desc,
+                'action': 'TRANSFER',
+                'ticker': t.asset_symbol,
+                'message': message,
+                'status': 'success',
+                'payload': None,
+                'raw_response': None,
+            })
+
+        # ---- Sort combined list and paginate ----
+        from datetime import datetime
+        logs_data.sort(key=lambda l: datetime.fromisoformat(l['timestamp']), reverse=True)
+        import math
+        total_logs = len(logs_data)
+        total_pages = max(1, math.ceil(total_logs / per_page))
+        page = max(1, min(page, total_pages))
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_logs = logs_data[start_idx:end_idx]
+
         return jsonify({
-            'logs': logs_data,
-            'totalPages': pagination.pages,
-            'totalLogs': pagination.total,
+            'logs': paginated_logs,
+            'totalPages': total_pages,
+            'totalLogs': total_logs,
             'pagination': {
-                'page': pagination.page,
-                'per_page': pagination.per_page,
-                'total': pagination.total,
-                'pages': pagination.pages,
+                'page': page,
+                'per_page': per_page,
+                'total': total_logs,
+                'pages': total_pages,
             }
         })
     except Exception as e:

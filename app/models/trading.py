@@ -57,3 +57,42 @@ class StrategyValueHistory(db.Model):
 
     def __repr__(self):
         return f'<StrategyValueHistory for Strategy {self.strategy_id} @ {self.timestamp} - ${self.value_usd}>'
+
+
+class AssetTransferLog(db.Model):
+    """Records internal asset transfers between main accounts and trading strategies."""
+    __tablename__ = 'asset_transfer_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    # Raw identifiers exactly as used by the transfer routine so we can reconstruct context later
+    source_identifier = db.Column(db.String(100), nullable=False)
+    destination_identifier = db.Column(db.String(100), nullable=False)
+
+    asset_symbol = db.Column(db.String(20), nullable=False)
+    amount = db.Column(db.Numeric(precision=28, scale=18), nullable=False)
+
+    # Convenience links to involved strategies (nullable when Main Account is involved)
+    strategy_id_from = db.Column(db.Integer, nullable=True)
+    strategy_id_to = db.Column(db.Integer, nullable=True)
+
+    def __repr__(self):
+        return (
+            f"<AssetTransferLog {self.id}: {self.amount} {self.asset_symbol} "
+            f"{self.source_identifier} → {self.destination_identifier}>"
+        )
+
+    def to_dict(self):
+        """Return a dict representation aligned with WebhookLog.to_dict()."""
+        return {
+            'id': self.id,
+            'timestamp': self.timestamp.isoformat(),
+            'source_identifier': self.source_identifier,
+            'destination_identifier': self.destination_identifier,
+            'asset_symbol': self.asset_symbol,
+            'amount': float(self.amount),
+            'strategy_id_from': self.strategy_id_from,
+            'strategy_id_to': self.strategy_id_to,
+        }

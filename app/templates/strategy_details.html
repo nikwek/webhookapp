@@ -81,6 +81,9 @@
 
                         <dt class="col-sm-5">Allocated Quote Asset:</dt>
                         <dd class="col-sm-7">{{ (strategy.allocated_quote_asset_quantity | float) | round(8) }} {{ strategy.quote_asset_symbol }}</dd>
+
+                        <dt class="col-sm-5">Est. Total Value (USD):</dt>
+                        <dd class="col-sm-7" id="strategyTotalValue">–</dd>
                     </dl>
                 </div>
             </div>
@@ -129,7 +132,7 @@
             <h5 class="mb-0">Performance</h5>
         </div>
         <div class="card-body">
-            <p class="text-muted mb-0">Performance chart will be displayed here (Phase 4.5).</p>
+            <canvas id="performanceChart" height="120"></canvas>
         </div>
     </div>
 
@@ -462,6 +465,62 @@ function copyToClipboard(elementId, buttonElement, isCode = false) {
         document.body.removeChild(textArea);
     }
 }
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+    const canvas = document.getElementById('performanceChart');
+    if (!canvas) return;
+    try {
+        const stratId = {{ strategy.id }};
+        const resp = await fetch(`/api/strategy/${stratId}/performance?days=90`);
+        const json = await resp.json();
+        const labels = json.data.map(pt => (new Date(pt.timestamp)).toLocaleDateString());
+        const rawVals = json.data.map(pt => pt.value_usd);
+        const latestVal = rawVals.length ? rawVals[rawVals.length - 1] : 0;
+        const base = rawVals.length ? rawVals[0] : 0;
+        const vals = rawVals.map(v => parseFloat((v - base).toFixed(2)));
+        // Update est total value line
+        const valElem = document.getElementById('strategyTotalValue'); if (valElem) valElem.textContent = '$' + latestVal.toFixed(2);
+        // Determine symmetric y-axis range so 0 is centered
+        const maxAbs = vals.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+        const RANGE = maxAbs > 0 ? maxAbs : 1;
+        if (!labels.length) {
+            canvas.parentElement.innerHTML = '<p class="text-muted mb-0">No performance data yet.</p>';
+            return;
+        }
+        new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Δ USD Value',
+                    data: vals,
+                    borderColor: '#0d6efd',
+                    backgroundColor: 'rgba(13,110,253,0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 2
+                }]
+            },
+            options: {
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: {
+                        min: -RANGE,
+                            max: RANGE,
+                        ticks: {
+                            callback: v => (v >= 0 ? '+' : '') + '$' + v.toFixed(2)
+                        }
+                    }
+                }
+            }
+        });
+    } catch (err) {
+        console.error('Performance chart error', err);
+        canvas.parentElement.innerHTML = '<p class="text-danger mb-0">Failed to load performance data.</p>';
+    }
+});
 </script>
 
 {% endblock %}

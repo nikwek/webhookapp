@@ -143,21 +143,36 @@ document.addEventListener('DOMContentLoaded', function () {
     
     // Add form validation
     transferForm.addEventListener('submit', function(event) {
+        const confirmBtn = document.getElementById('confirmTransferBtn');
+        const resetBtnState = () => {
+            if (!confirmBtn) return;
+            confirmBtn.disabled = false;
+            const spinner = confirmBtn.querySelector('.spinner-border');
+            const btnText = confirmBtn.querySelector('.btn-text');
+            if (spinner) spinner.classList.add('d-none');
+            if (btnText) btnText.textContent = 'Confirm Transfer';
+        };
+
         const amountValue = parseFloat(amountInput.value);
         const maxAmount = parseFloat(availableToTransferSpan.textContent);
-        
+
         if (isNaN(amountValue) || amountValue <= 0) {
             event.preventDefault();
+            event.stopImmediatePropagation();
+            resetBtnState();
             alert('Please enter a valid amount greater than zero.');
             return false;
         }
-        
+
         if (amountValue > maxAmount) {
             event.preventDefault();
+            event.stopImmediatePropagation();
+            resetBtnState();
             alert(`Amount exceeds available balance. Maximum: ${maxAmount}`);
             return false;
         }
-        
+
+        // allow submission to proceed; the separate listener will handle spinner
         return true;
     });
 

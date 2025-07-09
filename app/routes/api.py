@@ -6,7 +6,7 @@ from sqlalchemy.orm import joinedload
 import sys
 
 from .. import db
-from ..models import ExchangeCredentials, TradingStrategy, WebhookLog
+from ..models import ExchangeCredentials, TradingStrategy, StrategyValueHistory, WebhookLog
 from .automation import api_login_required
 import logging
 
@@ -92,6 +92,59 @@ def get_strategy_logs(strategy_id: int):
         return jsonify({"error": "An internal error occurred"}), 500
 
 
+@api_bp.route('/api/strategy/<int:strategy_id>/performance', methods=['GET'])
+@api_login_required
+def get_strategy_performance(strategy_id: int):
+    """Return historical daily USD value snapshots for a trading strategy.
+
+    Query params:
+        days (optional int): Limit to the most recent N days. Default = 30.
+    """
+    try:
+        # Ensure the strategy belongs to the current user
+        strategy = (
+            db.session.query(TradingStrategy)
+            .filter(
+                TradingStrategy.id == strategy_id,
+                TradingStrategy.user_id == current_user.id,
+            )
+            .first_or_404()
+        )
+
+        # Determine range
+        days = request.args.get('days', 30, type=int)
+        if days and days > 0:
+            from datetime import datetime, timedelta
+
+            start_date = datetime.utcnow() - timedelta(days=days)
+            q = StrategyValueHistory.query.filter(
+                StrategyValueHistory.strategy_id == strategy_id,
+                StrategyValueHistory.timestamp >= start_date,
+            )
+        else:
+            q = StrategyValueHistory.query.filter_by(strategy_id=strategy_id)
+
+        history_rows = (
+            q.order_by(StrategyValueHistory.timestamp.asc()).all()
+        )
+
+        data = [
+            {
+                "timestamp": row.timestamp.isoformat(),
+                "value_usd": float(row.value_usd),
+                "base_asset_quantity_snapshot": float(row.base_asset_quantity_snapshot),
+                "quote_asset_quantity_snapshot": float(row.quote_asset_quantity_snapshot),
+            }
+            for row in history_rows
+        ]
+
+        return jsonify({"strategy_id": strategy_id, "data": data})
+    except Exception as e:
+        logger.error(f"Error fetching performance data for strategy {strategy_id}: {e}")
+        return jsonify({"error": "An internal error occurred"}), 500
+
+
+# ---------------- Existing routes ----------------
 @api_bp.route('/api/logs', methods=['GET'])
 @api_login_required
 def get_all_logs():

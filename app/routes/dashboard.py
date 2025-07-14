@@ -42,28 +42,6 @@ def dashboard():
     )
     user_id = current_user.id
 
-    # Get automations
-    db_automations = Automation.query.filter_by(user_id=user_id).all()
-
-    automations_list = []
-    for item in db_automations:
-        url_root = request.url_root.rstrip('/')
-        webhook_url = f"{url_root}/webhook?automation_id={item.automation_id}"
-        automation_dict = {
-            'id': item.id,
-            'automation_id': item.automation_id,
-            'name': item.name,
-            'is_active': item.is_active,
-            'trading_pair': item.trading_pair,
-            'webhook_url': webhook_url,
-            'portfolio_name': 'N/A (linking needs review)',  # Placeholder
-            'portfolio_value': None,
-            'portfolio_status': 'unknown'  # Placeholder
-        }
-        # TODO: If automations need to link to CCXT exchanges, adapt the logic here.
-        # This might involve looking up ExchangeCredentials by a portfolio_id or another mechanism.
-        automations_list.append(automation_dict)
-
     # --- New logic for Exchange Balances ---
     connected_exchanges_display_data: List[Dict[str, Any]] = []
     all_creds = ExchangeCredentials.query.filter_by(user_id=user_id).all()
@@ -175,7 +153,6 @@ def dashboard():
 
     return render_template(
         'dashboard.html',
-        automations=automations_list,
         exchanges=connected_exchanges_display_data,
         has_any_exchange_keys=has_any_exchange_keys
     )

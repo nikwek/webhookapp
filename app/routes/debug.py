@@ -8,7 +8,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timezone
 from app import db
 from app.models.user import User
-from app.models.automation import Automation
 from app.models.portfolio import Portfolio
 
 debug = Blueprint('debug', __name__)
@@ -123,109 +122,8 @@ def db_tables():
             'status': 'error',
             'message': str(e)
         }), 500
-    
-@debug.route('/debug/automation/portfolio/<string:coinbase_portfolio_id>')
-def get_automation_by_portfolio(coinbase_portfolio_id):
-    """Debug endpoint to find automation by Coinbase portfolio UUID"""
-    try:
-        portfolio = Portfolio.query.filter_by(portfolio_id=coinbase_portfolio_id).first()
-        
-        if not portfolio:
-            return jsonify({
-                'status': 'not_found',
-                'message': f'No portfolio found with Coinbase UUID: {coinbase_portfolio_id}'
-            }), 404
-        
-        current_app.logger.info(f"Found portfolio - ID: {portfolio.id}, Name: {portfolio.name}, Coinbase UUID: {portfolio.portfolio_id}")
-        
-        automation = Automation.query.filter_by(portfolio_id=portfolio.id).first()
-        
-        if not automation:
-            return jsonify({
-                'status': 'not_found',
-                'message': f'Portfolio exists but has no automation',
-                'portfolio': {
-                    'id': portfolio.id,
-                    'portfolio_id': portfolio.portfolio_id,
-                    'name': portfolio.name
-                }
-            }), 404
-            
-        current_app.logger.info(f"Found automation - ID: {automation.id}, Name: {automation.name}, Portfolio ID: {automation.portfolio_id}")
-            
-        return jsonify({
-            'status': 'success',
-            'automation': {
-                'id': automation.id,
-                'automation_id': automation.automation_id,
-                'name': automation.name,
-                'portfolio_id': automation.portfolio_id,
-                'trading_pair': automation.trading_pair,
-                'is_active': automation.is_active,
-                'created_at': automation.created_at.isoformat() if automation.created_at else None
-            },
-            'portfolio': {
-                'id': portfolio.id,
-                'portfolio_id': portfolio.portfolio_id,
-                'name': portfolio.name
-            }
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-    
-@debug.route('/debug/automations')
-def debug_automations():
-    """Debug endpoint to check automation_id values"""
-    try:
-        # Get all automations
-        automations = Automation.query.all()
-        
-        # Prepare data for display
-        automation_data = []
-        for automation in automations:
-            automation_data.append({
-                'id': automation.id,
-                'automation_id': automation.automation_id,
-                'name': automation.name,
-                'is_active': automation.is_active,
-                'portfolio_id': automation.portfolio_id,
-                'user_id': automation.user_id,
-                # Test URL generation
-                'url_to_automation': f"/automation/{automation.automation_id}"
-            })
-        
-        # Check the blueprint registration
-        blueprints = []
-        for name, blueprint in current_app.blueprints.items():
-            routes = []
-            for rule in current_app.url_map.iter_rules():
-                if rule.endpoint.startswith(name + '.'):
-                    routes.append({
-                        'endpoint': rule.endpoint,
-                        'methods': [m for m in rule.methods if m not in ('HEAD', 'OPTIONS')],
-                        'rule': str(rule)
-                    })
-            
-            blueprints.append({
-                'name': name,
-                'routes': routes
-            })
-        
-        return jsonify({
-            'count': len(automation_data),
-            'automations': automation_data,
-            'blueprints': blueprints
-        })
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-    
+
+
 from flask_security import current_user, login_required
 
 @debug.route('/debug/check-suspension/<int:user_id>')

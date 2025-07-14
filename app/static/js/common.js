@@ -48,55 +48,6 @@ window.WebhookManager = window.WebhookManager || {
         }
     },
 
-    toggleAutomationStatus: function(automationId, isActive, isAdmin = false) {
-        const button = document.querySelector(`.status-button[data-automation-id="${automationId}"]`);
-        if (button) {
-            button.disabled = true;
-        }
-    
-        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-        const endpoint = isAdmin ? 
-            `/admin/api/automation/${automationId}/${isActive ? 'deactivate' : 'activate'}` :
-            `/automation/${automationId}/status`;
-        
-        return fetch(endpoint, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRFToken': csrfToken
-            },
-            body: JSON.stringify({ is_active: !isActive })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            if (button) {
-                const newIsActive = !isActive;
-                button.textContent = newIsActive ? 'Active' : 'Inactive';
-                button.classList.remove(newIsActive ? 'btn-danger' : 'btn-success');
-                button.classList.add(newIsActive ? 'btn-success' : 'btn-danger');
-                button.dataset.isActive = newIsActive.toString();
-                button.disabled = false;
-
-                // Update row styling
-                const row = button.closest('.automation-row');
-                if (row) {
-                    row.classList.toggle('text-muted', !newIsActive);
-                }
-            }
-            return data;
-        })
-        .catch(error => {
-            if (button) {
-                button.disabled = false;
-            }
-            throw error;
-        });
-    },
 
     // Utility to pretty-print JSON objects or strings in logs
     formatJsonDisplay: function(data) {
@@ -134,22 +85,7 @@ window.WebhookManager = window.WebhookManager || {
             }, { once: true });
         });
 
-        // Status button handlers
-        // Status button handlers
-        document.querySelectorAll('.status-button').forEach(button => {
-            if (!button.hasListener) {
-                button.hasListener = true;
-                button.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const automationId = button.dataset.automationId;
-                    const isActive = JSON.parse(button.dataset.isActive);
-                    const isAdmin = button.dataset.isAdmin === 'true';
 
-                    this.toggleAutomationStatus(automationId, isActive, isAdmin)
-                        .catch(error => alert('Error: ' + error.message));
-                });
-            }
-        });
     },
 
     // Password validation logic

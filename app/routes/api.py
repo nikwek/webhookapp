@@ -7,7 +7,18 @@ import sys
 
 from .. import db
 from ..models import ExchangeCredentials, TradingStrategy, StrategyValueHistory, WebhookLog, AssetTransferLog
-from .automation import api_login_required
+from functools import wraps
+
+# Local replacement for legacy decorator removed with Automations module
+
+def api_login_required(view_func):
+    """Simple auth guard for API routes (session or token)."""
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return jsonify({"error": "Authentication required"}), 401
+        return view_func(*args, **kwargs)
+    return wrapper
 import logging
 from decimal import Decimal
 

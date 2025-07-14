@@ -146,7 +146,6 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
     from app.routes.exchange import exchange_bp
     from app.routes.two_factor import bp as two_factor_bp
     from app.routes.admin import bp as admin_bp
-    from app.routes.automation import bp as automation_bp
     from app.routes.debug import debug as debug_bp
     from app.routes.api import api_bp
 
@@ -157,7 +156,6 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
     app.register_blueprint(exchange_bp)
     app.register_blueprint(two_factor_bp)
     app.register_blueprint(admin_bp)
-    app.register_blueprint(automation_bp)
     app.register_blueprint(debug_bp)
     app.register_blueprint(api_bp)
 

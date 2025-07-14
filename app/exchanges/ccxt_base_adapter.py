@@ -57,7 +57,7 @@ class CcxtBaseAdapter(ExchangeAdapter):
         if not cls._exchange_id:
             raise ValueError("_exchange_id not configured")
         if cls._exchange_id == "coinbase-ccxt":
-            return "Coinbase CCXT"
+            return "Coinbase"
         return " ".join(
             p.capitalize()
             for p in cls._exchange_id.replace("_", " ").replace("-", " ").split()
@@ -74,7 +74,7 @@ class CcxtBaseAdapter(ExchangeAdapter):
             return None
 
         secret = creds.decrypt_secret()
-        if cls.get_name() == "coinbase-ccxt" and secret:
+        if cls.get_name() in ["coinbase-ccxt", "coinbase"] and secret:
             secret = secret.replace("\\n", "\n")
 
         params = {

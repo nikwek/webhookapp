@@ -42,9 +42,17 @@ def initialize_exchange_adapters():
 
     exchange_ids = cfg_exchanges or DEFAULT_CCXT_EXCHANGES
 
-    # Register our custom Coinbase adapter first
+    # Register Coinbase adapters
+    # Technical adapter (internal id with '-ccxt')
     ExchangeRegistry.register(CcxtCoinbaseAdapter)
-    
+
+    # User-facing alias adapter without the suffix
+    class CoinbaseAliasAdapter(CcxtCoinbaseAdapter):
+        _exchange_id = "coinbase"
+
+    ExchangeRegistry.register(CoinbaseAliasAdapter)
+
+    # Register our custom Coinbase adapter first
     # Register the rest of the exchanges dynamically
     for exch_id in exchange_ids:
         # Skip Coinbase as we have a custom implementation

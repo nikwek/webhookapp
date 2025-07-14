@@ -299,7 +299,11 @@ def settings():
     log_creds_map_str = "Settings GET: exchange_creds_map: %s"
     logger.info(log_creds_map_str, {k: v.id for k, v in exchange_creds_map.items()})
 
-    available_exchange_adapters = ExchangeRegistry.get_all_adapter_classes()
+    # Expose only user-facing adapters in Settings (hide legacy technical ids)
+    available_exchange_adapters = [
+        cls for cls in ExchangeRegistry.get_all_adapter_classes()
+        if not cls.get_name().endswith("-ccxt")
+    ]
     log_adapters_str = "Settings GET: Available adapter names: %s"
     logger.info(log_adapters_str, [adapter.get_name() for adapter in available_exchange_adapters])
 

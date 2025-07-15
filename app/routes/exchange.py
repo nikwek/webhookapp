@@ -6,12 +6,13 @@ from app.models.exchange_credentials import ExchangeCredentials
 from app.exchanges.ccxt_base_adapter import CcxtBaseAdapter # Needed for issubclass check
 from app.exchanges.registry import ExchangeRegistry
 from app import db
-from app.models.trading import TradingStrategy
+from app.models.trading import TradingStrategy, StrategyValueHistory
 import uuid
 import logging
 import json
 import re
 from collections import defaultdict
+from sqlalchemy import desc
 from decimal import Decimal, InvalidOperation
 from app.services import allocation_service
 
@@ -134,23 +135,48 @@ def view_exchange(exchange_id: str):
     
     final_cred = next((c for c in all_creds if c.exchange == exchange_id), None)
 
-    if final_cred:
-        user_strategies = TradingStrategy.query.filter_by(
-            user_id=user_id,
-            exchange_credential_id=final_cred.id
-        ).order_by(TradingStrategy.name).all()
+    # Fetch trading strategies for the current user and exchange credential
+    user_strategies: list[TradingStrategy] = []
+    total_allocated_by_asset: dict[str, Decimal] = defaultdict(Decimal)
 
-    # Calculate total allocated amounts for each asset across all strategies for this exchange credential
-    total_allocated_by_asset = defaultdict(Decimal)
-    if user_strategies: # user_strategies is already filtered for the current exchange_credential_id
+    if final_cred:
+        # Retrieve all strategies for this user/exchange credential
+        user_strategies = (
+            TradingStrategy.query.filter_by(
+                user_id=user_id,
+                exchange_credential_id=final_cred.id,
+            )
+            .order_by(TradingStrategy.name)
+            .all()
+        )
+
+        # Attach latest valuation snapshot & build total allocated per asset
         for strategy in user_strategies:
+            latest_snap = (
+                strategy.value_history.order_by(desc(StrategyValueHistory.timestamp)).first()
+                if hasattr(strategy, "value_history")
+                else None
+            )
+            strategy.latest_value_usd = (
+                float(latest_snap.value_usd) if latest_snap else None
+            )
+
             try:
                 if strategy.base_asset_symbol and strategy.allocated_base_asset_quantity is not None:
-                    total_allocated_by_asset[strategy.base_asset_symbol] += Decimal(str(strategy.allocated_base_asset_quantity))
+                    total_allocated_by_asset[strategy.base_asset_symbol] += Decimal(
+                        str(strategy.allocated_base_asset_quantity)
+                    )
                 if strategy.quote_asset_symbol and strategy.allocated_quote_asset_quantity is not None:
-                    total_allocated_by_asset[strategy.quote_asset_symbol] += Decimal(str(strategy.allocated_quote_asset_quantity))
+                    total_allocated_by_asset[strategy.quote_asset_symbol] += Decimal(
+                        str(strategy.allocated_quote_asset_quantity)
+                    )
             except InvalidOperation as e_alloc:
-                logger.error(f"Invalid decimal value for allocated quantity in strategy {strategy.id} ('{strategy.name}'). Asset: {strategy.base_asset_symbol} or {strategy.quote_asset_symbol}. Error: {e_alloc}. Skipping this allocation.")
+                logger.error(
+                    "Invalid decimal value for allocated quantity in strategy %s ('%s'): %s",
+                    strategy.id,
+                    strategy.name,
+                    e_alloc,
+                )
 
     # Update main account balances with allocated and unallocated amounts
     if 'balances' in current_exchange_data and isinstance(current_exchange_data['balances'], list):
@@ -206,7 +232,8 @@ def view_exchange(exchange_id: str):
             "base_asset_symbol": strategy.base_asset_symbol,
             "quote_asset_symbol": strategy.quote_asset_symbol,
             "allocated_base_asset_quantity": float(strategy.allocated_base_asset_quantity or 0),
-            "allocated_quote_asset_quantity": float(strategy.allocated_quote_asset_quantity or 0)
+            "allocated_quote_asset_quantity": float(strategy.allocated_quote_asset_quantity or 0),
+            "latest_value_usd": strategy.latest_value_usd
         }
         for strategy in user_strategies
     ]

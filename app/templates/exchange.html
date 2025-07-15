@@ -188,6 +188,7 @@
                                 <th scope="col">Trading Pair</th>
                                 <th scope="col">Allocated Base</th>
                                 <th scope="col">Allocated Quote</th>
+                                <th scope="col">Est. Value (USD)</th>
                                 <th scope="col">Status</th>
                                 <th scope="col" class="text-end">Actions</th>
                             </tr>
@@ -199,6 +200,13 @@
                                 <td>{{ strategy.trading_pair }}</td>
                                 <td>{{ (strategy.allocated_base_asset_quantity | float) | round(8) }} {{ strategy.base_asset_symbol }}</td>
                                 <td>{{ (strategy.allocated_quote_asset_quantity | float) | round(8) }} {{ strategy.quote_asset_symbol }}</td>
+                                <td>
+                                    {% if strategy.latest_value_usd is not none %}
+                                        ${{ strategy.latest_value_usd | round(2) }}
+                                    {% else %}
+                                        –
+                                    {% endif %}
+                                </td>
                                 <td>
                                     {% if strategy.is_active %}
                                         <span class="badge bg-success">Active</span>

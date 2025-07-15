@@ -1,12 +1,11 @@
 # app/routes/debug.py
 from flask import Blueprint, current_app, jsonify, abort, flash, redirect, url_for
 from flask_mail import Message
-from flask_security import RegisterForm, current_user, login_required, url_for_security
-from flask import current_app
+from flask_security import RegisterForm, current_user, login_required, url_for_security, roles_required
 from sqlalchemy import text, inspect
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timezone
-from app import db
+from app import db, scheduler
 from app.models.user import User
 from app.models.portfolio import Portfolio
 
@@ -31,6 +30,7 @@ def test_email():
     
 
 @debug.route('/debug/register_form')
+@roles_required("admin")
 def debug_register_form():
     """Debug the registration form fields"""
     # Get the register form class
@@ -42,6 +42,7 @@ def debug_register_form():
     return f"Registration form fields: {fields}"
 
 @debug.route('/debug/db-test')
+@roles_required("admin")
 def test_db():
     """Test database connectivity and user table"""
     try:
@@ -65,11 +66,13 @@ def test_db():
         }), 500
     
 @debug.route('/health')
+@roles_required("admin")
 def health_check():
     """General health check endpoint"""
     return jsonify({'status': 'healthy'})
 
 @debug.route('/health/db')
+@roles_required("admin")
 def db_health_check():
     """Database-specific health check endpoint"""
     try:
@@ -97,6 +100,7 @@ def db_health_check():
         }), 500
     
 @debug.route('/debug/db-tables')
+@roles_required("admin")
 def db_tables():
     """List all database tables and their columns"""
     try:
@@ -127,6 +131,7 @@ def db_tables():
 from flask_security import current_user, login_required
 
 @debug.route('/debug/check-suspension/<int:user_id>')
+@roles_required("admin")
 @login_required
 def check_suspension(user_id):
     """Debug endpoint to verify user suspension status"""
@@ -219,6 +224,7 @@ def debug_versions():
     })
 
 @debug.route('/debug/security-messages')
+@roles_required("admin")
 def security_messages():
     """Check Flask-Security message configuration"""
     from flask import jsonify, current_app
@@ -238,6 +244,7 @@ def security_messages():
     })
 
 @debug.route('/debug/login-process')
+@roles_required("admin")
 def debug_login_process():
     """Debug the login process"""
     from flask import current_app, render_template_string, request
@@ -280,6 +287,7 @@ def flash_categories():
     return redirect(url_for('security.login'))
 
 @debug.route('/debug/registration-config')
+@roles_required("admin")
 def registration_config():
     """Show registration configuration"""
     from flask import jsonify, current_app
@@ -306,3 +314,35 @@ def try_register():
     
     # Redirect to the registration page
     return redirect(url_for('security.register'))
+
+@debug.route("/debug/scheduler/jobs")
+@roles_required("admin")
+def list_scheduler_jobs():
+    """Return basic info on all APScheduler jobs."""
+    jobs = [
+        {
+            "id": j.id,
+            "next_run_time": j.next_run_time.isoformat() if j.next_run_time else None,
+            "trigger": str(j.trigger)
+        }
+        for j in scheduler.get_jobs()
+    ]
+    return jsonify(jobs)
+
+
+@debug.route("/debug/update-strategy-values")
+@roles_required("admin")
+def update_strategy_values():
+    """Manually trigger an update of all strategy values."""
+    try:
+        from app.services.strategy_value_service import snapshot_all_strategies
+        snapshot_all_strategies()
+        return jsonify({
+            "success": True,
+            "message": "Strategy values updated successfully"
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error updating strategy values: {str(e)}"
+        }), 500

@@ -321,6 +321,22 @@ class EnhancedWebhookProcessor:
         original_base = strategy.allocated_base_asset_quantity
         original_quote = strategy.allocated_quote_asset_quantity
         
+        # Use the correct field names from the TradingStrategy model
+        base_asset = strategy.base_asset_symbol
+        quote_asset = strategy.quote_asset_symbol
+        
+        # Store initial balances for adding to the UI
+        initial_balances = {
+            "base": {
+                "asset": base_asset,
+                "before": str(original_base)
+            },
+            "quote": {
+                "asset": quote_asset,
+                "before": str(original_quote)
+            }
+        }
+        
         # Extract data from various sources
         filled = None
         cost = None
@@ -502,22 +518,59 @@ class EnhancedWebhookProcessor:
             # For buy: Add base asset, subtract quote asset (cost)
             strategy.allocated_base_asset_quantity += filled
             
-            # If we're using the 100% approach for buys, we've already calculated the appropriate
-            # filled amount based on available quote currency, so we should set quote to 0
+            # Check for Coinbase size_inclusive_of_fees pattern for logging purposes
+            info = order_data.get('info', {}) if isinstance(order_data, dict) else {}
+            is_size_inclusive = info.get('size_inclusive_of_fees', False) if isinstance(info, dict) else False
+            is_size_in_quote = info.get('size_in_quote', False) if isinstance(info, dict) else False
+            
+            # Log the order properties for debugging
+            if is_size_inclusive and is_size_in_quote:
+                logger.info(f"Processing Coinbase order with size_inclusive_of_fees={is_size_inclusive} and size_in_quote={is_size_in_quote}")
+                
+                # Get quote size from order configuration if available (for logging only)
+                if isinstance(info, dict) and isinstance(info.get('order_configuration', {}), dict):
+                    market_config = info.get('order_configuration', {}).get('market_market_ioc', {})
+                    if isinstance(market_config, dict):
+                        quote_size = market_config.get('quote_size')
+                        if quote_size is not None:
+                            try:
+                                quote_size = Decimal(str(quote_size))
+                                logger.info(f"Original quote_size in order configuration: {quote_size}")
+                            except Exception as e:
+                                logger.warning(f"Failed to convert quote_size to Decimal: {e}")
+            
+            # Always use the actual cost+fees rather than zeroing out
+            # This fixes the issue with Coinbase's size_inclusive_of_fees orders
+            quote_spent = total_after_fees if total_after_fees is not None else (cost + total_fees)
+            logger.info(f"Subtracting exact amount spent {quote_spent} from quote asset")
+            strategy.allocated_quote_asset_quantity -= quote_spent
+            
+            # Only zero out in the 'available_quote' case from earlier in the method
+            # which is the explicit 100% spending logic from the original implementation
             if 'available_quote' in locals():
+                logger.info("Setting quote asset to zero due to 100% allocation flag")
                 strategy.allocated_quote_asset_quantity = Decimal('0.0')
-                logger.info("Setting quote asset to zero after 100% buy")
-            else:
-                # Traditional approach - subtract cost and fees from quote asset
-                quote_spent = total_after_fees if total_after_fees is not None else (cost + total_fees)
-                strategy.allocated_quote_asset_quantity -= quote_spent
-                # Clamp tiny negatives caused by rounding
-                if strategy.allocated_quote_asset_quantity < 0:
-                    if strategy.allocated_quote_asset_quantity > Decimal('-0.00000001'):
-                        strategy.allocated_quote_asset_quantity = Decimal('0.0')
-                    else:
-                        logger.warning("Quote asset quantity went negative after buy. Setting to 0.")
-                        strategy.allocated_quote_asset_quantity = Decimal('0.0')
+            
+            # Clamp tiny negatives caused by rounding
+            if strategy.allocated_quote_asset_quantity < 0:
+                if strategy.allocated_quote_asset_quantity > Decimal('-0.00000001'):
+                    strategy.allocated_quote_asset_quantity = Decimal('0.0')
+                else:
+                    logger.warning("Quote asset quantity went negative after buy. Setting to 0.")
+                    strategy.allocated_quote_asset_quantity = Decimal('0.0')
+                    
+            # Add balance information to trade_result for UI display
+            final_base = strategy.allocated_base_asset_quantity
+            final_quote = strategy.allocated_quote_asset_quantity
+            
+            # Update the initial balances with final values
+            initial_balances["base"]["after"] = str(final_base)
+            initial_balances["base"]["change"] = str(final_base - original_base)
+            initial_balances["quote"]["after"] = str(final_quote)
+            initial_balances["quote"]["change"] = str(final_quote - original_quote)
+            
+            # Add to trade_result for display in the UI
+            trade_result["balances"] = initial_balances
         elif action.lower() == 'sell':
             # For sell: Subtract base asset, add quote asset (proceeds)
             
@@ -535,6 +588,19 @@ class EnhancedWebhookProcessor:
             # Add proceeds to quote asset (net of fees)
             net_proceeds = total_after_fees if total_after_fees is not None else (cost - total_fees)
             strategy.allocated_quote_asset_quantity += net_proceeds
+            
+            # Add balance information to trade_result for UI display
+            final_base = strategy.allocated_base_asset_quantity
+            final_quote = strategy.allocated_quote_asset_quantity
+            
+            # Update the initial balances with final values
+            initial_balances["base"]["after"] = str(final_base)
+            initial_balances["base"]["change"] = str(final_base - original_base)
+            initial_balances["quote"]["after"] = str(final_quote)
+            initial_balances["quote"]["change"] = str(final_quote - original_quote)
+            
+            # Add to trade_result for display in the UI
+            trade_result["balances"] = initial_balances
         
         # Log the portfolio changes
         logger.info(

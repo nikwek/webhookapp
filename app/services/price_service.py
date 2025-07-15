@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from functools import lru_cache
 from typing import Dict, Optional
 
 import requests
@@ -64,9 +63,26 @@ class PriceService:
             cls._load_symbol_map()
         return cls._symbol_to_id.get(symbol)
 
+    # List of known USD stablecoins that should always be valued at $1
+    _USD_STABLECOINS = {
+        'USDT',    # Tether
+        'USDC',    # USD Coin
+        'DAI',     # Dai
+        'PYUSD',   # PayPal USD
+        'FDUSD',   # First Digital USD
+        'USDE',    # Ethena USDe
+        'TUSD',    # TrueUSD
+        'BUSD',    # Binance USD
+        'USDP',    # Pax Dollar
+    }
     @classmethod
     def get_price_usd(cls, symbol: str) -> float:
         """Return the latest *USD* price for *symbol* (e.g. "BTC")."""
+        # Special handling for USD stablecoins
+        symbol = symbol.upper()
+        if symbol in cls._USD_STABLECOINS:
+            logger.debug(f"Using fixed $1.00 price for stablecoin {symbol}")
+            return 1.00
         symbol = symbol.upper()
         now = datetime.utcnow()
 

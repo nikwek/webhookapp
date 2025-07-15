@@ -16,18 +16,55 @@ logger = logging.getLogger(__name__)
 
 def _value_usd(strategy: TradingStrategy) -> Decimal:
     """Calculate the current USD value for *strategy* using live prices."""
-    try:
-        base_px = Decimal(str(PriceService.get_price_usd(strategy.base_asset_symbol)))
-        quote_px = Decimal(str(PriceService.get_price_usd(strategy.quote_asset_symbol)))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not fetch prices for strategy %s – skipping. %s", strategy.id, exc)
-        raise
-
-    val = (
-        (strategy.allocated_base_asset_quantity or Decimal("0")) * base_px
-        + (strategy.allocated_quote_asset_quantity or Decimal("0")) * quote_px
+    base_value = Decimal("0")
+    quote_value = Decimal("0")
+    calculated_values = False  # Track if we successfully calculated at least one asset value
+    
+    # Log the actual values for debugging
+    logger.info(
+        "Calculating value for strategy %s (%s): base=%s %s, quote=%s %s", 
+        strategy.id, strategy.name,
+        strategy.allocated_base_asset_quantity, strategy.base_asset_symbol,
+        strategy.allocated_quote_asset_quantity, strategy.quote_asset_symbol
     )
-    return val.quantize(Decimal("0.01"))
+    
+    # Calculate base asset value if there's any quantity
+    if strategy.allocated_base_asset_quantity is not None and strategy.allocated_base_asset_quantity > 0:
+        try:
+            if not strategy.base_asset_symbol:
+                logger.error("Missing base asset symbol for strategy %s", strategy.id)
+            else:
+                base_px = Decimal(str(PriceService.get_price_usd(strategy.base_asset_symbol, force_refresh=True)))
+                base_value = Decimal(str(strategy.allocated_base_asset_quantity)) * base_px
+                logger.info("Base asset %s price: $%s, value: $%s", 
+                          strategy.base_asset_symbol, base_px, base_value)
+                calculated_values = True
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Could not calculate base asset value for %s: %s", 
+                        strategy.base_asset_symbol, exc)
+    
+    # Calculate quote asset value if there's any quantity
+    if strategy.allocated_quote_asset_quantity is not None and strategy.allocated_quote_asset_quantity > 0:
+        try:
+            if not strategy.quote_asset_symbol:
+                logger.error("Missing quote asset symbol for strategy %s", strategy.id)
+            else:
+                quote_px = Decimal(str(PriceService.get_price_usd(strategy.quote_asset_symbol, force_refresh=True)))
+                quote_value = Decimal(str(strategy.allocated_quote_asset_quantity)) * quote_px
+                logger.info("Quote asset %s price: $%s, value: $%s", 
+                           strategy.quote_asset_symbol, quote_px, quote_value)
+                calculated_values = True
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Could not calculate quote asset value for %s: %s", 
+                        strategy.quote_asset_symbol, exc)
+
+    # Calculate total value
+    val = base_value + quote_value
+    formatted_val = val.quantize(Decimal("0.01"))
+    logger.info("Total value for strategy %s: $%s (calculated_values=%s)", 
+               strategy.id, formatted_val, calculated_values)
+    
+    return formatted_val
 
 
 def snapshot_all_strategies() -> None:

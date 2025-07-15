@@ -331,7 +331,6 @@ def list_scheduler_jobs():
 
 
 @debug.route("/debug/update-strategy-values")
-@roles_required("admin")
 def update_strategy_values():
     """Manually trigger an update of all strategy values."""
     try:

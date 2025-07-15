@@ -282,10 +282,12 @@
                                                         {log.status && (
                                                             <span className={`badge ${
                                                                 log.status.toLowerCase() === 'success' ? 'bg-success' :
+                                                                log.status.toLowerCase() === 'closed' ? 'bg-success' :
                                                                 log.status.toLowerCase() === 'error' ? 'bg-danger' :
                                                                 log.status.toLowerCase() === 'filled' ? 'bg-primary' : 'bg-secondary'
                                                             }`}>
-                                                                {log.status.charAt(0).toUpperCase() + log.status.slice(1).toLowerCase()}
+                                                                {log.status.toLowerCase() === 'closed' ? 'Success' : 
+                                                                 log.status.charAt(0).toUpperCase() + log.status.slice(1).toLowerCase()}
                                                             </span>
                                                         )}
                                                     </div>

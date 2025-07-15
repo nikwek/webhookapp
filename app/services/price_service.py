@@ -27,8 +27,23 @@ class PriceService:
     the same public interface and replace the internals.
     """
 
-    # Map of symbol (upper-case) -> coinGecko id (lower-case)
-    _symbol_to_id: Dict[str, str] = {}
+    # Static fallback mapping for the most commonly traded symbols.
+    _STATIC_SYMBOL_MAP: Dict[str, str] = {
+        "BTC": "bitcoin",
+        "ETH": "ethereum",
+        "LTC": "litecoin",
+        "DOGE": "dogecoin",
+        "SOL": "solana",
+        "ADA": "cardano",
+        "BNB": "binancecoin",
+        "XRP": "ripple",
+        "DOT": "polkadot",
+        "MATIC": "matic-network",
+        "AVAX": "avalanche-2",
+    }
+
+    # Map of symbol (upper-case) -> coinGecko id (lower-case) loaded at runtime
+    _symbol_to_id: Dict[str, str] = _STATIC_SYMBOL_MAP.copy()
     # Map of symbol -> {"price": float, "ts": datetime}
     _price_cache: Dict[str, Dict[str, object]] = {}
     _TTL = timedelta(minutes=5)  # cache freshness window
@@ -56,10 +71,11 @@ class PriceService:
     def _resolve_id(cls, symbol: str) -> Optional[str]:
         """Return CoinGecko id for *symbol* (BTC -> bitcoin)."""
         symbol = symbol.upper()
+        # Check already-known mapping first (includes static defaults).
         if symbol in cls._symbol_to_id:
             return cls._symbol_to_id[symbol]
-        # If cache empty, attempt to load once.
-        if not cls._symbol_to_id:
+        # Attempt to lazily load the full symbol map only once per process.
+        if len(cls._symbol_to_id) == len(cls._STATIC_SYMBOL_MAP):
             cls._load_symbol_map()
         return cls._symbol_to_id.get(symbol)
 
@@ -76,8 +92,13 @@ class PriceService:
         'USDP',    # Pax Dollar
     }
     @classmethod
-    def get_price_usd(cls, symbol: str) -> float:
-        """Return the latest *USD* price for *symbol* (e.g. "BTC")."""
+    def get_price_usd(cls, symbol: str, *, force_refresh: bool = False) -> float:
+        """Return the latest *USD* price for *symbol* (e.g. "BTC").
+
+        ``force_refresh`` bypasses the in-memory cache and always fetches
+        a fresh price from CoinGecko.  Use this sparingly because the
+        public API has a soft rate-limit of ~50 requests / minute per IP.
+        """
         # Special handling for USD stablecoins
         symbol = symbol.upper()
         if symbol in cls._USD_STABLECOINS:
@@ -86,10 +107,15 @@ class PriceService:
         symbol = symbol.upper()
         now = datetime.utcnow()
 
-        # short-lived cache
+        # short-lived cache (skip when force_refresh=True)
         cached = cls._price_cache.get(symbol)
-        if cached and now - cached["ts"] < cls._TTL:
-            return cached["price"]  # type: ignore[return-value]
+        if not force_refresh and cached and now - cached["ts"] < cls._TTL:
+            # Very small prices are sometimes erroneous if the API returns
+            # inverse values – sanity-check and ignore if clearly wrong.
+            if cached["price"] > 1e-4 or symbol in cls._USD_STABLECOINS:
+                return cached["price"]  # type: ignore[return-value]
+            # drop suspicious cached value
+            cls._price_cache.pop(symbol, None)
 
         coin_id = cls._resolve_id(symbol)
         if not coin_id:

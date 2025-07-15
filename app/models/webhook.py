@@ -99,7 +99,7 @@ class WebhookLog(db.Model):
             'action': action,
             'ticker': ticker,
             'information': message,
-            'status': self.status,
+            'status': 'success' if self.status and self.status.lower() == 'closed' else self.status,
             'order_id': self.order_id,
             'client_order_id': self.client_order_id,
             'raw_response': response_dict,

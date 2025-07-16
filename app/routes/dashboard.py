@@ -14,6 +14,9 @@ from typing import List, Dict, Any
 from app import db
 import logging
 
+from app.models.trading import TradingStrategy # Added for trading strategies
+import uuid # Added for generating unique webhook IDs for strategies
+
 # Add the logger that's missing
 logger = logging.getLogger(__name__)
 
@@ -26,7 +29,7 @@ def flash_form_errors(form):
 
 bp = Blueprint('dashboard', __name__)
 
-@bp.route('/dashboard')
+@bp.route('/')
 @login_required
 def dashboard():
     """Render the dashboard page for non-admin users."""
@@ -38,28 +41,6 @@ def dashboard():
         f"Admin: {current_user.has_role('admin')}"
     )
     user_id = current_user.id
-
-    # Get automations
-    db_automations = Automation.query.filter_by(user_id=user_id).all()
-
-    automations_list = []
-    for item in db_automations:
-        url_root = request.url_root.rstrip('/')
-        webhook_url = f"{url_root}/webhook?automation_id={item.automation_id}"
-        automation_dict = {
-            'id': item.id,
-            'automation_id': item.automation_id,
-            'name': item.name,
-            'is_active': item.is_active,
-            'trading_pair': item.trading_pair,
-            'webhook_url': webhook_url,
-            'portfolio_name': 'N/A (linking needs review)',  # Placeholder
-            'portfolio_value': None,
-            'portfolio_status': 'unknown'  # Placeholder
-        }
-        # TODO: If automations need to link to CCXT exchanges, adapt the logic here.
-        # This might involve looking up ExchangeCredentials by a portfolio_id or another mechanism.
-        automations_list.append(automation_dict)
 
     # --- New logic for Exchange Balances ---
     connected_exchanges_display_data: List[Dict[str, Any]] = []
@@ -119,6 +100,15 @@ def dashboard():
         processed_ok = False
         currency = "USD"
 
+        # Count trading strategies associated with this exchange for the current user
+        strategy_count = TradingStrategy.query.join(
+            ExchangeCredentials,
+            TradingStrategy.exchange_credential_id == ExchangeCredentials.id
+        ).filter(
+            TradingStrategy.user_id == user_id,
+            ExchangeCredentials.exchange == ex_name
+        ).count()
+
         if adapter_cls and issubclass(adapter_cls, CcxtBaseAdapter):
             ccxt_cred = next(
                 (c for c in all_creds if c.exchange == ex_name), None
@@ -152,7 +142,8 @@ def dashboard():
                 'value': round(total_value, 2),
                 'currency': currency,
                 'errors': pricing_errors,
-                'logo': f"{ex_name}.svg"
+                'logo': f"{ex_name}.svg",
+                'investment_strategy_count': strategy_count
             })
 
     # Check if the user has credentials for ANY exchange
@@ -162,7 +153,6 @@ def dashboard():
 
     return render_template(
         'dashboard.html',
-        automations=automations_list,
         exchanges=connected_exchanges_display_data,
         has_any_exchange_keys=has_any_exchange_keys
     )
@@ -200,7 +190,19 @@ def settings():
         submitted_form_name = request.form.get('form_name')
         logger.info("Submitted form_name: '%s'", submitted_form_name)
 
-        if submitted_form_name == 'ccxt_form':
+        if submitted_form_name == 'timezone_form':
+            tz_value = request.form.get('timezone')
+            logger.info("Updating timezone preference to %s", tz_value)
+            try:
+                current_user.timezone = tz_value
+                db.session.commit()
+                flash('Timezone preference saved.', 'success')
+                return redirect(url_for('dashboard.settings'))
+            except Exception as e:
+                logger.error("Error saving timezone: %s", e, exc_info=True)
+                db.session.rollback()
+                flash(f'Error saving timezone: {e}', 'danger')
+        elif submitted_form_name == 'ccxt_form':
             form_exchange = request.form.get('exchange')
             logger.info("Validating ccxt_form for exchange: %s", form_exchange)
             if ccxt_form.validate_on_submit():
@@ -274,7 +276,11 @@ def settings():
     log_creds_map_str = "Settings GET: exchange_creds_map: %s"
     logger.info(log_creds_map_str, {k: v.id for k, v in exchange_creds_map.items()})
 
-    available_exchange_adapters = ExchangeRegistry.get_all_adapter_classes()
+    # Expose only user-facing adapters in Settings (hide legacy technical ids)
+    available_exchange_adapters = [
+        cls for cls in ExchangeRegistry.get_all_adapter_classes()
+        if not cls.get_name().endswith("-ccxt")
+    ]
     log_adapters_str = "Settings GET: Available adapter names: %s"
     logger.info(log_adapters_str, [adapter.get_name() for adapter in available_exchange_adapters])
 
@@ -314,13 +320,17 @@ def settings():
             'logo': logo_filename_get,
         })
 
+    from zoneinfo import available_timezones
+    timezones_list = sorted(available_timezones())
+
     return render_template(
         'settings.html',
         ccxt_form=ccxt_form,
         connected_exchanges=connected_exchanges_display_data,
         user_creds_map=exchange_creds_map,
         available_exchange_adapters=available_exchange_adapters,
-        user=current_user
+        user=current_user,
+        timezones=timezones_list
     )
 
 
@@ -373,104 +383,4 @@ def delete_api_keys():
         flash(message, 'warning')
 
     return redirect(url_for('dashboard.settings'))
-
-
-@bp.route('/exchange/<string:exchange_id>')
-@login_required
-def view_exchange(exchange_id: str):
-    """Render the specific exchange page."""
-    user_id = current_user.id
-    all_creds = ExchangeCredentials.query.filter_by(user_id=user_id).all()
-    
-    # Get all connected exchanges for the dropdown
-    connected_exchanges_for_dropdown = []
-    unique_exchange_ids = sorted(list(set(cred.exchange for cred in all_creds)))
-
-    for ex_id in unique_exchange_ids:
-        adapter_cls_dropdown = ExchangeRegistry.get_adapter(ex_id)
-        display_name_dropdown = ex_id # Default
-        if adapter_cls_dropdown:
-            try:
-                if hasattr(adapter_cls_dropdown, 'get_display_name'):
-                    display_name_dropdown = adapter_cls_dropdown.get_display_name()
-                elif hasattr(adapter_cls_dropdown, 'get_name'):
-                    display_name_dropdown = adapter_cls_dropdown.get_name()
-            except Exception as e:
-                logger.error(f"Error getting display name for {ex_id} in dropdown: {e}")
-        connected_exchanges_for_dropdown.append({
-            'id': ex_id,
-            'display_name': display_name_dropdown
-        })
-
-    # Get data for the currently selected exchange
-    current_exchange_adapter_cls = ExchangeRegistry.get_adapter(exchange_id)
-    current_exchange_display_name = exchange_id # Default
-    current_exchange_data = {
-        'total_value': 0.0,
-        'balances': [],
-        'currency': 'USD',
-        'pricing_errors': [],
-        'success': False,
-        'error_message': None
-    }
-
-    if not current_exchange_adapter_cls:
-        logger.warning(f"No adapter found for selected exchange: {exchange_id}, user: {user_id}")
-        flash(f"Could not load data for exchange '{exchange_id}'. Adapter not found.", "danger")
-        current_exchange_data['error_message'] = f"Adapter for '{exchange_id}' not found."
-        return render_template(
-            'exchange.html',
-            current_exchange_id=exchange_id,
-            current_exchange_display_name=current_exchange_display_name,
-            current_exchange_data=current_exchange_data,
-            all_connected_exchanges=connected_exchanges_for_dropdown,
-            title=f"{current_exchange_display_name} Details"
-        )
-
-    try:
-        if hasattr(current_exchange_adapter_cls, 'get_display_name'):
-            current_exchange_display_name = current_exchange_adapter_cls.get_display_name()
-        elif hasattr(current_exchange_adapter_cls, 'get_name'):
-            current_exchange_display_name = current_exchange_adapter_cls.get_name()
-    except Exception as e:
-        logger.error(f"Error getting display name for current exchange {exchange_id}: {e}")
-
-    if issubclass(current_exchange_adapter_cls, CcxtBaseAdapter):
-        cred = next((c for c in all_creds if c.exchange == exchange_id), None)
-        if cred and hasattr(current_exchange_adapter_cls, 'get_portfolio_value'):
-            try:
-                portfolio_data = current_exchange_adapter_cls.get_portfolio_value(
-                    user_id=user_id,
-                    portfolio_id=cred.portfolio_id, 
-                    target_currency="USD"
-                )
-                current_exchange_data['total_value'] = float(portfolio_data.get('total_value', 0.0))
-                current_exchange_data['balances'] = portfolio_data.get('balances', [])
-                current_exchange_data['currency'] = portfolio_data.get('currency', 'USD')
-                current_exchange_data['pricing_errors'] = portfolio_data.get('pricing_errors', [])
-                current_exchange_data['success'] = portfolio_data.get('success', True)
-                if not current_exchange_data['success']:
-                     current_exchange_data['error_message'] = portfolio_data.get('error', 'Failed to retrieve portfolio data.')
-            except Exception as e:
-                logger.error(f"Error getting portfolio value for {exchange_id} (user {user_id}): {e}", exc_info=True)
-                flash(f"Error retrieving data for {current_exchange_display_name}: {e}", "danger")
-                current_exchange_data['error_message'] = f"An error occurred: {e}"
-                current_exchange_data['pricing_errors'].append({'asset': 'N/A', 'error': str(e)})
-        elif not cred:
-            logger.warning(f"No credentials found for {exchange_id} for user {user_id} to fetch portfolio.")
-            flash(f"Credentials for {current_exchange_display_name} not found.", "warning")
-            current_exchange_data['error_message'] = f"Credentials for {current_exchange_display_name} not found."
-        else: 
-            logger.error(f"Adapter {exchange_id} is CCXT but has no get_portfolio_value method.")
-            flash(f"Cannot retrieve portfolio for {current_exchange_display_name}.", "danger")
-            current_exchange_data['error_message'] = f"Cannot retrieve portfolio for {current_exchange_display_name} (internal error)."
-
-    return render_template(
-        'exchange.html',
-        current_exchange_id=exchange_id,
-        current_exchange_display_name=current_exchange_display_name,
-        current_exchange_data=current_exchange_data,
-        all_connected_exchanges=connected_exchanges_for_dropdown,
-        title=f"{current_exchange_display_name} Details"
-    )
 

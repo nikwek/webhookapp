@@ -1,0 +1,785 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-4" data-strategy-id="{{ strategy.id }}">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex align-items-center">
+            <h1 class="mb-0 me-2">Strategy:</h1>
+            <div id="strategyNameContainer" class="d-flex align-items-center">
+                <span id="strategyNameDisplay" class="fw-normal h1 mb-0">{{ strategy.name }}</span>
+                <form id="editNameForm" action="{{ url_for('exchange.edit_strategy_name', exchange_id=exchange_id, strategy_id=strategy.id) }}" method="POST" class="d-inline d-none">
+                    <input type="text"
+                           id="strategyNameInput"
+                           name="new_strategy_name"
+                           class="form-control form-control-sm"
+                           value="{{ strategy.name }}"
+                           style="width: auto; vertical-align: middle;"
+                           required>
+                </form>
+                <button class="btn btn-link p-0 ms-2 text-secondary opacity-50 hover-opacity-100" id="editNameBtn" title="Edit Strategy Name" style="transition: opacity 0.2s;">
+                    <i class="fas fa-pencil-alt fa-sm"></i>
+                </button>
+                <button type="button" class="btn btn-link p-0 ms-2 d-none" id="saveNameBtn" title="Save Name">
+                    <i class="fas fa-check text-success fa-lg"></i>
+                </button>
+                <button type="button" class="btn btn-link p-0 ms-1 d-none" id="cancelNameBtn" title="Cancel Edit">
+                    <i class="fas fa-times text-danger fa-lg"></i>
+                </button>
+            </div>
+        </div>
+        <div>
+            <a href="{{ url_for('exchange.view_exchange', exchange_id=exchange_id) }}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-arrow-left me-2"></i>Back to {{ current_exchange_display_name }}
+            </a>
+            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteStrategyModal">
+                <i class="fas fa-trash-alt me-1"></i> Delete Strategy
+            </button>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Strategy Details</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <dl class="row">
+                        <dt class="col-sm-4">Name:</dt>
+                        <dd class="col-sm-8">{{ strategy.name }}</dd>
+
+                        <dt class="col-sm-4">Trading Pair:</dt>
+                        <dd class="col-sm-8">{{ strategy.trading_pair }}</dd>
+
+                        <dt class="col-sm-4">Exchange:</dt>
+                        <dd class="col-sm-8">{{ current_exchange_display_name }}</dd>
+
+                        <dt class="col-sm-4">Status:</dt>
+                        <dd class="col-sm-8">
+                            {% if strategy.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                            <form method="POST" action="{{ url_for('exchange.toggle_strategy_active', exchange_id=exchange_id, strategy_id=strategy.id) }}" class="d-inline ms-2">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                {% if strategy.is_active %}
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">Pause</button>
+                                {% else %}
+                                <button type="submit" class="btn btn-sm btn-outline-success">Resume</button>
+                                {% endif %}
+                            </form>
+                        </dd>
+                    </dl>
+                </div>
+                <div class="col-md-6">
+                    <dl class="row">
+                        <dt class="col-sm-5">Allocated Base Asset:</dt>
+                        <dd class="col-sm-7">{{ (strategy.allocated_base_asset_quantity | float) | round(8) }} {{ strategy.base_asset_symbol }}</dd>
+
+                        <dt class="col-sm-5">Allocated Quote Asset:</dt>
+                        <dd class="col-sm-7">{{ (strategy.allocated_quote_asset_quantity | float) | round(8) }} {{ strategy.quote_asset_symbol }}</dd>
+
+                        <dt class="col-sm-5">Est. Total Value (USD):</dt>
+                        <dd class="col-sm-7" id="strategyTotalValue">–</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <!-- Webhook Details Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Webhook Details</h5>
+        </div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Webhook URL:</dt>
+                <dd class="col-sm-9 mb-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control form-control-sm" value="{{ application_url.rstrip('/') }}{{ url_for('webhook.webhook', automation_id=strategy.webhook_id) }}" id="webhookUrl" readonly>
+                        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="copyToClipboard('webhookUrl', this)" title="Copy Webhook URL">
+                            <i class="fas fa-copy me-1"></i>Copy URL
+                        </button>
+                    </div>
+                </dd>
+
+                <dt class="col-sm-3">Webhook Template:</dt>
+                <dd class="col-sm-9">
+                    {% if strategy.webhook_template %}
+                        <div class="position-relative">
+                            <pre class="mb-0" id="webhookTemplatePre"><code id="webhookTemplateCode">{{ strategy.webhook_template }}</code></pre>
+                            <button class="btn btn-sm btn-outline-secondary position-absolute top-0 end-0 mt-1 me-1" type="button" onclick="copyToClipboard('webhookTemplateCode', this, true)" title="Copy Webhook Template">
+                                <i class="fas fa-copy me-1"></i>Copy Template
+                            </button>
+                        </div>
+                    {% else %}
+                        <span class="text-muted">Not set. Create a new strategy to generate a default template.</span>
+                    {% endif %}
+                </dd>
+            </dl>
+        </div>
+    </div>
+
+    <!-- Performance Chart -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Performance (Time-Weighted Rate of Return)</h5>
+            <select id="twrrPeriodSelect" class="form-select form-select-sm w-auto">
+                <option value="day" selected>Day</option>
+                <option value="month">Month</option>
+                <option value="quarter">Quarter</option>
+                <option value="year">Year</option>
+            </select>
+        </div>
+        <div class="card-body">
+
+            <canvas id="performanceChart" height="120"></canvas>
+        </div>
+    </div>
+
+    <!-- Risk Chart -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Risk (Equity & Drawdown)</h5>
+            <select id="riskDaysSelect" class="form-select form-select-sm w-auto">
+                <option value="30">30d</option>
+                <option value="60">60d</option>
+                <option value="90" selected>90d</option>
+                <option value="180">180d</option>
+                <option value="365">1y</option>
+                <option value="0">All</option>
+            </select>
+        </div>
+        <div class="card-body">
+            <canvas id="riskChart" height="140"></canvas>
+        </div>
+    </div>
+
+    <!-- Webhook Logs -->
+    <div id="strategy-logs-container" data-strategy-name="{{ strategy.name }}" data-exchange-slug="{{ exchange_id }}" data-strategy-id="{{ strategy.id }}"></div>
+
+</div>
+
+<!-- Delete Strategy Modal -->
+<div class="modal fade" id="deleteStrategyModal" tabindex="-1" aria-labelledby="deleteStrategyModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteStrategyModalLabel">Confirm Deletion</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete the strategy "<strong>{{ strategy.name }}</strong>"?</p>
+        <p class="text-danger">This action cannot be undone. Any assets allocated to this strategy will be returned to your main account balance.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form action="{{ url_for('exchange.delete_trading_strategy', exchange_id=exchange_id, strategy_id=strategy.id) }}" method="POST">
+          <button type="submit" class="btn btn-danger">Delete Strategy</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# React component for logs - needs to be wrapped in raw to prevent Jinja from parsing JSX #}
+{% raw %}
+<script type="text/babel">
+
+    const UnifiedWebhookLogs = ({ strategyName, strategyId, exchangeName }) => {
+        const userTz = window.APP_USER_TZ || 'UTC';
+        const formatTimestamp = (ts) => {
+            const d = new Date(ts);
+            const localeStr = d.toLocaleString('en-CA', { timeZone: userTz, hour12: false }).replace(',', '');
+            return localeStr.replace(/-/g, '/');
+        };
+        const [logs, setLogs] = React.useState([]);
+        const [isLoading, setIsLoading] = React.useState(false);
+        const [error, setError] = React.useState(null);
+        const [expandedRows, setExpandedRows] = React.useState(new Set());
+        const [currentPage, setCurrentPage] = React.useState(1);
+        const [totalPages, setTotalPages] = React.useState(1);
+        const [totalLogs, setTotalLogs] = React.useState(0);
+        const [itemsPerPage, setItemsPerPage] = React.useState(20);
+        const [searchTerm, setSearchTerm] = React.useState("");
+
+        React.useEffect(() => {
+            fetchLogs();
+        }, [strategyName, strategyId, exchangeName, currentPage, itemsPerPage, searchTerm]);
+
+        const fetchLogs = async () => {
+            setIsLoading(true);
+            try {
+                let url;
+                if (strategyId) {
+                    url = `/api/strategy/${strategyId}/logs?page=${currentPage}&itemsPerPage=${itemsPerPage}&search=${searchTerm}`;
+                } else {
+                    url = `/api/logs?strategy=${encodeURIComponent(strategyName)}&exchange=${encodeURIComponent(exchangeName)}&page=${currentPage}&itemsPerPage=${itemsPerPage}&search=${encodeURIComponent(searchTerm)}`;
+                }
+                const response = await fetch(url);
+                const data = await response.json();
+                console.log("Fetched Logs:", data.logs); // Log the entire logs array
+                data.logs.forEach(log => {
+                    console.log(`Log ID: ${log.id}, Exchange: ${log.exchange_name}, Strategy: ${log.strategy_name}`); // Log each entry's details
+                });
+                setLogs(data.logs);
+                setTotalPages(data.totalPages);
+                setTotalLogs(data.totalLogs);
+            } catch (err) {
+                setError("Failed to load logs.");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        const toggleRow = (id) => {
+            const newExpandedRows = new Set(expandedRows);
+            if (newExpandedRows.has(id)) {
+                newExpandedRows.delete(id);
+            } else {
+                newExpandedRows.add(id);
+            }
+            setExpandedRows(newExpandedRows);
+        };
+
+        return (
+            <div className="card mb-4">
+                <div className="card-header d-flex justify-content-between align-items-center bg-transparent border-bottom">
+                    <h5 className="mb-0">Activity</h5>
+                    <button className="btn btn-secondary btn-sm" onClick={fetchLogs} disabled={isLoading} title="Refresh Logs">
+                        {isLoading ? (
+                            <><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...</>
+                        ) : (
+                            <><i className="fas fa-sync-alt me-1"></i> Refresh</>
+                        )}
+                    </button>
+                </div>
+                <div className="input-group px-3 py-2 border-bottom">
+                    <span className="input-group-text bg-light border-light">
+                        <i className="fas fa-search text-muted"></i>
+                    </span>
+                    <input 
+                        type="text" 
+                        className="form-control bg-light border-light" 
+                        placeholder="Search logs..." 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+                <div className="card-body p-0 table-responsive">
+                    <table className="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th className="text-nowrap" style={{width: "200px"}}>Timestamp (UTC)</th>
+                                <th style={{width: "15%"}}>Exchange</th>
+                                <th style={{width: "25%"}}>Account</th>
+                                <th>Information</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {logs.map((log) => (
+                                <React.Fragment key={log.id}>
+                                    <tr onClick={() => toggleRow(log.id)} style={{cursor: 'pointer'}}>
+                                        <td className="text-nowrap">
+                                            {formatTimestamp(log.timestamp)}
+                                            <i className={`fas ${expandedRows.has(log.id) ? 'fa-chevron-down' : 'fa-chevron-right'} fa-xs ms-2 text-muted`}></i>
+                                        </td>
+                                        <td>{log.exchange_name || "Unknown"}</td> {/* Ensure this line accesses the correct field */}
+                                        <td>
+                                                <span className={`${(log.account_name !== 'Main Account' && (log.source_deleted || log.destination_deleted)) ? 'text-decoration-line-through text-muted' : ''}`} 
+                                                      title={log.destination_deleted ? 'Destination strategy deleted' : (log.source_deleted ? 'Source strategy deleted' : '')}>
+                                                    {log.account_name || log.strategy_name || "Unknown"}
+                                                </span>
+                                            </td> {/* Ensure this line accesses the correct field */}
+                                        <td>
+                                                <div className="d-flex justify-content-between">
+                                                    <div>
+                                                        {log.action && (
+                                                            <span className={`badge ${log.action.toLowerCase() === 'buy' ? 'bg-success' : log.action.toLowerCase() === 'transfer' ? 'bg-warning text-dark' : 'bg-danger'} me-2`}>
+                                                                {log.action.toUpperCase()}
+                                                            </span>
+                                                        )}
+                                                        <strong>{log.ticker || log.trading_pair || ''}</strong>
+                                                        {log.message && <span className="ms-2 text-muted">{log.message}</span>}
+                                                    </div>
+                                                    <div>
+                                                        {log.status && (
+                                                            <span className={`badge ${
+                                                                log.status.toLowerCase() === 'success' ? 'bg-success' :
+                                                                log.status.toLowerCase() === 'closed' ? 'bg-success' :
+                                                                log.status.toLowerCase() === 'error' ? 'bg-danger' :
+                                                                log.status.toLowerCase() === 'filled' ? 'bg-primary' : 'bg-secondary'
+                                                            }`}>
+                                                                {log.status.toLowerCase() === 'closed' ? 'Success' : 
+                                                                 log.status.charAt(0).toUpperCase() + log.status.slice(1).toLowerCase()}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                    </tr>
+                                    {expandedRows.has(log.id) && (
+                                        <tr>
+                                            <td colSpan="4" className="p-0">
+                                                <div className="p-3 bg-light border-top border-bottom">
+                                                    {log.payload && <div className="mb-2"><h6 className="mb-1 small text-muted fw-bold">Webhook Payload:</h6><pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log.payload)}</code></pre></div>}
+                                                    {log.raw_response && <div className="mb-0"><h6 className="mb-1 small text-muted fw-bold">Processing Response / Info:</h6><pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log.raw_response)}</code></pre></div>}
+                                                    {!log.payload && !log.raw_response && <pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log)}</code></pre>}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </React.Fragment>
+                            ))}
+                        </tbody>
+                    </table>
+                    {error && <div className="alert alert-danger m-3 mb-0" role="alert">Error: {error}</div>}
+                </div>
+                {totalLogs > 0 && (
+                    <div className="card-footer d-flex justify-content-between align-items-center">
+                        <div>
+                            <span className="me-2 small text-muted">Show:</span>
+                            <select className="form-select form-select-sm d-inline-block" style={{width: "auto"}} value={itemsPerPage} onChange={(e) => setItemsPerPage(e.target.value)} disabled={isLoading}>
+                                {[10, 20, 50].map(size => (
+                                    <option key={size} value={size}>{size}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <span className="me-2 small text-muted">Page:</span>
+                            <select className="form-select form-select-sm d-inline-block" style={{width: "auto"}} value={currentPage} onChange={(e) => setCurrentPage(e.target.value)} disabled={isLoading}>
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                                    <option key={page} value={page}>{page}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // Expose globally
+    window.UnifiedWebhookLogs = UnifiedWebhookLogs;
+
+    function mountStrategyLogs() {
+        const container = document.getElementById('strategy-logs-container');
+        if (!container) return;
+        const strategyName = container.dataset.strategyName || "";
+        const strategyId = parseInt(container.dataset.strategyId || "", 10) || null;
+        const exchangeSlug = container.dataset.exchangeSlug || "";
+        ReactDOM.render(
+            <UnifiedWebhookLogs strategyName={strategyName} strategyId={strategyId} exchangeName={exchangeSlug} />,
+            container
+        );
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', mountStrategyLogs);
+    } else {
+        mountStrategyLogs();
+    }
+
+</script>
+{% endraw %}
+
+
+<!-- Delete Strategy Modal -->
+<div class="modal fade" id="deleteStrategyModal" tabindex="-1" aria-labelledby="deleteStrategyModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteStrategyModalLabel">Confirm Strategy Deletion</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete the strategy "<strong>{{ strategy.name }}</strong>"?</p>
+        <p class="text-danger"><strong>Warning:</strong> This action cannot be undone. Any allocated assets will be returned to your main account balance.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form action="{{ url_for('exchange.delete_trading_strategy', exchange_id=exchange_id, strategy_id=strategy.id) }}" method="POST" class="d-inline">
+          <button type="submit" class="btn btn-danger">Yes, Delete Strategy</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Edit/save/cancel for strategy name
+    const display = document.getElementById('strategyNameDisplay');
+    const form = document.getElementById('editNameForm');
+    const input = document.getElementById('strategyNameInput');
+    const editBtn = document.getElementById('editNameBtn');
+    const saveBtn = document.getElementById('saveNameBtn');
+    const cancelBtn = document.getElementById('cancelNameBtn');
+    const originalName = display.textContent;
+
+    editBtn.addEventListener('click', () => {
+        display.classList.add('d-none');
+        editBtn.classList.add('d-none');
+        form.classList.remove('d-none');
+        saveBtn.classList.remove('d-none');
+        cancelBtn.classList.remove('d-none');
+        input.focus();
+        input.select();
+    });
+
+    cancelBtn.addEventListener('click', () => {
+        display.classList.remove('d-none');
+        editBtn.classList.remove('d-none');
+        form.classList.add('d-none');
+        saveBtn.classList.add('d-none');
+        cancelBtn.classList.add('d-none');
+        input.value = originalName;
+    });
+
+    saveBtn.addEventListener('click', () => {
+        form.requestSubmit();
+    });
+});
+
+function copyToClipboard(elementId, buttonElement, isCode = false) {
+    const textToCopy = isCode 
+        ? document.getElementById(elementId).innerText 
+        : document.getElementById(elementId).value;
+
+    const showSuccess = () => {
+        const originalIcon = buttonElement.innerHTML;
+        const originalTitle = buttonElement.title;
+        buttonElement.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+        buttonElement.classList.remove('btn-outline-secondary');
+        buttonElement.classList.add('btn-success');
+        buttonElement.title = 'Copied to clipboard';
+        setTimeout(() => {
+            buttonElement.innerHTML = originalIcon;
+            buttonElement.classList.remove('btn-success');
+            buttonElement.classList.add('btn-outline-secondary');
+            buttonElement.title = originalTitle;
+        }, 2000);
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+        // Use modern clipboard API in secure contexts
+        navigator.clipboard.writeText(textToCopy).then(showSuccess).catch(err => {
+            console.error('Failed to copy with modern API: ', err);
+            alert('Failed to copy to clipboard.');
+        });
+    } else {
+        // Fallback for non-secure contexts or older browsers
+        const textArea = document.createElement("textarea");
+        textArea.value = textToCopy;
+        textArea.style.position = "fixed"; // Prevent scrolling to bottom of page in MS Edge.
+        textArea.style.top = "0";
+        textArea.style.left = "0";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+                showSuccess();
+            } else {
+                console.error('Fallback copy was unsuccessful');
+                alert('Failed to copy to clipboard.');
+            }
+        } catch (err) {
+            console.error('Failed to copy with fallback: ', err);
+            alert('Failed to copy to clipboard.');
+        }
+        document.body.removeChild(textArea);
+    }
+}
+</script>
+<!-- Chart.js DataLabels plugin -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // -------- Risk chart --------
+    const riskCanvas = document.getElementById('riskChart');
+    const riskSelect = document.getElementById('riskDaysSelect');
+    if (riskCanvas) {
+        if (window.ChartDataLabels) { Chart.register(window.ChartDataLabels); }
+        const stratId = {{ strategy.id }};
+        const userTz = window.APP_USER_TZ || 'UTC';
+        async function renderRisk() {
+            try {
+                const days = riskSelect.value;
+                const resp = await fetch(`/api/strategy/${stratId}/risk?days=${days}`);
+                const json = await resp.json();
+                const labels = json.data.map(pt => (new Date(pt.timestamp)).toLocaleDateString(undefined, { timeZone: userTz }));
+                const equityVals = json.data.map(pt => +(pt.equity.toFixed(2)));
+                const ddVals = json.data.map(pt => +(pt.drawdown * 100).toFixed(2)); // %
+                if (!labels.length) {
+                    riskCanvas.parentElement.innerHTML = '<p class="text-muted mb-0">No risk data available.</p>';
+                    return;
+                }
+                if (riskCanvas._chartInstance) riskCanvas._chartInstance.destroy();
+                riskCanvas._chartInstance = new Chart(riskCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                type: 'line',
+                                label: 'Equity (USD)',
+                                data: equityVals,
+                                borderColor: '#0d6efd',
+                                backgroundColor: 'rgba(13,110,253,0.05)',
+                                yAxisID: 'y',
+                                tension: 0.25,
+                                pointRadius: 0,
+                                fill: true,
+                            },
+                            {
+                                type: 'bar',
+                                label: 'Drawdown %',
+                                data: ddVals,
+                                borderColor: '#dc3545',
+                                backgroundColor: 'rgba(220,53,69,0.4)',
+                                yAxisID: 'y1',
+                            },
+                        ]
+                    },
+                    options: {
+                        plugins: {
+                            legend: { display: true },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(ctx) {
+                                        const val = ctx.parsed.y;
+                                        if (ctx.datasetIndex === 0) {
+                                            return ctx.dataset.label + ': $' + val.toFixed(2);
+                                        } else {
+                                            return ctx.dataset.label + ': ' + val.toFixed(2) + '%';
+                                        }
+                                    }
+                                }
+                            },
+                            datalabels: {
+                                formatter: function(value, ctx) {
+                                    return ctx.datasetIndex === 0 ? '$' + value.toFixed(2) : value.toFixed(2) + '%';
+                                },
+                                color: ctx => ctx.datasetIndex === 0 ? '#0d6efd' : '#dc3545',
+                                anchor: ctx => ctx.datasetIndex === 0 ? 'end' : 'center',
+                                align: ctx => ctx.datasetIndex === 0 ? 'end' : 'center',
+                                offset: 0,
+                                font: { weight: 'bold', size: 14 }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                title: { display: true, text: 'Equity (USD)' },
+                                ticks: { callback: v => '$' + v.toLocaleString() },
+                            },
+                            y1: {
+                                type: 'linear',
+                                position: 'right',
+                                title: { display: true, text: 'Drawdown %' },
+                                grid: { drawOnChartArea: false },
+                                ticks: { callback: v => v + '%' },
+                                min: Math.min(...ddVals) < 0 ? Math.min(...ddVals) : 0,
+                                max: 0,
+                            },
+                        },
+                    },
+                });
+            } catch (err) {
+                console.error('Risk chart error', err);
+                riskCanvas.parentElement.innerHTML = '<p class="text-danger mb-0">Failed to load risk data.</p>';
+            }
+        }
+        renderRisk();
+        riskSelect.addEventListener('change', renderRisk);
+    }
+
+    // -------- existing performance chart setup --------
+    const canvas = document.getElementById('performanceChart');
+    if (!canvas) return;
+    // Register DataLabels plugin if available
+    if (window.ChartDataLabels) { Chart.register(window.ChartDataLabels); }
+    const stratId = {{ strategy.id }};
+    const userTz = window.APP_USER_TZ || 'UTC';
+    const periodSelect = document.getElementById('twrrPeriodSelect');
+
+    async function renderChart() {
+        try {
+            const period = periodSelect.value;
+            // Fetch latest portfolio value for display
+            const perfResp = await fetch(`/api/strategy/${stratId}/performance`);
+            const perfJson = await perfResp.json();
+            let latestVal = 0;
+            if (perfJson.data && perfJson.data.length) {
+                latestVal = perfJson.data[perfJson.data.length - 1].value_usd;
+            }
+
+            const resp = await fetch(`/api/strategy/${stratId}/performance/twrr?period=${period}`);
+            const json = await resp.json();
+            const labels = json.data.map(pt =>
+                (new Date(pt.timestamp)).toLocaleDateString(undefined, { timeZone: userTz })
+            );
+            const twrrVals = json.data.map(pt => pt.cum_return * 100);
+            const maxAbs = twrrVals.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+            const RANGE = maxAbs > 0 ? maxAbs : 1;
+            const valElem = document.getElementById('strategyTotalValue');
+            if (valElem) valElem.textContent = '$' + latestVal.toFixed(2);
+
+            if (!labels.length) {
+                canvas.parentElement.innerHTML = '<p class="text-muted mb-0">No performance data yet.</p>';
+                return;
+            }
+            // Destroy previous chart if exists
+            if (canvas._chartInstance) {
+                canvas._chartInstance.destroy();
+            }
+            canvas._chartInstance = new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'TWRR %',
+                        data: twrrVals,
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13,110,253,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 3
+                    }]
+                },
+                options: {
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: {
+                            align: 'top',
+                            color: '#000',
+                            font: { weight: 'bold', size: 14 },
+                            // Sparse labels for dense day view
+                            display: function(ctx) {
+                                const count = ctx.chart.data.labels.length;
+                                if (period === 'day' && count > 60) {
+                                    return ctx.dataIndex % Math.ceil(count / 60) === 0 || ctx.dataIndex === count -1;
+                                }
+                                return true;
+                            },
+                            formatter: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            min: -RANGE,
+                            max: RANGE,
+                            ticks: {
+                                callback: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+                            }
+                        }
+                    }
+                }
+            });
+        } catch (err) {
+            console.error('Performance chart error', err);
+            canvas.parentElement.innerHTML = '<p class="text-danger mb-0">Failed to load performance data.</p>';
+        }
+    }
+
+    // Initial render
+    renderChart();
+    // Re-render on selector change
+    periodSelect.addEventListener('change', renderChart);
+});
+/*
+});
+    const canvas = document.getElementById('performanceChart');
+// Register the DataLabels plugin if present
+if (window.ChartDataLabels) { Chart.register(window.ChartDataLabels); }
+    if (!canvas) return;
+    try {
+        const stratId = {{ strategy.id }};
+        const userTz = window.APP_USER_TZ || 'UTC';
+        // Fetch raw performance data to display latest USD value
+        const perfResp = await fetch(`/api/strategy/${stratId}/performance?days=90`);
+        const perfJson = await perfResp.json();
+        let latestVal = 0;
+        if (perfJson.data && perfJson.data.length) {
+            latestVal = perfJson.data[perfJson.data.length - 1].value_usd;
+        }
+        // Fetch TWRR time-series
+        const resp = await fetch(`/api/strategy/${stratId}/performance/twrr?days=90`);
+        const json = await resp.json();
+        const labels = json.data.map(pt =>
+            (new Date(pt.timestamp)).toLocaleString(undefined,
+                { hour12:false, timeZone: userTz })
+        );
+        const twrrVals = json.data.map(pt => pt.cum_return * 100); // percentage
+        // Determine symmetric y-axis around 0
+        const maxAbs = twrrVals.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+        const RANGE = maxAbs > 0 ? maxAbs : 1;
+        // Update est total value line
+        const valElem = document.getElementById('strategyTotalValue'); if (valElem) valElem.textContent = '$' + latestVal.toFixed(2);
+
+        if (!labels.length) {
+            canvas.parentElement.innerHTML = '<p class="text-muted mb-0">No performance data yet.</p>';
+            return;
+        }
+        new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'TWRR %',
+                    data: twrrVals,
+                    borderColor: '#0d6efd',
+                    backgroundColor: 'rgba(13,110,253,0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 3
+                }]
+            },
+            options: {
+                plugins: {
+                    legend: { display: false },
+                    datalabels: {
+                        align: 'top',
+                        color: '#000',
+                        font: {
+                            weight: 'bold',
+                            size: 10
+                        },
+                        formatter: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+                    }
+                },
+                scales: {
+                    y: {
+                        min: -RANGE,
+                            max: RANGE,
+                        ticks: {
+                            callback: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+                        }
+                    }
+                }
+            }
+        });
+    } catch (err) {
+        console.error('Performance chart error', err);
+        canvas.parentElement.innerHTML = '<p class="text-danger mb-0">Failed to load performance data.</p>';
+    }
+});
+*/
+</script>
+
+{% endblock %}

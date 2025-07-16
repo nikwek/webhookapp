@@ -100,8 +100,7 @@ class HealthCheck:
     def check_database_health(self):
         """Check database connectivity and performance"""
         try:
-            # Import SQLAlchemy text function
-            from sqlalchemy import text
+
             
             # Simple query to test database connectivity
             start_time = time.time()
@@ -165,8 +164,7 @@ class HealthCheck:
         """Try to recover database connection"""
         logger.info("Attempting database recovery...")
         try:
-            # Import SQLAlchemy text function
-            from sqlalchemy import text
+
             
             # Close and reopen connection
             db.session.remove()

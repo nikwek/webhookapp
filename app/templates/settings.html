@@ -82,6 +82,37 @@
           </div>
         </div>
         
+        <!-- Timezone Preference Section -->
+        <div class="col-md-8 mx-auto mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">Display Timezone</h4>
+                    {% if current_user.timezone %}
+                    <span class="badge bg-success">{{ current_user.timezone }}</span>
+                    {% else %}
+                    <span class="badge bg-secondary">UTC (default)</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="form_name" value="timezone_form">
+                        <div class="mb-3">
+                            <label for="timezone-select" class="form-label">Preferred Timezone</label>
+                            <select id="timezone-select" name="timezone" class="form-select">
+                                {% for tz in timezones %}
+                                <option value="{{ tz }}" {% if tz == (current_user.timezone or 'UTC') %}selected{% endif %}>{{ tz }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Save Timezone</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
         <!-- Password Change Section -->
         <div class="col-md-8 mx-auto mb-4">
             <div class="card">
@@ -144,7 +175,7 @@
                 <!-- Native Coinbase form removed -->
                 
                 <!-- Coinbase CCXT API form (initially hidden) -->
-                <div id="coinbase-ccxt-form" class="exchange-form" style="display: none;">
+                <div id="coinbase-form" class="exchange-form" style="display: none;">
                     <div class="d-flex align-items-center mb-3">
                         <button type="button" class="btn btn-sm btn-outline-secondary me-3" onclick="showExchangeSelection()">
                             <i class="fas fa-arrow-left"></i>
@@ -173,7 +204,7 @@
                     
                     <form method="POST" action="{{ url_for('dashboard.settings') }}">
                         {{ ccxt_form.csrf_token }}
-                        <input type="hidden" name="exchange" value="coinbase-ccxt">
+                        <input type="hidden" name="exchange" value="coinbase">
                         <input type="hidden" name="form_name" value="ccxt_form">
                         
                         <div class="mb-3">
@@ -424,10 +455,10 @@
                 </div>
 
                 <!-- Coinbase CCXT API form -->
-                <div id="edit-coinbase-ccxt-form" class="edit-exchange-form" style="display: none;">
+                <div id="edit-coinbase-form" class="edit-exchange-form" style="display: none;">
                     <div class="d-flex align-items-center mb-3">
-                        <img src="{{ url_for('static', filename='images/exchanges/coinbase-ccxt.svg') }}" alt="Coinbase CCXT" width="32" height="32" class="me-3">
-                        <h5 class="mb-0">Coinbase CCXT API Keys</h5>
+                        <img src="{{ url_for('static', filename='images/exchanges/coinbase.svg') }}" alt="Coinbase" width="32" height="32" class="me-3">
+                        <h5 class="mb-0">Coinbase API Keys</h5>
                     </div>
                     
                     <div class="alert alert-info">
@@ -435,7 +466,7 @@
                         <ol>
                             <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank">https://www.coinbase.com/settings/api</a></li>
                             <li>Click "New API Key"</li>
-                            <li>Give the API key a nickname (e.g., "Amazing Automation")</li>
+                            <li>Give the API key a nickname (e.g., "Amazing API Key")</li>
                             <li>Set Portfolio to <strong>"Default"</strong></li>
                             <li>Check the View (read-only) box and nothing else</li>
                             <li>Set an IP whitelist if desired (optional)</li>
@@ -447,7 +478,7 @@
                     
                     <form method="POST" action="{{ url_for('dashboard.settings') }}">
                         {{ ccxt_form.csrf_token }}
-                        <input type="hidden" name="exchange" value="coinbase-ccxt">
+                        <input type="hidden" name="exchange" value="coinbase">
                         <input type="hidden" name="update" value="true">
                         <input type="hidden" name="form_name" value="ccxt_form"> <!-- Added to ensure correct backend processing -->
                         
@@ -555,8 +586,8 @@
 
                 let targetForm;
 
-                if (exchange === 'coinbase-ccxt') {
-                    targetForm = document.getElementById('edit-coinbase-ccxt-form');
+                if (exchange === 'coinbase') {
+                    targetForm = document.getElementById('edit-coinbase-form');
                     if (targetForm) {
                         const apiKeyInput = document.getElementById('edit_coinbase_ccxt-api_key');
                         if (apiKeyInput && apiKey) apiKeyInput.value = apiKey;

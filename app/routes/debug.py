@@ -1,14 +1,12 @@
 # app/routes/debug.py
 from flask import Blueprint, current_app, jsonify, abort, flash, redirect, url_for
 from flask_mail import Message
-from flask_security import RegisterForm, current_user, login_required, url_for_security
-from flask import current_app
+from flask_security import RegisterForm, current_user, login_required, url_for_security, roles_required
 from sqlalchemy import text, inspect
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timezone
-from app import db
+from app import db, scheduler
 from app.models.user import User
-from app.models.automation import Automation
 from app.models.portfolio import Portfolio
 
 debug = Blueprint('debug', __name__)
@@ -32,6 +30,7 @@ def test_email():
     
 
 @debug.route('/debug/register_form')
+@roles_required("admin")
 def debug_register_form():
     """Debug the registration form fields"""
     # Get the register form class
@@ -43,6 +42,7 @@ def debug_register_form():
     return f"Registration form fields: {fields}"
 
 @debug.route('/debug/db-test')
+@roles_required("admin")
 def test_db():
     """Test database connectivity and user table"""
     try:
@@ -66,11 +66,13 @@ def test_db():
         }), 500
     
 @debug.route('/health')
+@roles_required("admin")
 def health_check():
     """General health check endpoint"""
     return jsonify({'status': 'healthy'})
 
 @debug.route('/health/db')
+@roles_required("admin")
 def db_health_check():
     """Database-specific health check endpoint"""
     try:
@@ -98,6 +100,7 @@ def db_health_check():
         }), 500
     
 @debug.route('/debug/db-tables')
+@roles_required("admin")
 def db_tables():
     """List all database tables and their columns"""
     try:
@@ -123,112 +126,12 @@ def db_tables():
             'status': 'error',
             'message': str(e)
         }), 500
-    
-@debug.route('/debug/automation/portfolio/<string:coinbase_portfolio_id>')
-def get_automation_by_portfolio(coinbase_portfolio_id):
-    """Debug endpoint to find automation by Coinbase portfolio UUID"""
-    try:
-        portfolio = Portfolio.query.filter_by(portfolio_id=coinbase_portfolio_id).first()
-        
-        if not portfolio:
-            return jsonify({
-                'status': 'not_found',
-                'message': f'No portfolio found with Coinbase UUID: {coinbase_portfolio_id}'
-            }), 404
-        
-        current_app.logger.info(f"Found portfolio - ID: {portfolio.id}, Name: {portfolio.name}, Coinbase UUID: {portfolio.portfolio_id}")
-        
-        automation = Automation.query.filter_by(portfolio_id=portfolio.id).first()
-        
-        if not automation:
-            return jsonify({
-                'status': 'not_found',
-                'message': f'Portfolio exists but has no automation',
-                'portfolio': {
-                    'id': portfolio.id,
-                    'portfolio_id': portfolio.portfolio_id,
-                    'name': portfolio.name
-                }
-            }), 404
-            
-        current_app.logger.info(f"Found automation - ID: {automation.id}, Name: {automation.name}, Portfolio ID: {automation.portfolio_id}")
-            
-        return jsonify({
-            'status': 'success',
-            'automation': {
-                'id': automation.id,
-                'automation_id': automation.automation_id,
-                'name': automation.name,
-                'portfolio_id': automation.portfolio_id,
-                'trading_pair': automation.trading_pair,
-                'is_active': automation.is_active,
-                'created_at': automation.created_at.isoformat() if automation.created_at else None
-            },
-            'portfolio': {
-                'id': portfolio.id,
-                'portfolio_id': portfolio.portfolio_id,
-                'name': portfolio.name
-            }
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-    
-@debug.route('/debug/automations')
-def debug_automations():
-    """Debug endpoint to check automation_id values"""
-    try:
-        # Get all automations
-        automations = Automation.query.all()
-        
-        # Prepare data for display
-        automation_data = []
-        for automation in automations:
-            automation_data.append({
-                'id': automation.id,
-                'automation_id': automation.automation_id,
-                'name': automation.name,
-                'is_active': automation.is_active,
-                'portfolio_id': automation.portfolio_id,
-                'user_id': automation.user_id,
-                # Test URL generation
-                'url_to_automation': f"/automation/{automation.automation_id}"
-            })
-        
-        # Check the blueprint registration
-        blueprints = []
-        for name, blueprint in current_app.blueprints.items():
-            routes = []
-            for rule in current_app.url_map.iter_rules():
-                if rule.endpoint.startswith(name + '.'):
-                    routes.append({
-                        'endpoint': rule.endpoint,
-                        'methods': [m for m in rule.methods if m not in ('HEAD', 'OPTIONS')],
-                        'rule': str(rule)
-                    })
-            
-            blueprints.append({
-                'name': name,
-                'routes': routes
-            })
-        
-        return jsonify({
-            'count': len(automation_data),
-            'automations': automation_data,
-            'blueprints': blueprints
-        })
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-    
-from flask_security import current_user, login_required
+
+
+
 
 @debug.route('/debug/check-suspension/<int:user_id>')
+@roles_required("admin")
 @login_required
 def check_suspension(user_id):
     """Debug endpoint to verify user suspension status"""
@@ -295,7 +198,7 @@ def debug_session():
 
 @debug.route('/debug/login-test')
 def login_test():
-    from flask import url_for, redirect, flash, current_app
+    
     
     # Flash messages with different categories to test display
     flash("Test error message", "error")
@@ -321,9 +224,10 @@ def debug_versions():
     })
 
 @debug.route('/debug/security-messages')
+@roles_required("admin")
 def security_messages():
     """Check Flask-Security message configuration"""
-    from flask import jsonify, current_app
+    
     
     # Get Flask-Security configuration
     security_config = {}
@@ -340,6 +244,7 @@ def security_messages():
     })
 
 @debug.route('/debug/login-process')
+@roles_required("admin")
 def debug_login_process():
     """Debug the login process"""
     from flask import current_app, render_template_string, request
@@ -372,7 +277,7 @@ def debug_login_process():
 @debug.route('/debug/flash-categories')
 def flash_categories():
     """Test various flash message categories"""
-    from flask import flash, redirect, url_for
+    
     
     # Test with common Flask-Security categories
     flash("This is an error message", "error")
@@ -382,9 +287,10 @@ def flash_categories():
     return redirect(url_for('security.login'))
 
 @debug.route('/debug/registration-config')
+@roles_required("admin")
 def registration_config():
     """Show registration configuration"""
-    from flask import jsonify, current_app
+    
     
     # Get registration-related configuration
     config = {
@@ -401,10 +307,41 @@ def registration_config():
 @debug.route('/debug/try-register')
 def try_register():
     """Debug registration process"""
-    from flask import flash, redirect, url_for
+    
     
     # Add a flash message to test if they appear on the registration page
     flash("This is a test error message for registration", "error")
     
     # Redirect to the registration page
     return redirect(url_for('security.register'))
+
+@debug.route("/debug/scheduler/jobs")
+@roles_required("admin")
+def list_scheduler_jobs():
+    """Return basic info on all APScheduler jobs."""
+    jobs = [
+        {
+            "id": j.id,
+            "next_run_time": j.next_run_time.isoformat() if j.next_run_time else None,
+            "trigger": str(j.trigger)
+        }
+        for j in scheduler.get_jobs()
+    ]
+    return jsonify(jobs)
+
+
+@debug.route("/debug/update-strategy-values")
+def update_strategy_values():
+    """Manually trigger an update of all strategy values."""
+    try:
+        from app.services.strategy_value_service import snapshot_all_strategies
+        snapshot_all_strategies()
+        return jsonify({
+            "success": True,
+            "message": "Strategy values updated successfully"
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error updating strategy values: {str(e)}"
+        }), 500

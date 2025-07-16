@@ -4,17 +4,7 @@
 
 {% block content %}
 <div class="container mt-4">
-    <!-- Flash messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
+
 
     <div class="row mb-4 align-items-center">
         <div class="col-md-auto">
@@ -33,7 +23,7 @@
                     {% for ex in all_connected_exchanges %}
                         {% if ex.id != current_exchange_id %}
                         <li>
-                            <a class="dropdown-item" href="{{ url_for('dashboard.view_exchange', exchange_id=ex.id) }}">
+                            <a class="dropdown-item" href="{{ url_for('exchange.view_exchange', exchange_id=ex.id) }}">
                                 <img src="{{ url_for('static', filename='images/exchanges/' + ex.id + '.svg') }}" 
                                      alt="{{ ex.display_name }}" width="20" height="20" class="me-2" 
                                      onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"
@@ -99,8 +89,11 @@
                     <thead class="table-light">
                         <tr>
                             <th scope="col" style="width: 40%;">Asset</th>
-                            <th scope="col" class="text-end" style="width: 30%;">Quantity</th>
-                            <th scope="col" class="text-end" style="width: 30%;">Value ({{ current_exchange_data.currency }})</th>
+                            <th scope="col" class="text-end" style="width: 20%;">Total on Exchange</th>
+                            <th scope="col" class="text-end" style="width: 20%;">Total Allocated</th>
+                            <th scope="col" class="text-end" style="width: 20%;">Unallocated</th>
+                            <th scope="col" class="text-end" style="width: 20%;">Value ({{ current_exchange_data.currency }})</th>
+                            <th scope="col" style="width: 20%;">Actions</th>
                         </tr>
                     </thead>
                     {% set significant_balances = [] %}
@@ -121,6 +114,8 @@
                                 </div>
                             </td>
                             <td class="text-end">{{ asset_balance.get('total', 0)|float }}</td>
+                            <td class="text-end">{{ "{:,.8f}".format(asset_balance.get('total_allocated', 0)|float).rstrip('0').rstrip('.') if asset_balance.get('total_allocated', 0)|float > 0 else '0' }}</td>
+                            <td class="text-end">{{ "{:,.8f}".format(asset_balance.get('unallocated', 0)|float).rstrip('0').rstrip('.') if asset_balance.get('unallocated', 0)|float > 0 else '0' }}</td>
                             <td class="text-end">
                                 {% if asset_balance.get('usd_value') is not none %}
                                     {{ "{:,.2f}".format(asset_balance.usd_value|float) }}
@@ -128,10 +123,22 @@
                                     <span class="text-muted">N/A</span>
                                 {% endif %}
                             </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary transfer-button"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#assetTransferModal"
+                                        data-transfer-type="main_to_strategy"
+                                        data-asset-symbol="{{ asset_balance.asset }}"
+                                        data-asset-name="{{ asset_balance.asset }}"
+                                        data-max-transferable="{{ asset_balance.get('unallocated', 0)|float }}"
+                                        data-credential-id="{{ current_exchange_data.current_credential_id }}">
+                                    Transfer
+                                </button>
+                            </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="3" class="text-center text-muted p-4">
+                            <td colspan="6" class="text-center text-muted p-3">
                                 No assets with significant balances found on this exchange.
                             </td>
                         </tr>
@@ -160,7 +167,467 @@
     </div>
     {% endif %}
 
+
+
+
+    <!-- Trading Strategies List Section -->
+    <div class="card mt-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Your Trading Strategies on {{ current_exchange_display_name }}</h5>
+            <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createStrategyModal">
+                <i class="fas fa-plus me-1"></i> Create New Strategy
+            </button>
+        </div>
+        <div class="card-body p-0"> {# Use p-0 if table is directly inside #}
+            {% if user_strategies and user_strategies|length > 0 %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th scope="col">Name</th>
+                                <th scope="col">Trading Pair</th>
+                                <th scope="col">Allocated Base</th>
+                                <th scope="col">Allocated Quote</th>
+                                <th scope="col">Est. Value (USD)</th>
+                                <th scope="col">Status</th>
+                                <th scope="col" class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for strategy in user_strategies %}
+                            <tr style="cursor: pointer;" onclick="window.location='{{ url_for('exchange.view_strategy_details', exchange_id=current_exchange_id, strategy_id=strategy.id) }}'">
+                                <td><a href="{{ url_for('exchange.view_strategy_details', exchange_id=current_exchange_id, strategy_id=strategy.id) }}">{{ strategy.name }}</a></td>
+                                <td>{{ strategy.trading_pair }}</td>
+                                <td>{{ (strategy.allocated_base_asset_quantity | float) | round(8) }} {{ strategy.base_asset_symbol }}</td>
+                                <td>{{ (strategy.allocated_quote_asset_quantity | float) | round(8) }} {{ strategy.quote_asset_symbol }}</td>
+                                <td>
+                                    {% if strategy.latest_value_usd is not none %}
+                                        ${{ strategy.latest_value_usd | round(2) }}
+                                    {% else %}
+                                        –
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if strategy.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Inactive</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    {% if strategy.allocated_base_asset_quantity | float > 0 or strategy.allocated_quote_asset_quantity | float > 0 %}
+                                    <button class="btn btn-sm btn-outline-primary strategy-transfer-button"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#assetTransferModal"
+                                            data-transfer-type="strategy_to_main"
+                                            data-strategy-id="{{ strategy.id }}"
+                                            data-strategy-name="{{ strategy.name }}"
+                                            data-base-asset-symbol="{{ strategy.base_asset_symbol }}"
+                                            data-base-asset-quantity="{{ strategy.allocated_base_asset_quantity | float }}"
+                                            data-quote-asset-symbol="{{ strategy.quote_asset_symbol }}"
+                                            data-quote-asset-quantity="{{ strategy.allocated_quote_asset_quantity | float }}"
+                                            data-credential-id="{{ strategy.exchange_credential_id }}"
+                                            onclick="event.stopPropagation();">
+                                        Transfer
+                                    </button>
+                                    {% endif %}
+                                    <form method="POST" action="{{ url_for('exchange.toggle_strategy_active', exchange_id=current_exchange_id, strategy_id=strategy.id) }}" class="d-inline" onclick="event.stopPropagation();">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        {% if strategy.is_active %}
+        <button type="submit" class="btn btn-sm btn-outline-secondary ms-1">Pause</button>
+        {% else %}
+        <button type="submit" class="btn btn-sm btn-outline-success ms-1">Resume</button>
+        {% endif %}
+    </form>
+    <!-- Details button placeholder -->
+                                    <!-- <a href="#" class="btn btn-sm btn-info ms-1">Details</a> -->
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="p-3">
+                    <p class="text-muted mb-0">You haven't created any trading strategies for this exchange yet.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Create Strategy Modal -->
+    <div class="modal fade" id="createStrategyModal" tabindex="-1" aria-labelledby="createStrategyModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createStrategyModalLabel">Create New Trading Strategy</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createStrategyForm" method="POST" action="{{ url_for('exchange.create_trading_strategy', exchange_id=current_exchange_id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        
+                        <div class="mb-3">
+                            <label for="strategy_name_modal" class="form-label">Strategy Name</label>
+                            <input type="text" class="form-control" id="strategy_name_modal" name="strategy_name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="trading_pair_modal" class="form-label">Trading Pair</label>
+                            <input type="text" class="form-control" id="trading_pair_modal" name="trading_pair" placeholder="e.g., BTC/USDT" aria-describedby="tradingPairHelpModal" required>
+                            <div id="tradingPairHelpModal" class="form-text">Separate symbols with /, -, or space (e.g., BTC/USDT, BTC-USDT, BTC USDT).</div>
+                        </div>
+                        <!-- The submit button will be in the modal-footer -->
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" form="createStrategyForm" id="createStrategySubmitBtn" class="btn btn-primary d-flex align-items-center">
+                        <span class="btn-text">Create Strategy</span>
+                        <span class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- End Create Strategy Modal -->
+
+    <!-- Asset Transfer Modal -->
+    <div class="modal fade" id="assetTransferModal" tabindex="-1" aria-labelledby="assetTransferModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="assetTransferModalLabel">Transfer Assets</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="assetTransferForm" method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <input type="hidden" id="transferAssetSymbolHidden" name="asset_symbol">
+                        <div class="mb-3">
+                            <label for="transferAssetSelect" class="form-label">Asset</label>
+                            <select class="form-select" id="transferAssetSelect" required>
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="transferSourceAccount" class="form-label">Source</label>
+                            <select class="form-select" id="transferSourceAccount" name="source_account_id" required>
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="transferDestinationAccount" class="form-label">Destination</label>
+                            <select class="form-select" id="transferDestinationAccount" name="destination_account_id" required>
+                                <!-- Options will be populated by JavaScript -->
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="transferAmount" class="form-label">Amount</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="transferAmount" name="amount" step="any" placeholder="0.00" required>
+                                <button class="btn btn-outline-secondary" type="button" id="transferMaxButton">Max</button>
+                            </div>
+                            <div id="maxAmountHelp" class="form-text">Available to transfer: <span id="availableToTransfer">0.00000000</span> <span id="transferingAssetSymbolDisplay">ASSET</span></div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" form="assetTransferForm" id="confirmTransferBtn" class="btn btn-primary d-flex align-items-center">
+                        <span class="btn-text">Confirm Transfer</span>
+                        <span class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- End Asset Transfer Modal -->
+    
+    <!-- Webhook Logs -->
+    <div id="exchange-logs-container" class="mt-4 mb-4" data-exchange-slug="{{ exchange_id }}">
+        <!-- React component will be mounted here -->
+    </div>
+    
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/exchange_transfers.js') }}"></script>
+
+{# React component for exchange logs - wrapped in raw to prevent Jinja from parsing JSX #}
+{% raw %}
+<script type="text/babel">
+    const UnifiedWebhookLogs = ({ strategyName, exchangeName }) => {
+        const userTz = window.APP_USER_TZ || 'UTC';
+        const formatTimestamp = (ts) => {
+            const d = new Date(ts);
+            const localeStr = d.toLocaleString('en-CA', { timeZone: userTz, hour12: false }).replace(',', '');
+            return localeStr.replace(/-/g, '/');
+        };
+        const [logs, setLogs] = React.useState([]);
+        const [isLoading, setIsLoading] = React.useState(false);
+        const [error, setError] = React.useState(null);
+        const [expandedRows, setExpandedRows] = React.useState(new Set());
+        const [currentPage, setCurrentPage] = React.useState(1);
+        const [totalPages, setTotalPages] = React.useState(1);
+        const [totalLogs, setTotalLogs] = React.useState(0);
+        const [itemsPerPage, setItemsPerPage] = React.useState(20);
+        const [searchTerm, setSearchTerm] = React.useState("");
+
+        React.useEffect(() => {
+            fetchLogs();
+        }, [strategyName, exchangeName, currentPage, itemsPerPage, searchTerm]);
+
+        const fetchLogs = async () => {
+            setIsLoading(true);
+            try {
+                const baseUrl = strategyName ? `/api/logs?strategy=${encodeURIComponent(strategyName)}&exchange=${encodeURIComponent(exchangeName)}` : `/api/exchange/${encodeURIComponent(exchangeName)}/logs`;
+                const separator = baseUrl.includes('?') ? '&' : '?';
+                const response = await fetch(`${baseUrl}${separator}page=${currentPage}&itemsPerPage=${itemsPerPage}&search=${encodeURIComponent(searchTerm)}`);
+                const data = await response.json();
+                setLogs(data.logs);
+                setTotalPages(data.totalPages);
+                setTotalLogs(data.totalLogs);
+            } catch (err) {
+                setError("Failed to load logs.");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        const toggleRow = (id) => {
+            const newExpandedRows = new Set(expandedRows);
+            if (newExpandedRows.has(id)) {
+                newExpandedRows.delete(id);
+            } else {
+                newExpandedRows.add(id);
+            }
+            setExpandedRows(newExpandedRows);
+        };
+
+        return (
+            <div className="card mb-4">
+                <div className="card-header d-flex justify-content-between align-items-center bg-transparent border-bottom">
+                    <h5 className="mb-0">Activity</h5>
+                    <button className="btn btn-secondary btn-sm" onClick={fetchLogs} disabled={isLoading} title="Refresh Logs">
+                        {isLoading ? (
+                            <><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...</>
+                        ) : (
+                            <><i className="fas fa-sync-alt me-1"></i> Refresh</>
+                        )}
+                    </button>
+                </div>
+                <div className="input-group px-3 py-2 border-bottom">
+                    <span className="input-group-text bg-light border-light">
+                        <i className="fas fa-search text-muted"></i>
+                    </span>
+                    <input 
+                        type="text" 
+                        className="form-control bg-light border-light" 
+                        placeholder="Search logs..." 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+                <div className="card-body p-0 table-responsive">
+                    <table className="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th className="text-nowrap" style={{width: "200px"}}>Timestamp ({userTz})</th>
+                                <th style={{width: "15%"}}>Exchange</th>
+                                <th style={{width: "25%"}}>Account</th>
+                                <th>Information</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {isLoading && logs.length === 0 ? (
+                                <tr><td colSpan="4" className="text-center py-4"><div className="spinner-border spinner-border-sm" role="status"><span className="visually-hidden">Loading...</span></div><span className="ms-2">Loading logs...</span></td></tr>
+                            ) : logs.length === 0 && !isLoading ? (
+                                <tr><td colSpan="4" className="text-center py-4">No webhook logs found for this exchange.</td></tr>
+                            ) : (
+                                logs.map((log) => (
+                                    <React.Fragment key={log.id}>
+                                        <tr onClick={() => toggleRow(log.id)} style={{cursor: 'pointer'}}>
+                                            <td className="text-nowrap">
+                                                {formatTimestamp(log.timestamp)}
+                                                <i className={`fas ${expandedRows.has(log.id) ? 'fa-chevron-down' : 'fa-chevron-right'} fa-xs ms-2 text-muted`}></i>
+                                            </td>
+                                            <td>{log.exchange_name}</td>
+                                            <td>
+                                                <span className={`${(log.source_deleted && log.account_name !== 'Main Account') ? 'text-decoration-line-through text-muted' : ''}`} 
+                                                      title={log.destination_deleted ? 'Destination strategy deleted' : (log.source_deleted ? 'Source strategy deleted' : '')}>
+                                                    {log.account_name || log.strategy_name}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div className="d-flex justify-content-between">
+                                                    <div>
+                                                        {log.action && (
+                                                            <span className={`badge ${log.action.toLowerCase() === 'buy' ? 'bg-success' : log.action.toLowerCase() === 'transfer' ? 'bg-warning text-dark' : 'bg-danger'} me-2`}>
+                                                                {log.action.toUpperCase()}
+                                                            </span>
+                                                        )}
+                                                        <strong>{log.ticker || log.trading_pair || ''}</strong>
+                                                         {log.action && log.action.toLowerCase() === 'transfer' ? (
+                                                             <span className="ms-2 text-muted">
+                                                                 to&nbsp;
+                                                                 { (log.destination_deleted && log.destination_name !== 'Main Account') ? (
+                                                                     <span className="text-decoration-line-through text-muted" title="Destination strategy deleted">{log.destination_name}</span>
+                                                                 ) : (
+                                                                     log.destination_name
+                                                                 ) }
+                                                                 &nbsp;|&nbsp;{log.amount_str}&nbsp;{log.ticker}
+                                                             </span>
+                                                         ) : (
+                                                             log.message && <span className="ms-2 text-muted">{log.message}</span>
+                                                         )}
+                                                    </div>
+                                                    <div>
+                                                        {log.status && (
+                                                            <span className={`badge ${
+                                                                log.status.toLowerCase() === 'success' ? 'bg-success' :
+                                                                log.status.toLowerCase() === 'error' ? 'bg-danger' :
+                                                                log.status.toLowerCase() === 'filled' ? 'bg-primary' : 'bg-secondary'
+                                                            }`}>
+                                                                {log.status.charAt(0).toUpperCase() + log.status.slice(1).toLowerCase()}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {expandedRows.has(log.id) && (
+                                            <tr>
+                                                <td colSpan="4" className="p-0">
+                                                    <div className="p-3 bg-light border-top border-bottom">
+                                                        {log.payload && <div className="mb-2"><h6 className="mb-1 small text-muted fw-bold">Webhook Payload:</h6><pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log.payload)}</code></pre></div>}
+                                                        {log.raw_response && <div className="mb-0"><h6 className="mb-1 small text-muted fw-bold">Processing Response / Info:</h6><pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log.raw_response)}</code></pre></div>}
+                                                        {!log.payload && !log.raw_response && <pre className="bg-white p-2 rounded small mb-0 border" style={{maxHeight: '200px', overflowY: 'auto'}}><code>{formatJsonDisplay(log)}</code></pre>}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                    {error && <div className="alert alert-danger m-3 mb-0" role="alert">Error: {error}</div>}
+                </div>
+                {totalLogs > 0 && (
+                    <div className="card-footer d-flex justify-content-between align-items-center">
+                        <div>
+                            <span className="me-2 small text-muted">Show:</span>
+                            <select className="form-select form-select-sm d-inline-block" style={{width: "auto"}} value={itemsPerPage} onChange={(e) => setItemsPerPage(e.target.value)} disabled={isLoading}>
+                                {[10, 20, 50].map(size => (
+                                    <option key={size} value={size}>{size}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <span className="me-2 small text-muted">Page:</span>
+                            <select className="form-select form-select-sm d-inline-block" style={{width: "auto"}} value={currentPage} onChange={(e) => setCurrentPage(e.target.value)} disabled={isLoading}>
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                                    <option key={page} value={page}>{page}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+
+
+    // Expose component globally for other scripts if needed
+    window.UnifiedWebhookLogs = UnifiedWebhookLogs;
+
+    function mountExchangeLogs() {
+        const container = document.getElementById('exchange-logs-container');
+        if (!container) return;
+        const exchangeSlug = container.dataset.exchangeSlug || "";
+        ReactDOM.render(
+            <UnifiedWebhookLogs strategyName="" exchangeName={exchangeSlug} />,
+            container
+        );
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', mountExchangeLogs);
+    } else {
+        mountExchangeLogs();
+    }
+</script>
+{% endraw %}
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Pass strategy data to the JavaScript file
+        var strategiesData = {{ strategies_json_data | tojson | safe }};
+        var mainAccountAssetsData = {{ main_account_assets_json_data | tojson | safe }};
+        var currentCredentialIdFromTemplate = {{ current_credential_id | tojson | safe }};
+        // Simplified logging for clarity and potentially to help with linting
+        console.log('TEMPLATE LOG: strategiesData from Jinja (inside DOMContentLoaded):', strategiesData);
+        console.log('TEMPLATE LOG: mainAccountAssetsData from Jinja (inside DOMContentLoaded):', mainAccountAssetsData);
+        console.log('TEMPLATE LOG: currentCredentialIdFromTemplate from Jinja (inside DOMContentLoaded):', currentCredentialIdFromTemplate);
+
+        if (typeof window.setStrategiesData === 'function' && strategiesData) {
+            console.log('TEMPLATE LOG: Calling window.setStrategiesData (inside DOMContentLoaded) with:', strategiesData);
+            window.setStrategiesData(strategiesData);
+        }
+
+        if (typeof window.setMainAccountAssetsData === 'function' && mainAccountAssetsData) {
+            console.log('TEMPLATE LOG: Calling window.setMainAccountAssetsData (inside DOMContentLoaded) with:', mainAccountAssetsData);
+            window.setMainAccountAssetsData(mainAccountAssetsData);
+        }
+
+        if (typeof window.setCurrentCredentialId === 'function' && currentCredentialIdFromTemplate !== null && currentCredentialIdFromTemplate !== undefined) {
+            console.log('TEMPLATE LOG: Calling window.setCurrentCredentialId (inside DOMContentLoaded) with:', currentCredentialIdFromTemplate);
+            window.setCurrentCredentialId(currentCredentialIdFromTemplate);
+        }
+        // The redundant if/else for setStrategiesData has been removed.
+
+        // Disable submit button and show spinner when creating strategy
+        const createStrategyForm = document.getElementById('createStrategyForm');
+        if (createStrategyForm) {
+            createStrategyForm.addEventListener('submit', function () {
+                const submitBtn = document.getElementById('createStrategySubmitBtn');
+                if (submitBtn && !submitBtn.disabled) {
+                    submitBtn.disabled = true;
+                    const spinner = submitBtn.querySelector('.spinner-border');
+                    const btnText = submitBtn.querySelector('.btn-text');
+                    if (spinner) {
+                        spinner.classList.remove('d-none');
+                    }
+                    if (btnText) {
+                        btnText.textContent = 'Creating...';
+                    }
+                }
+            });
+        }
+
+        // Disable confirm transfer button & show spinner on transfer submit
+        const assetTransferForm = document.getElementById('assetTransferForm');
+        if (assetTransferForm) {
+            assetTransferForm.addEventListener('submit', function () {
+                const confirmBtn = document.getElementById('confirmTransferBtn');
+                if (confirmBtn && !confirmBtn.disabled) {
+                    confirmBtn.disabled = true;
+                    const spinner = confirmBtn.querySelector('.spinner-border');
+                    const btnText = confirmBtn.querySelector('.btn-text');
+                    if (spinner) {
+                        spinner.classList.remove('d-none');
+                    }
+                    if (btnText) {
+                        btnText.textContent = 'Transferring...';
+                    }
+                }
+            });
+        }
+    });
+</script>
 {% endblock %}
 
 {% block styles %}

@@ -13,7 +13,6 @@
             <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
             <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
         {% endblock %}
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     </head>
     <body class="bg-light">
         <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
@@ -37,9 +36,14 @@
                                     href="{{ url_for('admin.users') }}">Users</a>
                                 </li>
                                 <li class="nav-item">
-                                    <a class="nav-link {% if request.endpoint == 'admin.automations' %}active{% endif %}" 
-                                    href="{{ url_for('admin.automations') }}">Automations</a>
+                                    <a class="nav-link {% if request.endpoint == 'admin.exchanges' %}active{% endif %}"
+                                    href="{{ url_for('admin.exchanges') }}">Exchanges</a>
                                 </li>
+                                <li class="nav-item">
+                                    <a class="nav-link {% if request.endpoint == 'admin.strategies' %}active{% endif %}"
+                                    href="{{ url_for('admin.strategies') }}">Trading Strategies</a>
+                                </li>
+
                             {% endif %}
                             <li class="nav-item">
                                 <a class="nav-link {% if request.endpoint == 'dashboard.settings' %}active{% endif %}" 
@@ -57,12 +61,17 @@
                 </div>
             </div>
         </nav>
+        {% if current_user.is_authenticated %}
+        <script>
+            window.APP_USER_TZ = "{{ current_user.timezone or 'UTC' }}";
+        </script>
+        {% endif %}
         <!-- Alert messages - avoid duplicates on security pages that handle their own flashes -->
         <div class="container mt-3">
             {% set security_endpoints = ['security.two_factor_verify_code', 'security.two_factor_token_validation', 'security.mf_recovery'] %}
             {% set is_security_page = request.endpoint in security_endpoints %}
             
-            {% if not is_security_page %}
+            {% if not (disable_global_flashes|default(false)) %}
                 {% with messages = get_flashed_messages(with_categories=true) %}
                     {% if messages %}
                         {% for category, message in messages %}
@@ -72,7 +81,8 @@
                                 'warning': 'warning',
                                 'info': 'info',
                                 'success': 'success',
-                                'auth_expired': 'warning'
+                                'auth_expired': 'warning',
+                                'danger': 'danger'
                             }.get(category, 'info') %}
                             <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="alert">
                                 {{ message }}
@@ -98,7 +108,9 @@
             <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-        
+            <!-- Chart.js for charts -->
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+
             <!-- Import map with all your components -->
             <script type="importmap">
                 {

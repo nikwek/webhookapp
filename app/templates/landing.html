@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Welcome · WebhookApp{% endblock %}
+
+{% block content %}
+<div class="container py-5 text-center">
+  <h1 class="display-4 mb-3">Automate Crypto Trading Strategies</h1>
+  <p class="lead">Create virtual portfolios for trading strategies, receive webhooks with trade orders, and trade on multiple crypto exchanges.</p>
+  <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-lg mt-4">Log&nbsp;In</a>
+</div>
+{% endblock %}

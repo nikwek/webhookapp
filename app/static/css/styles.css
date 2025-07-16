@@ -1,5 +1,11 @@
 /* Base styles and utilities */
 
+/* Vertically center content in all generic Bootstrap table cells */
+.table td,
+.table th {
+    vertical-align: middle !important;
+}
+
 /* Opacity transitions */
 .hover-opacity-100 {
     transition: opacity 0.2s;

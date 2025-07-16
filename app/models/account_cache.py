@@ -141,7 +141,7 @@ class AccountCache(db.Model):
                 )
             else:
                 # It's an object with attributes
-                logger.debug(f"Account data is an object with attributes")
+                logger.debug("Account data is an object with attributes")
                 
                 # Use getattr with safe defaults
                 balance_obj = getattr(account_data, 'balance', None)

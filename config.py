@@ -1,6 +1,7 @@
 # config.py
 import os
 import secrets
+from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
 
@@ -22,7 +23,22 @@ class Config:
 
     # Security settings
     SECURITY_PASSWORD_SALT = os.environ.get('SECURITY_PASSWORD_SALT')
-    SECRET_KEY = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
+        # --- Stable SECRET_KEY -------------------------------------------------
+    # If SECRET_KEY not provided via environment, generate it once and store
+    # it under instance/.flask_secret_key so that subsequent application
+    # restarts use the same key. This prevents CSRF/session invalidation that
+    # occurs when a new random key is created each time the server starts.
+    _secret_key_env = os.environ.get('SECRET_KEY')
+    if _secret_key_env:
+        SECRET_KEY = _secret_key_env
+    else:
+        _secret_file = Path(basedir) / 'instance' / '.flask_secret_key'
+        if _secret_file.exists():
+            SECRET_KEY = _secret_file.read_text().strip()
+        else:
+            _secret_file.parent.mkdir(parents=True, exist_ok=True)
+            SECRET_KEY = secrets.token_hex(32)
+            _secret_file.write_text(SECRET_KEY)
     SECURITY_REGISTER_URL = '/register'
     SECURITY_REGISTER_USER_TEMPLATE = 'security/register_user.html'
 

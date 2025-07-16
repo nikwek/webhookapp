@@ -175,6 +175,103 @@ def get_strategy_logs(strategy_id: int):
         return jsonify({"error": "An internal error occurred"}), 500
 
 
+@api_bp.route('/api/strategy/<int:strategy_id>/performance/twrr', methods=['GET'])
+@api_login_required
+def get_strategy_twrr(strategy_id: int):
+    """Return cumulative TWRR series for a strategy.
+
+    Query params:
+        days (optional int): limit to recent N days (default 90)
+    """
+    try:
+        from datetime import datetime, timedelta
+        from sqlalchemy import asc
+        from app.models.trading import AssetTransferLog  # import inside to prevent circulars
+        from app.services.price_service import PriceService
+
+        # Verify ownership
+        strategy = (
+            db.session.query(TradingStrategy)
+            .filter(
+                TradingStrategy.id == strategy_id,
+                TradingStrategy.user_id == current_user.id,
+            )
+            .first_or_404()
+        )
+
+        # Determine range of snapshots
+        days = request.args.get("days", 90, type=int)
+        if days and days > 0:
+            start_dt = datetime.utcnow() - timedelta(days=days)
+            snap_q = StrategyValueHistory.query.filter(
+                StrategyValueHistory.strategy_id == strategy_id,
+                StrategyValueHistory.timestamp >= start_dt,
+            )
+        else:
+            snap_q = StrategyValueHistory.query.filter_by(strategy_id=strategy_id)
+
+        snaps: list[StrategyValueHistory] = snap_q.order_by(
+            asc(StrategyValueHistory.timestamp)
+        ).all()
+
+        if not snaps:
+            return jsonify({"strategy_id": strategy_id, "data": []})
+
+        # Fetch transfers in the same time window for efficiency
+        transfers_q = AssetTransferLog.query.filter(
+            (AssetTransferLog.strategy_id_from == strategy_id)
+            | (AssetTransferLog.strategy_id_to == strategy_id)
+        )
+        if days and days > 0:
+            transfers_q = transfers_q.filter(AssetTransferLog.timestamp >= start_dt)
+
+        transfers = transfers_q.all()
+
+        # Organize transfers by interval using timestamp
+        from collections import defaultdict
+        interval_flows: defaultdict[int, float] = defaultdict(float)  # key index of snap i (flows after i-1, up to i)
+        for tr in transfers:
+            # Determine sign
+            sign = 0
+            if tr.strategy_id_to == strategy_id:
+                sign = 1  # inflow
+            elif tr.strategy_id_from == strategy_id:
+                sign = -1  # outflow
+            if sign == 0:
+                continue
+            try:
+                price_usd = PriceService.get_price_usd(tr.asset_symbol)
+            except Exception:
+                price_usd = 0.0
+            usd_amount = float(tr.amount) * price_usd * sign
+            # Find first snapshot index after transfer
+            for idx, snap in enumerate(snaps[1:], start=1):
+                if tr.timestamp <= snap.timestamp:
+                    interval_flows[idx] += usd_amount
+                    break
+
+        data = []
+        cumulative = 0.0
+        for i in range(1, len(snaps)):
+            prev_val = float(snaps[i - 1].value_usd)
+            curr_val = float(snaps[i].value_usd)
+            if prev_val == 0:
+                continue
+            flow = interval_flows.get(i, 0.0)
+            sub_return = (curr_val - flow) / prev_val - 1.0
+            cumulative = (1 + cumulative) * (1 + sub_return) - 1.0
+            data.append({
+                "timestamp": snaps[i].timestamp.isoformat(),
+                "cum_return": cumulative,
+                "sub_return": sub_return,
+            })
+
+        return jsonify({"strategy_id": strategy_id, "data": data})
+    except Exception as e:
+        logger.error("Error computing TWRR for strategy %s: %s", strategy_id, e, exc_info=True)
+        return jsonify({"error": "Internal error"}), 500
+
+
 @api_bp.route('/api/strategy/<int:strategy_id>/performance', methods=['GET'])
 @api_login_required
 def get_strategy_performance(strategy_id: int):

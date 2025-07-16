@@ -72,10 +72,20 @@ class CcxtCoinbaseAdapter(CcxtBaseAdapter):
                 # Calculate the cost (quote currency amount)
                 cost = float(amount) * current_price
                 
-                # Ensure we meet minimum order requirements
+                # Enforce Coinbase minimum order size – abort if below
                 if cost < min_order_value:
-                    logger.info(f"Adjusting order size to meet minimum requirement of ${min_order_value}")
-                    cost = min_order_value
+                    error_msg = (
+                        f"Order cost ${cost:.2f} below Coinbase minimum ${min_order_value:.2f}. "
+                        "Trade aborted."
+                    )
+                    logger.warning(error_msg)
+                    return {
+                        "trade_executed": False,
+                        "message": error_msg,
+                        "trade_status": "rejected",
+                        "client_order_id": client_order_id,
+                        "exchange_order_id": None,
+                    }
                 
                 # Coinbase requires costs to have at most 2 decimal places
                 cost = round(cost, 2)
@@ -120,7 +130,7 @@ class CcxtCoinbaseAdapter(CcxtBaseAdapter):
                 
                 # If we still don't have filled amount, calculate it from cost and price
                 if final_order.get('filled') is None and final_order.get('cost') is None:
-                    logger.info(f"Order details incomplete, using calculated values")
+                    logger.info("Order details incomplete, using calculated values")
                     # We know the cost because we set it
                     final_order['cost'] = cost
                     # Estimate filled amount (will be slightly off due to fees)

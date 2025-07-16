@@ -259,6 +259,65 @@ class CcxtBaseAdapter(ExchangeAdapter):
         order_type = payload.get("order_type", "market").lower()
         price = payload.get("price") if order_type == "limit" else None
 
+        # ----------------- exchange minimum order validation -----------------
+        try:
+            client.load_markets()
+            market = client.markets.get(trading_pair)
+        except Exception as e:
+            logger.warning("Could not load markets for limit validation: %s", e)
+            market = None
+
+        if market:
+            limits = market.get("limits", {}) or {}
+            amount_limits = limits.get("amount", {}) or {}
+            cost_limits = limits.get("cost", {}) or {}
+            amount_min = amount_limits.get("min")
+            cost_min = cost_limits.get("min")
+
+            # Determine price to use when validating cost minimum
+            price_for_cost = price
+            if price_for_cost is None:
+                try:
+                    ticker = client.fetch_ticker(trading_pair)
+                    price_for_cost = (
+                        ticker.get("last")
+                        or ticker.get("close")
+                        or ticker.get("ask")
+                        or ticker.get("bid")
+                    )
+                except Exception as e:
+                    logger.warning("Failed to fetch ticker for cost validation: %s", e)
+
+            # Check amount minimum
+            if amount_min is not None and amount < amount_min:
+                msg = (
+                    f"Order amount {amount} below exchange minimum {amount_min}. "
+                    "Trade aborted."
+                )
+                logger.info(msg)
+                return {
+                    "trade_executed": False,
+                    "message": msg,
+                    "trade_status": "rejected",
+                    "client_order_id": client_order_id,
+                }
+
+            # Check cost minimum
+            if cost_min is not None and price_for_cost is not None:
+                order_cost = amount * price_for_cost
+                if order_cost < cost_min:
+                    msg = (
+                        f"Order cost ${order_cost:.2f} below exchange minimum "
+                        f"${cost_min:.2f}. Trade aborted."
+                    )
+                    logger.info(msg)
+                    return {
+                        "trade_executed": False,
+                        "message": msg,
+                        "trade_status": "rejected",
+                        "client_order_id": client_order_id,
+                    }
+
         try:
             # Generic order options
             options = {}

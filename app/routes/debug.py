@@ -128,7 +128,7 @@ def db_tables():
         }), 500
 
 
-from flask_security import current_user, login_required
+
 
 @debug.route('/debug/check-suspension/<int:user_id>')
 @roles_required("admin")
@@ -198,7 +198,7 @@ def debug_session():
 
 @debug.route('/debug/login-test')
 def login_test():
-    from flask import url_for, redirect, flash, current_app
+    
     
     # Flash messages with different categories to test display
     flash("Test error message", "error")
@@ -227,7 +227,7 @@ def debug_versions():
 @roles_required("admin")
 def security_messages():
     """Check Flask-Security message configuration"""
-    from flask import jsonify, current_app
+    
     
     # Get Flask-Security configuration
     security_config = {}
@@ -277,7 +277,7 @@ def debug_login_process():
 @debug.route('/debug/flash-categories')
 def flash_categories():
     """Test various flash message categories"""
-    from flask import flash, redirect, url_for
+    
     
     # Test with common Flask-Security categories
     flash("This is an error message", "error")
@@ -290,7 +290,7 @@ def flash_categories():
 @roles_required("admin")
 def registration_config():
     """Show registration configuration"""
-    from flask import jsonify, current_app
+    
     
     # Get registration-related configuration
     config = {
@@ -307,7 +307,7 @@ def registration_config():
 @debug.route('/debug/try-register')
 def try_register():
     """Debug registration process"""
-    from flask import flash, redirect, url_for
+    
     
     # Add a flash message to test if they appear on the registration page
     flash("This is a test error message for registration", "error")

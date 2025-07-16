@@ -1,0 +1,11 @@
+[flake8]
+exclude =
+    .git,
+    __pycache__,
+    venv,
+    .venv,
+    env,
+    lib,             # ← catches lib/python3.*/site-packages
+    */site-packages/*
+max-line-length = 120
+extend-ignore = E2,E3,E4,E5,E501

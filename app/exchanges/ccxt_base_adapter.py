@@ -304,11 +304,16 @@ class CcxtBaseAdapter(ExchangeAdapter):
 
             # Check cost minimum
             if cost_min is not None and price_for_cost is not None:
-                order_cost = amount * price_for_cost
-                if order_cost < cost_min:
+                try:
+                    order_cost = float(amount) * float(price_for_cost)
+                    cost_min_value = float(cost_min)
+                except (ValueError, TypeError) as e:
+                    logger.warning("Failed to cast amount/cost to float for validation: %s", e)
+                    order_cost = None
+                if order_cost is not None and order_cost < cost_min_value:
                     msg = (
                         f"Order cost ${order_cost:.2f} below exchange minimum "
-                        f"${cost_min:.2f}. Trade aborted."
+                        f"${cost_min_value:.2f}. Trade aborted."
                     )
                     logger.info(msg)
                     return {

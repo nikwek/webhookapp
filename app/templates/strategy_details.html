@@ -128,11 +128,36 @@
 
     <!-- Performance Chart -->
     <div class="card mb-4">
-        <div class="card-header">
+        <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Performance (Time-Weighted Rate of Return)</h5>
+            <select id="twrrPeriodSelect" class="form-select form-select-sm w-auto">
+                <option value="day" selected>Day</option>
+                <option value="month">Month</option>
+                <option value="quarter">Quarter</option>
+                <option value="year">Year</option>
+            </select>
         </div>
         <div class="card-body">
+
             <canvas id="performanceChart" height="120"></canvas>
+        </div>
+    </div>
+
+    <!-- Risk Chart -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Risk (Equity & Drawdown)</h5>
+            <select id="riskDaysSelect" class="form-select form-select-sm w-auto">
+                <option value="30">30d</option>
+                <option value="60">60d</option>
+                <option value="90" selected>90d</option>
+                <option value="180">180d</option>
+                <option value="365">1y</option>
+                <option value="0">All</option>
+            </select>
+        </div>
+        <div class="card-body">
+            <canvas id="riskChart" height="140"></canvas>
         </div>
     </div>
 
@@ -266,7 +291,12 @@
                                             <i className={`fas ${expandedRows.has(log.id) ? 'fa-chevron-down' : 'fa-chevron-right'} fa-xs ms-2 text-muted`}></i>
                                         </td>
                                         <td>{log.exchange_name || "Unknown"}</td> {/* Ensure this line accesses the correct field */}
-                                        <td>{log.account_name || log.strategy_name || "Unknown"}</td> {/* Ensure this line accesses the correct field */}
+                                        <td>
+                                                <span className={`${(log.account_name !== 'Main Account' && (log.source_deleted || log.destination_deleted)) ? 'text-decoration-line-through text-muted' : ''}`} 
+                                                      title={log.destination_deleted ? 'Destination strategy deleted' : (log.source_deleted ? 'Source strategy deleted' : '')}>
+                                                    {log.account_name || log.strategy_name || "Unknown"}
+                                                </span>
+                                            </td> {/* Ensure this line accesses the correct field */}
                                         <td>
                                                 <div className="d-flex justify-content-between">
                                                     <div>
@@ -474,13 +504,213 @@ function copyToClipboard(elementId, buttonElement, isCode = false) {
     }
 }
 </script>
+<!-- Chart.js DataLabels plugin -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 
 <script>
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
+    // -------- Risk chart --------
+    const riskCanvas = document.getElementById('riskChart');
+    const riskSelect = document.getElementById('riskDaysSelect');
+    if (riskCanvas) {
+        if (window.ChartDataLabels) { Chart.register(window.ChartDataLabels); }
+        const stratId = {{ strategy.id }};
+        const userTz = window.APP_USER_TZ || 'UTC';
+        async function renderRisk() {
+            try {
+                const days = riskSelect.value;
+                const resp = await fetch(`/api/strategy/${stratId}/risk?days=${days}`);
+                const json = await resp.json();
+                const labels = json.data.map(pt => (new Date(pt.timestamp)).toLocaleDateString(undefined, { timeZone: userTz }));
+                const equityVals = json.data.map(pt => +(pt.equity.toFixed(2)));
+                const ddVals = json.data.map(pt => +(pt.drawdown * 100).toFixed(2)); // %
+                if (!labels.length) {
+                    riskCanvas.parentElement.innerHTML = '<p class="text-muted mb-0">No risk data available.</p>';
+                    return;
+                }
+                if (riskCanvas._chartInstance) riskCanvas._chartInstance.destroy();
+                riskCanvas._chartInstance = new Chart(riskCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                type: 'line',
+                                label: 'Equity (USD)',
+                                data: equityVals,
+                                borderColor: '#0d6efd',
+                                backgroundColor: 'rgba(13,110,253,0.05)',
+                                yAxisID: 'y',
+                                tension: 0.25,
+                                pointRadius: 0,
+                                fill: true,
+                            },
+                            {
+                                type: 'bar',
+                                label: 'Drawdown %',
+                                data: ddVals,
+                                borderColor: '#dc3545',
+                                backgroundColor: 'rgba(220,53,69,0.4)',
+                                yAxisID: 'y1',
+                            },
+                        ]
+                    },
+                    options: {
+                        plugins: {
+                            legend: { display: true },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(ctx) {
+                                        const val = ctx.parsed.y;
+                                        if (ctx.datasetIndex === 0) {
+                                            return ctx.dataset.label + ': $' + val.toFixed(2);
+                                        } else {
+                                            return ctx.dataset.label + ': ' + val.toFixed(2) + '%';
+                                        }
+                                    }
+                                }
+                            },
+                            datalabels: {
+                                formatter: function(value, ctx) {
+                                    return ctx.datasetIndex === 0 ? '$' + value.toFixed(2) : value.toFixed(2) + '%';
+                                },
+                                color: ctx => ctx.datasetIndex === 0 ? '#0d6efd' : '#dc3545',
+                                anchor: ctx => ctx.datasetIndex === 0 ? 'end' : 'center',
+                                align: ctx => ctx.datasetIndex === 0 ? 'end' : 'center',
+                                offset: 0,
+                                font: { weight: 'bold', size: 14 }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                title: { display: true, text: 'Equity (USD)' },
+                                ticks: { callback: v => '$' + v.toLocaleString() },
+                            },
+                            y1: {
+                                type: 'linear',
+                                position: 'right',
+                                title: { display: true, text: 'Drawdown %' },
+                                grid: { drawOnChartArea: false },
+                                ticks: { callback: v => v + '%' },
+                                min: Math.min(...ddVals) < 0 ? Math.min(...ddVals) : 0,
+                                max: 0,
+                            },
+                        },
+                    },
+                });
+            } catch (err) {
+                console.error('Risk chart error', err);
+                riskCanvas.parentElement.innerHTML = '<p class="text-danger mb-0">Failed to load risk data.</p>';
+            }
+        }
+        renderRisk();
+        riskSelect.addEventListener('change', renderRisk);
+    }
+
+    // -------- existing performance chart setup --------
     const canvas = document.getElementById('performanceChart');
+    if (!canvas) return;
+    // Register DataLabels plugin if available
+    if (window.ChartDataLabels) { Chart.register(window.ChartDataLabels); }
+    const stratId = {{ strategy.id }};
+    const userTz = window.APP_USER_TZ || 'UTC';
+    const periodSelect = document.getElementById('twrrPeriodSelect');
+
+    async function renderChart() {
+        try {
+            const period = periodSelect.value;
+            // Fetch latest portfolio value for display
+            const perfResp = await fetch(`/api/strategy/${stratId}/performance`);
+            const perfJson = await perfResp.json();
+            let latestVal = 0;
+            if (perfJson.data && perfJson.data.length) {
+                latestVal = perfJson.data[perfJson.data.length - 1].value_usd;
+            }
+
+            const resp = await fetch(`/api/strategy/${stratId}/performance/twrr?period=${period}`);
+            const json = await resp.json();
+            const labels = json.data.map(pt =>
+                (new Date(pt.timestamp)).toLocaleDateString(undefined, { timeZone: userTz })
+            );
+            const twrrVals = json.data.map(pt => pt.cum_return * 100);
+            const maxAbs = twrrVals.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+            const RANGE = maxAbs > 0 ? maxAbs : 1;
+            const valElem = document.getElementById('strategyTotalValue');
+            if (valElem) valElem.textContent = '$' + latestVal.toFixed(2);
+
+            if (!labels.length) {
+                canvas.parentElement.innerHTML = '<p class="text-muted mb-0">No performance data yet.</p>';
+                return;
+            }
+            // Destroy previous chart if exists
+            if (canvas._chartInstance) {
+                canvas._chartInstance.destroy();
+            }
+            canvas._chartInstance = new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'TWRR %',
+                        data: twrrVals,
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13,110,253,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 3
+                    }]
+                },
+                options: {
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: {
+                            align: 'top',
+                            color: '#000',
+                            font: { weight: 'bold', size: 14 },
+                            // Sparse labels for dense day view
+                            display: function(ctx) {
+                                const count = ctx.chart.data.labels.length;
+                                if (period === 'day' && count > 60) {
+                                    return ctx.dataIndex % Math.ceil(count / 60) === 0 || ctx.dataIndex === count -1;
+                                }
+                                return true;
+                            },
+                            formatter: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            min: -RANGE,
+                            max: RANGE,
+                            ticks: {
+                                callback: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+                            }
+                        }
+                    }
+                }
+            });
+        } catch (err) {
+            console.error('Performance chart error', err);
+            canvas.parentElement.innerHTML = '<p class="text-danger mb-0">Failed to load performance data.</p>';
+        }
+    }
+
+    // Initial render
+    renderChart();
+    // Re-render on selector change
+    periodSelect.addEventListener('change', renderChart);
+});
+/*
+});
+    const canvas = document.getElementById('performanceChart');
+// Register the DataLabels plugin if present
+if (window.ChartDataLabels) { Chart.register(window.ChartDataLabels); }
     if (!canvas) return;
     try {
         const stratId = {{ strategy.id }};
+        const userTz = window.APP_USER_TZ || 'UTC';
         // Fetch raw performance data to display latest USD value
         const perfResp = await fetch(`/api/strategy/${stratId}/performance?days=90`);
         const perfJson = await perfResp.json();
@@ -491,7 +721,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Fetch TWRR time-series
         const resp = await fetch(`/api/strategy/${stratId}/performance/twrr?days=90`);
         const json = await resp.json();
-        const labels = json.data.map(pt => (new Date(pt.timestamp)).toLocaleDateString());
+        const labels = json.data.map(pt =>
+            (new Date(pt.timestamp)).toLocaleString(undefined,
+                { hour12:false, timeZone: userTz })
+        );
         const twrrVals = json.data.map(pt => pt.cum_return * 100); // percentage
         // Determine symmetric y-axis around 0
         const maxAbs = twrrVals.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
@@ -514,11 +747,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                     backgroundColor: 'rgba(13,110,253,0.1)',
                     fill: true,
                     tension: 0.3,
-                    pointRadius: 2
+                    pointRadius: 3
                 }]
             },
             options: {
-                plugins: { legend: { display: false } },
+                plugins: {
+                    legend: { display: false },
+                    datalabels: {
+                        align: 'top',
+                        color: '#000',
+                        font: {
+                            weight: 'bold',
+                            size: 10
+                        },
+                        formatter: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+                    }
+                },
                 scales: {
                     y: {
                         min: -RANGE,
@@ -535,6 +779,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         canvas.parentElement.innerHTML = '<p class="text-danger mb-0">Failed to load performance data.</p>';
     }
 });
+*/
 </script>
 
 {% endblock %}

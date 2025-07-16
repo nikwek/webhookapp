@@ -226,9 +226,11 @@ class ExchangeService:
                     "trade_status": "error",
                 }
 
-            # Determine trade amount from strategy's allocated assets
+            # ---------------- Allocation safeguard & determine amount ----------------
+            requested_amount = payload.get("amount")
+
             if action.lower() == "buy":
-                # For a buy, we need to calculate how much base asset we can get for our quote asset.
+                # For BUY we need latest market price first
                 ticker_info = ExchangeService.get_ticker_price(
                     credentials.user_id, exchange, trading_pair
                 )
@@ -240,20 +242,67 @@ class ExchangeService:
                         "client_order_id": client_order_id,
                         "trade_status": "error",
                     }
+                price_dec = Decimal(str(last_price))
 
-                # Calculate amount of base asset to buy with the allocated quote asset
-                amount = strategy.allocated_quote_asset_quantity / Decimal(
-                    str(last_price)
-                )
+                if requested_amount is not None:
+                    try:
+                        requested_amount_dec = Decimal(str(requested_amount))
+                    except Exception:
+                        return {
+                            "trade_executed": False,
+                            "message": "Invalid amount format in payload.",
+                            "client_order_id": client_order_id,
+                            "trade_status": "error",
+                        }
+                    cost_required = requested_amount_dec * price_dec
+                    if cost_required > strategy.allocated_quote_asset_quantity:
+                        return {
+                            "trade_executed": False,
+                            "message": (
+                                "Insufficient allocated quote assets for this BUY. "
+                                f"Cost {cost_required} exceeds allocation "
+                                f"{strategy.allocated_quote_asset_quantity}. Trade aborted."
+                            ),
+                            "client_order_id": client_order_id,
+                            "trade_status": "rejected",
+                        }
+                    amount = requested_amount_dec
+                else:
+                    # Use all allocated quote assets
+                    amount = strategy.allocated_quote_asset_quantity / price_dec
 
             elif action.lower() == "sell":
-                # Sell 100% of the base asset
-                amount = strategy.allocated_base_asset_quantity
+                if requested_amount is not None:
+                    try:
+                        requested_amount_dec = Decimal(str(requested_amount))
+                    except Exception:
+                        return {
+                            "trade_executed": False,
+                            "message": "Invalid amount format in payload.",
+                            "client_order_id": client_order_id,
+                            "trade_status": "error",
+                        }
+                    if requested_amount_dec > strategy.allocated_base_asset_quantity:
+                        return {
+                            "trade_executed": False,
+                            "message": (
+                                "Insufficient allocated base assets for this SELL. "
+                                f"Requested {requested_amount_dec} exceeds allocation "
+                                f"{strategy.allocated_base_asset_quantity}. Trade aborted."
+                            ),
+                            "client_order_id": client_order_id,
+                            "trade_status": "rejected",
+                        }
+                    amount = requested_amount_dec
+                else:
+                    # Sell 100% of the base asset
+                    amount = strategy.allocated_base_asset_quantity
             else:
-                amount = 0
+                amount = Decimal("0")
 
-            # Update payload with the calculated amount
-            payload["amount"] = amount
+
+            # Update payload with the calculated or validated amount
+            payload["amount"] = float(amount)
             payload["type"] = "market"  # Strategies use market orders
 
         # The adapter's execute_trade method may need to be updated to handle a

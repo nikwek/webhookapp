@@ -34,6 +34,13 @@ def _trim_decimal(value: Decimal) -> str:
 api_bp = Blueprint('api', __name__)
 
 
+def _friendly_exchange(slug: str | None):
+    """Return a user-friendly exchange slug (strip '-ccxt')."""
+    if not slug:
+        return slug
+    return slug.rsplit('-ccxt', 1)[0] if slug.endswith('-ccxt') else slug
+
+
 @api_bp.route('/api/strategy/<int:strategy_id>/logs', methods=['GET'])
 @api_login_required
 def get_strategy_logs(strategy_id: int):
@@ -85,7 +92,15 @@ def get_strategy_logs(strategy_id: int):
         for log in logs:
             log_dict = log.to_dict()
             log_dict['strategy_name'] = strategy.name
-            log_dict['exchange_name'] = strategy.exchange_credential.exchange
+            # Prefer exchange from strategy credential but make it user-friendly
+            exch = strategy.exchange_credential.exchange if strategy.exchange_credential else log_dict.get('exchange_name')
+            if exch and exch.endswith('-ccxt'):
+                exch = exch.rsplit('-ccxt', 1)[0]
+            log_dict['exchange_name'] = exch
+            # Ensure user-friendly exchange name
+            exn = log_dict.get('exchange_name')
+            if exn and exn.endswith('-ccxt'):
+                log_dict['exchange_name'] = exn.rsplit('-ccxt', 1)[0]
             logs_data.append(log_dict)
 
         # ----- Add asset transfer logs -----
@@ -103,18 +118,36 @@ def get_strategy_logs(strategy_id: int):
             name_lookup = {s.id: s.name for s in existing_strategies}
 
         for row in transfer_rows:
-            src_desc = "Main Account" if row.strategy_id_from is None else (
-                "This Strategy" if row.strategy_id_from == strategy_id else name_lookup.get(row.strategy_id_from, "(deleted)"))
-            dst_desc = "Main Account" if row.strategy_id_to is None else (
-                "This Strategy" if row.strategy_id_to == strategy_id else name_lookup.get(row.strategy_id_to, "(deleted)"))
+            src_desc = (
+                "Main Account"
+                if row.strategy_id_from is None
+                else (
+                    "This Strategy"
+                    if row.strategy_id_from == strategy_id
+                    else (name_lookup.get(row.strategy_id_from) or getattr(row, 'strategy_name_from', None) or "(deleted)")
+                )
+            )
+            dst_desc = (
+                "Main Account"
+                if row.strategy_id_to is None
+                else (
+                    "This Strategy"
+                    if row.strategy_id_to == strategy_id
+                    else (name_lookup.get(row.strategy_id_to) or getattr(row, 'strategy_name_to', None) or "(deleted)")
+                )
+            )
             amount_str = _trim_decimal(row.amount)
             message = f"to {dst_desc} | {amount_str} {row.asset_symbol}"
             logs_data.append({
                 'id': f"transfer-{row.id}",
                 'timestamp': row.timestamp.isoformat(),
-                'exchange_name': strategy.exchange_credential.exchange,
+                'exchange_name': (strategy.exchange_credential.exchange.rsplit('-ccxt',1)[0] if strategy.exchange_credential and strategy.exchange_credential.exchange.endswith('-ccxt') else strategy.exchange_credential.exchange),
                 'strategy_name': strategy.name,
                 'account_name': src_desc,
+                'source_deleted': bool(row.strategy_id_from and row.strategy_id_from not in name_lookup),
+                'destination_deleted': bool(row.strategy_id_to and row.strategy_id_to not in name_lookup),
+                'destination_name': dst_desc,
+                'amount_str': amount_str,
                 'action': 'TRANSFER',
                 'ticker': row.asset_symbol,
                 'message': message,
@@ -217,6 +250,16 @@ def get_strategy_twrr(strategy_id: int):
         if not snaps:
             return jsonify({"strategy_id": strategy_id, "data": []})
 
+        # Always start with an initial data point at 0 % cumulative return so the
+        # front-end has something to plot even with a single snapshot.
+        data = [
+            {
+                "timestamp": snaps[0].timestamp.isoformat(),
+                "cum_return": 0.0,
+                "sub_return": 0.0,
+            }
+        ]
+
         # Fetch transfers in the same time window for efficiency
         transfers_q = AssetTransferLog.query.filter(
             (AssetTransferLog.strategy_id_from == strategy_id)
@@ -225,7 +268,8 @@ def get_strategy_twrr(strategy_id: int):
         if days and days > 0:
             transfers_q = transfers_q.filter(AssetTransferLog.timestamp >= start_dt)
 
-        transfers = transfers_q.all()
+        first_snap_ts = snaps[0].timestamp
+        transfers = [tr for tr in transfers_q.all() if tr.timestamp > first_snap_ts]
 
         # Organize transfers by interval using timestamp
         from collections import defaultdict
@@ -250,7 +294,28 @@ def get_strategy_twrr(strategy_id: int):
                     interval_flows[idx] += usd_amount
                     break
 
-        data = []
+        # Continue building on the initial data point
+        # (index 0 already added above).
+        # Subsequent points will show period sub-returns and cumulative TWRR.
+        #
+        # Note: keep existing variable name for minimal diff.
+        #
+        # 'data' already has one element; we will append to it next.
+        #
+        # -----------------------------
+        # Existing calculation loop
+        # -----------------------------
+        #
+        # Determine aggregation period (day|month|quarter|year)
+        period = request.args.get('period', 'day').lower()
+        if period not in {'day', 'month', 'quarter', 'year'}:
+            period = 'day'
+
+        # Collect daily sub-period returns
+        daily_points: list[tuple[datetime, float]] = []  # (timestamp, sub_return)
+
+        # Start cumulative at 0.
+        data = data
         cumulative = 0.0
         for i in range(1, len(snaps)):
             prev_val = float(snaps[i - 1].value_usd)
@@ -259,16 +324,121 @@ def get_strategy_twrr(strategy_id: int):
                 continue
             flow = interval_flows.get(i, 0.0)
             sub_return = (curr_val - flow) / prev_val - 1.0
-            cumulative = (1 + cumulative) * (1 + sub_return) - 1.0
+            daily_points.append((snaps[i].timestamp, sub_return))
+
+        # If day view requested, compute cumulative from daily_points and return
+        if period == 'day':
+            cumulative = 0.0
+            for ts, sub_return in daily_points:
+                cumulative = (1 + cumulative) * (1 + sub_return) - 1.0
+                data.append({
+                    "timestamp": ts.isoformat(),
+                    "cum_return": cumulative,
+                    "sub_return": sub_return,
+                })
+            return jsonify({"strategy_id": strategy_id, "data": data})
+
+        # ---------- Aggregate returns into requested buckets ----------
+        from collections import OrderedDict
+        bucket_returns: "OrderedDict[str, tuple[float, datetime]]" = OrderedDict()
+
+        def bucket_key(ts):
+            if period == 'month':
+                return ts.strftime('%Y-%m')
+            if period == 'quarter':
+                q = (ts.month - 1) // 3 + 1
+                return f"{ts.year}-Q{q}"
+            if period == 'year':
+                return str(ts.year)
+            return ts.strftime('%Y-%m-%d')  # fallback day
+
+        for ts, sub in daily_points:
+            key = bucket_key(ts)
+            if key in bucket_returns:
+                prev_ret, _ = bucket_returns[key]
+                bucket_returns[key] = ((1 + prev_ret) * (1 + sub) - 1.0, ts)
+            else:
+                bucket_returns[key] = (sub, ts)
+
+        # Build cumulative series over buckets
+        cumulative = 0.0
+        for key, (bucket_ret, ts) in bucket_returns.items():
+            cumulative = (1 + cumulative) * (1 + bucket_ret) - 1.0
             data.append({
-                "timestamp": snaps[i].timestamp.isoformat(),
+                "timestamp": ts.isoformat(),  # use last day timestamp of bucket
                 "cum_return": cumulative,
-                "sub_return": sub_return,
+                "sub_return": bucket_ret,
+                "period": key,
             })
 
         return jsonify({"strategy_id": strategy_id, "data": data})
     except Exception as e:
         logger.error("Error computing TWRR for strategy %s: %s", strategy_id, e, exc_info=True)
+        return jsonify({"error": "Internal error"}), 500
+
+
+@api_bp.route('/api/strategy/<int:strategy_id>/risk', methods=['GET'])
+@api_login_required
+def get_strategy_risk(strategy_id: int):
+    """Return equity curve and drawdown series for a strategy.
+
+    Query params:
+        days (optional int): Limit to most recent N days (default 90)
+    Response JSON structure:
+        {
+          "strategy_id": 123,
+          "data": [
+              {"timestamp": "ISO8601", "equity": 12345.67, "drawdown": -0.12},
+              ...
+          ]
+        }
+    drawdown is expressed as a negative fraction (e.g. -0.2 = -20%).
+    """
+    try:
+        from datetime import datetime, timedelta
+        from sqlalchemy import asc
+        # local import to avoid circular
+        from app.models.trading import StrategyValueHistory, TradingStrategy
+
+        # Authorisation
+        strategy = (
+            db.session.query(TradingStrategy)
+            .filter(
+                TradingStrategy.id == strategy_id,
+                TradingStrategy.user_id == current_user.id,
+            )
+            .first_or_404()
+        )
+
+        days = request.args.get('days', 90, type=int)
+        if days and days > 0:
+            start_dt = datetime.utcnow() - timedelta(days=days)
+            q = StrategyValueHistory.query.filter(
+                StrategyValueHistory.strategy_id == strategy_id,
+                StrategyValueHistory.timestamp >= start_dt,
+            )
+        else:
+            q = StrategyValueHistory.query.filter_by(strategy_id=strategy_id)
+
+        rows = q.order_by(asc(StrategyValueHistory.timestamp)).all()
+        if not rows:
+            return jsonify({"strategy_id": strategy_id, "data": []})
+
+        data = []
+        running_max = float(rows[0].value_usd)
+        for r in rows:
+            equity = float(r.value_usd)
+            running_max = max(running_max, equity)
+            drawdown = (equity / running_max) - 1.0 if running_max else 0.0
+            data.append({
+                "timestamp": r.timestamp.isoformat(),
+                "equity": equity,
+                "drawdown": drawdown,
+            })
+
+        return jsonify({"strategy_id": strategy_id, "data": data})
+    except Exception as e:
+        logger.error("Error computing risk series for strategy %s: %s", strategy_id, e, exc_info=True)
         return jsonify({"error": "Internal error"}), 500
 
 
@@ -436,9 +606,19 @@ def get_all_logs():
                     log_dict['strategy_name'] = log.automation.name
             if not log_dict.get('exchange_name') or log_dict['exchange_name'] in (None, 'None', ''):
                 if log.strategy and log.strategy.exchange_credential:
-                    log_dict['exchange_name'] = log.strategy.exchange_credential.exchange
+                    exch = log.strategy.exchange_credential.exchange
+                    if exch and exch.endswith('-ccxt'):
+                        exch = exch.rsplit('-ccxt', 1)[0]
+                    log_dict['exchange_name'] = exch
                 elif log.automation and getattr(log.automation, 'exchange_credential', None):
-                    log_dict['exchange_name'] = log.automation.exchange_credential.exchange
+                    exch = log.automation.exchange_credential.exchange
+                    if exch and exch.endswith('-ccxt'):
+                        exch = exch.rsplit('-ccxt', 1)[0]
+                    log_dict['exchange_name'] = exch
+            # Ensure user-friendly exchange name
+            exn = log_dict.get('exchange_name')
+            if exn and exn.endswith('-ccxt'):
+                log_dict['exchange_name'] = exn.rsplit('-ccxt', 1)[0]
             logs_data.append(log_dict)
 
         # ----- Append AssetTransferLog rows -----
@@ -462,6 +642,20 @@ def get_all_logs():
 
         transfer_rows = transfer_query.order_by(AssetTransferLog.timestamp.desc()).all()
 
+        # Helper to infer exchange from main-account identifier
+        from ..models import ExchangeCredentials as _ExchangeCred
+        def _exchange_from_identifier(ident: str | None):
+            if ident and ident.startswith('main::'):
+                parts = ident.split('::')
+                if len(parts) >= 2:
+                    try:
+                        cid = int(parts[1])
+                        cred = _ExchangeCred.query.get(cid)
+                        if cred and cred.exchange:
+                            return _friendly_exchange(cred.exchange)
+                    except ValueError:
+                        pass
+            return None
         # Build lookup maps for strategies involved in transfers
         involved_ids = {row.strategy_id_from for row in transfer_rows if row.strategy_id_from}
         involved_ids.update({row.strategy_id_to for row in transfer_rows if row.strategy_id_to})
@@ -470,14 +664,27 @@ def get_all_logs():
         if involved_ids:
             strats = TradingStrategy.query.filter(TradingStrategy.id.in_(involved_ids)).all()
             name_lookup = {s.id: s.name for s in strats}
-            exch_lookup = {s.id: (s.exchange_credential.exchange if s.exchange_credential else None) for s in strats}
+            exch_lookup = {}
+            for s in strats:
+                ex = s.exchange_credential.exchange if s.exchange_credential else None
+                if ex and ex.endswith('-ccxt'):
+                    ex = ex.rsplit('-ccxt', 1)[0]
+                exch_lookup[s.id] = _friendly_exchange(ex)
 
         for row in transfer_rows:
             # Skip main→main transfers where both strategy ids are null
             if row.strategy_id_from is None and row.strategy_id_to is None:
                 continue
-            src_desc = 'Main Account' if row.strategy_id_from is None else name_lookup.get(row.strategy_id_from, '(deleted)')
-            dst_desc = 'Main Account' if row.strategy_id_to is None else name_lookup.get(row.strategy_id_to, '(deleted)')
+            src_desc = (
+                'Main Account'
+                if row.strategy_id_from is None
+                else (name_lookup.get(row.strategy_id_from) or getattr(row, 'strategy_name_from', None) or '(deleted)')
+            )
+            dst_desc = (
+                'Main Account'
+                if row.strategy_id_to is None
+                else (name_lookup.get(row.strategy_id_to) or getattr(row, 'strategy_name_to', None) or '(deleted)')
+            )
             if search_term and search_term.lower() not in (src_desc + dst_desc + row.asset_symbol).lower():
                 continue
             amount_str = _trim_decimal(row.amount)
@@ -487,13 +694,20 @@ def get_all_logs():
                 exch_val = exch_lookup[row.strategy_id_from]
             elif row.strategy_id_to and exch_lookup.get(row.strategy_id_to):
                 exch_val = exch_lookup[row.strategy_id_to]
+            # Fallback: infer from main account identifier
+            if exch_val is None:
+                exch_val = _exchange_from_identifier(row.source_identifier) or _exchange_from_identifier(row.destination_identifier)
 
             logs_data.append({
                 'id': f"transfer-{row.id}",
                 'timestamp': row.timestamp.isoformat(),
-                'exchange_name': exch_val,
+                'exchange_name': _friendly_exchange(exch_val or exchange_filter),
                 'strategy_name': src_desc,
                 'account_name': src_desc,
+                'source_deleted': bool(row.strategy_id_from and row.strategy_id_from not in name_lookup),
+                'destination_deleted': bool(row.strategy_id_to and row.strategy_id_to not in name_lookup),
+                'destination_name': dst_desc,
+                'amount_str': amount_str,
                 'action': 'TRANSFER',
                 'ticker': row.asset_symbol,
                 'message': message,
@@ -609,6 +823,10 @@ def get_exchange_logs(exchange_id: str):
                 log_dict['strategy_name'] = log.automation.name
             if (not log_dict.get('exchange_name') or log_dict['exchange_name'] in (None, 'None', '')) and log.automation and getattr(log.automation, 'exchange_credential', None):
                 log_dict['exchange_name'] = log.automation.exchange_credential.exchange
+            # Ensure user-friendly exchange name
+            exn = log_dict.get('exchange_name')
+            if exn and exn.endswith('-ccxt'):
+                log_dict['exchange_name'] = exn.rsplit('-ccxt', 1)[0]
             logs_data.append(log_dict)
 
         # ----- Include AssetTransferLogs for this exchange -----
@@ -659,16 +877,28 @@ def get_exchange_logs(exchange_id: str):
             # Skip transfers that do not involve any strategy (main account to main account)
             if t.strategy_id_from is None and t.strategy_id_to is None:
                 continue
-            src_desc = describe_side(t.strategy_id_from, t.source_identifier)
-            dst_desc = describe_side(t.strategy_id_to, t.destination_identifier)
+            src_desc = (
+                'Main Account'
+                if t.strategy_id_from is None
+                else (strat_name_lookup.get(t.strategy_id_from) or getattr(t, 'strategy_name_from', None) or '(deleted)')
+            )
+            dst_desc = (
+                'Main Account'
+                if t.strategy_id_to is None
+                else (strat_name_lookup.get(t.strategy_id_to) or getattr(t, 'strategy_name_to', None) or '(deleted)')
+            )
             amount_str = _trim_decimal(t.amount)
             message = f"to {dst_desc} | {amount_str} {t.asset_symbol}"
             logs_data.append({
                 'id': f"transfer-{t.id}",
                 'timestamp': t.timestamp.isoformat(),
-                'exchange_name': exchange_id,
+                'exchange_name': _friendly_exchange(exchange_id),
                 'strategy_name': src_desc,  # retain for compatibility
                 'account_name': src_desc,
+                'source_deleted': bool(t.strategy_id_from and t.strategy_id_from not in strat_name_lookup),
+                'destination_deleted': bool(t.strategy_id_to and t.strategy_id_to not in strat_name_lookup),
+                'destination_name': dst_desc,
+                'amount_str': amount_str,
                 'action': 'TRANSFER',
                 'ticker': t.asset_symbol,
                 'message': message,

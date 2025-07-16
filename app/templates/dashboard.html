@@ -174,7 +174,12 @@
                                                 <i className={`fas ${expandedRows.has(log.id) ? 'fa-chevron-down' : 'fa-chevron-right'} fa-xs ms-2 text-muted`}></i>
                                             </td>
                                             <td>{log.exchange_name}</td>
-                                            <td>{log.account_name || log.strategy_name}</td>
+                                            <td>
+                                                <span className={`${(log.account_name !== 'Main Account' && (log.source_deleted || log.destination_deleted)) ? 'text-decoration-line-through text-muted' : ''}`} 
+                                                      title={log.destination_deleted ? 'Destination strategy deleted' : (log.source_deleted ? 'Source strategy deleted' : '')}>
+                                                    {log.account_name || log.strategy_name}
+                                                </span>
+                                            </td>
                                             <td>
                                                     <div className="d-flex justify-content-between">
                                                         <div>
@@ -184,7 +189,19 @@
                                                                 </span>
                                                             )}
                                                             <strong>{log.ticker || log.trading_pair || ''}</strong>
-                                                            {log.message && <span className="ms-2 text-muted">{log.message}</span>}
+                                                            {log.action && log.action.toLowerCase() === 'transfer' ? (
+                                                                <span className="ms-2 text-muted">
+                                                                    to&nbsp;
+                                                                    { (log.destination_deleted && log.destination_name !== 'Main Account') ? (
+                                                                        <span className="text-decoration-line-through text-muted" title="Destination strategy deleted">{log.destination_name}</span>
+                                                                    ) : (
+                                                                        log.destination_name
+                                                                    ) }
+                                                                    &nbsp;|&nbsp;{log.amount_str}&nbsp;{log.ticker}
+                                                                </span>
+                                                            ) : (
+                                                                log.message && <span className="ms-2 text-muted">{log.message}</span>
+                                                            )}
                                                         </div>
                                                         <div>
                                                             {log.status && (

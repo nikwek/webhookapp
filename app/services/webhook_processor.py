@@ -268,6 +268,9 @@ class EnhancedWebhookProcessor:
                             exchange_credential = ExchangeCredentials.query.get(strategy.exchange_credential_id)
                             if exchange_credential:
                                 exchange_name = exchange_credential.exchange
+                                # Replace user-unfriendly adapter suffix e.g. 'coinbase-ccxt' → 'coinbase'
+                                if exchange_name and exchange_name.endswith('-ccxt'):
+                                    exchange_name = exchange_name.rsplit('-ccxt', 1)[0]
                 except Exception as e:
                     logger.error(f"Error retrieving strategy/exchange info for log: {e}")
             
@@ -608,6 +611,26 @@ class EnhancedWebhookProcessor:
             f"Base: {original_base} -> {strategy.allocated_base_asset_quantity}. "
             f"Quote: {original_quote} -> {strategy.allocated_quote_asset_quantity}"
         )
+
+        # After updating portfolio, create an immediate value snapshot so the UI
+        # charts update without waiting for the nightly cron job.
+        try:
+            from datetime import datetime
+            from app.models.trading import StrategyValueHistory
+            from app.services.strategy_value_service import _value_usd
+            snap_val = _value_usd(strategy)
+            db.session.add(
+                StrategyValueHistory(
+                    strategy_id=strategy.id,
+                    timestamp=datetime.utcnow(),
+                    value_usd=snap_val,
+                    base_asset_quantity_snapshot=strategy.allocated_base_asset_quantity,
+                    quote_asset_quantity_snapshot=strategy.allocated_quote_asset_quantity,
+                )
+            )
+            logger.info("Snapshot added after trade for strategy %s: $%s", strategy.id, snap_val)
+        except Exception as e:
+            logger.error("Failed to add immediate strategy snapshot: %s", e, exc_info=True)
 
         # After updating portfolio, check overall allocations vs actual balances
         try:

@@ -77,6 +77,9 @@ class AssetTransferLog(db.Model):
     # Convenience links to involved strategies (nullable when Main Account is involved)
     strategy_id_from = db.Column(db.Integer, nullable=True)
     strategy_id_to = db.Column(db.Integer, nullable=True)
+    # Preserve strategy names at the time of transfer to ensure historical context after deletions
+    strategy_name_from = db.Column(db.String(100), nullable=True)
+    strategy_name_to = db.Column(db.String(100), nullable=True)
 
     def __repr__(self):
         return (
@@ -94,5 +97,7 @@ class AssetTransferLog(db.Model):
             'asset_symbol': self.asset_symbol,
             'amount': float(self.amount),
             'strategy_id_from': self.strategy_id_from,
+            'strategy_name_from': self.strategy_name_from,
             'strategy_id_to': self.strategy_id_to,
+            'strategy_name_to': self.strategy_name_to,
         }

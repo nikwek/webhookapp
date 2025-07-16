@@ -3,12 +3,31 @@
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict
 from app import db
-from app.models.trading import TradingStrategy, AssetTransferLog
+from app.models.trading import TradingStrategy, AssetTransferLog, StrategyValueHistory
 from app.models.exchange_credentials import ExchangeCredentials
 from app.exchanges.registry import ExchangeRegistry
 import logging
+from datetime import datetime
+from app.services.strategy_value_service import _value_usd
 
 logger = logging.getLogger(__name__)
+
+def _snapshot_strategy_value(strategy: TradingStrategy) -> None:
+    """Insert a StrategyValueHistory row reflecting *strategy*'s current value."""
+    try:
+        val = _value_usd(strategy)
+        db.session.add(
+            StrategyValueHistory(
+                strategy_id=strategy.id,
+                timestamp=datetime.utcnow(),
+                value_usd=val,
+                base_asset_quantity_snapshot=strategy.allocated_base_asset_quantity,
+                quote_asset_quantity_snapshot=strategy.allocated_quote_asset_quantity,
+            )
+        )
+    except Exception as exc:
+        # Do not fail the transfer if snapshotting fails – just log.
+        logger.error("Failed to snapshot strategy %s after transfer: %s", strategy.id, exc)
 
 class AllocationError(Exception):
     """Custom exception for allocation errors."""
@@ -165,6 +184,8 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
             
             db.session.add(strategy)
 
+            # Snapshot strategy after allocation change
+            _snapshot_strategy_value(strategy)
             # Record transfer log
             log_entry = AssetTransferLog(
                 user_id=user_id,
@@ -173,7 +194,9 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 asset_symbol=asset_symbol_to_transfer,
                 amount=amount,
                 strategy_id_from=None,
+                strategy_name_from=None,
                 strategy_id_to=destination_strategy_id,
+                strategy_name_to=strategy.name,
             )
             db.session.add(log_entry)
             db.session.commit()
@@ -210,6 +233,8 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
             
             db.session.add(strategy)
 
+            # Snapshot strategy after allocation change
+            _snapshot_strategy_value(strategy)
             # Record transfer log
             log_entry = AssetTransferLog(
                 user_id=user_id,
@@ -218,7 +243,9 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 asset_symbol=asset_symbol_to_transfer,
                 amount=amount,
                 strategy_id_from=source_strategy_id,
+                strategy_name_from=strategy.name,
                 strategy_id_to=None,
+                strategy_name_to=None,
             )
             db.session.add(log_entry)
             db.session.commit()
@@ -283,9 +310,14 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 asset_symbol=asset_symbol_to_transfer,
                 amount=amount,
                 strategy_id_from=source_strategy_id,
+                strategy_name_from=source_strategy.name,
                 strategy_id_to=destination_strategy_id,
+                strategy_name_to=destination_strategy.name,
             )
             db.session.add(log_entry)
+            # Snapshot both strategies since both allocations changed
+            _snapshot_strategy_value(source_strategy)
+            _snapshot_strategy_value(destination_strategy)
             db.session.add(source_strategy)
             db.session.add(destination_strategy)
             db.session.commit()

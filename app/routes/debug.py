@@ -13,6 +13,7 @@ debug = Blueprint('debug', __name__)
 
 @debug.route('/test_email')
 def test_email():
+    """Send a test email to confirm that Flask-Mail is configured and working."""
     try:
         # Get mail from current_app instead of importing it
         from flask_mail import Mail
@@ -171,6 +172,7 @@ def check_suspension(user_id):
     
 @debug.route('/flash-test')
 def flash_test():
+    """Generate sample flash messages (error & info) then redirect to the login page to verify flash rendering."""
     flash("This is a test error message", "error")
     flash("This is a test info message", "info")
     return redirect(url_for_security('login'))
@@ -198,6 +200,7 @@ def debug_session():
 
 @debug.route('/debug/login-test')
 def login_test():
+    """Trigger flash messages for all common categories and redirect to login for visual inspection."""
     
     
     # Flash messages with different categories to test display
@@ -214,6 +217,7 @@ def login_test():
 
 @debug.route('/debug/versions')
 def debug_versions():
+    """Return the current versions of Flask and Flask-Security the app is running with."""
     import flask_security
     import flask
     from flask import jsonify

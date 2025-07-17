@@ -3,42 +3,9 @@
 {% block content %}
 <div class="container-fluid">
     <div class="row">
-        <!-- Admin Navigation -->
-        <nav class="col-md-2 d-none d-md-block bg-light sidebar">
-            <div class="sidebar-sticky">
-                <ul class="nav flex-column">
-                    {% if current_user.is_authenticated and current_user.has_role('admin') %}
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'admin.users' %}active{% endif %}" 
-                           href="{{ url_for('admin.users') }}">
-                            <i class="fas fa-users"></i> Users
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                         <a class="nav-link {% if request.endpoint == 'admin.exchanges' %}active{% endif %}" 
-                            href="{{ url_for('admin.exchanges') }}">
-                             <i class="fas fa-key"></i> Exchanges
-                         </a>
-                     </li>
-                     <li class="nav-item">
-                         <a class="nav-link {% if request.endpoint == 'admin.strategies' %}active{% endif %}" 
-                            href="{{ url_for('admin.strategies') }}">
-                             <i class="fas fa-chart-line"></i> Trading Strategies
-                         </a>
-                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'admin.settings' %}active{% endif %}" 
-                           href="{{ url_for('admin.settings') }}">
-                            <i class="fas fa-cog"></i> Settings
-                        </a>
-                    </li>
-                    {% endif %}
-                </ul>
-            </div>
-        </nav>
 
         <!-- Main Content -->
-        <main role="main" class="col-md-10 ml-sm-auto px-4">
+        <main role="main" class="col-12 px-0">
             {% block admin_content %}{% endblock %}
         </main>
     </div>

@@ -43,6 +43,10 @@
                                     <a class="nav-link {% if request.endpoint == 'admin.strategies' %}active{% endif %}"
                                     href="{{ url_for('admin.strategies') }}">Trading Strategies</a>
                                 </li>
+                                <li class="nav-item">
+                                    <a class="nav-link {% if request.endpoint == 'admin.debug_routes_page' %}active{% endif %}"
+                                    href="{{ url_for('admin.debug_routes_page') }}">Debug</a>
+                                </li>
 
                             {% endif %}
                             <li class="nav-item">

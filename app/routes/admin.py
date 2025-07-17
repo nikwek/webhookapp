@@ -49,6 +49,25 @@ def users():
 
 
 
+@bp.route('/debug')
+@roles_required('admin')
+def debug_routes_page():
+    """Render a page listing all debug blueprint routes."""
+    from flask import current_app
+    routes = []
+    for rule in current_app.url_map.iter_rules():
+        if rule.endpoint.startswith('debug.'):
+            view_func = current_app.view_functions.get(rule.endpoint)
+            doc = (view_func.__doc__ or '').strip() if view_func else ''
+            routes.append({
+                'rule': rule.rule,
+                'methods': ', '.join(sorted(rule.methods - {'HEAD', 'OPTIONS'})),
+                'doc': doc,
+            })
+    routes = sorted(routes, key=lambda r: r['rule'])
+    return render_template('admin/debug.html', routes=routes)
+
+
 @bp.route('/settings')
 @roles_required('admin') 
 def settings():

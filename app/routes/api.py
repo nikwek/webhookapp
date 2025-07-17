@@ -66,18 +66,22 @@ def get_strategy_logs(strategy_id: int):
             .options(joinedload(TradingStrategy.exchange_credential))
             .first_or_404()
         )
+        created_cutoff = strategy.created_at
 
         # Include legacy logs where strategy_id is NULL but we can infer the strategy via stored name or client_order_id prefix
         pattern = f"strat_{strategy_id}%"
         logs_query = WebhookLog.query.filter(
-            or_(
-                WebhookLog.strategy_id == strategy_id,
-                and_(
-                    WebhookLog.strategy_id.is_(None),
-                    WebhookLog.target_type == 'strategy',
-                    or_(
-                        WebhookLog.strategy_name == strategy.name,
-                        WebhookLog.client_order_id.like(pattern)
+            and_(
+                WebhookLog.timestamp >= created_cutoff,
+                or_(
+                    WebhookLog.strategy_id == strategy_id,
+                    and_(
+                        WebhookLog.strategy_id.is_(None),
+                        WebhookLog.target_type == 'strategy',
+                        or_(
+                            WebhookLog.strategy_name == strategy.name,
+                            WebhookLog.client_order_id.like(pattern)
+                        )
                     )
                 )
             )
@@ -106,6 +110,7 @@ def get_strategy_logs(strategy_id: int):
         # ----- Add asset transfer logs -----
         transfer_rows = AssetTransferLog.query.filter(
             AssetTransferLog.user_id == current_user.id,
+            AssetTransferLog.timestamp >= created_cutoff,
             or_(AssetTransferLog.strategy_id_from == strategy_id, AssetTransferLog.strategy_id_to == strategy_id)
         ).order_by(AssetTransferLog.timestamp.desc()).all()
 
@@ -273,24 +278,27 @@ def get_strategy_twrr(strategy_id: int):
 
         # Organize transfers by interval using timestamp
         from collections import defaultdict
-        interval_flows: defaultdict[int, float] = defaultdict(float)  # key index of snap i (flows after i-1, up to i)
+        # Build a mapping: interval index i  → net cash-flow that occurred **after** snaps[i-1]
+        # and **up to and including** snaps[i].  This precisely follows the TWRR convention.
+        interval_flows: dict[int, float] = {i: 0.0 for i in range(1, len(snaps))}
         for tr in transfers:
-            # Determine sign
-            sign = 0
+            # Determine sign (+1 inflow, −1 outflow, 0 ignore if unrelated)
             if tr.strategy_id_to == strategy_id:
-                sign = 1  # inflow
+                sign = 1
             elif tr.strategy_id_from == strategy_id:
-                sign = -1  # outflow
-            if sign == 0:
-                continue
+                sign = -1
+            else:
+                continue  # unrelated transfer
+
             try:
                 price_usd = PriceService.get_price_usd(tr.asset_symbol)
             except Exception:
                 price_usd = 0.0
             usd_amount = float(tr.amount) * price_usd * sign
-            # Find first snapshot index after transfer
-            for idx, snap in enumerate(snaps[1:], start=1):
-                if tr.timestamp <= snap.timestamp:
+
+            # Locate the interval (prev_snap, curr_snap] into which this transfer falls.
+            for idx in range(1, len(snaps)):
+                if snaps[idx - 1].timestamp < tr.timestamp <= snaps[idx].timestamp:
                     interval_flows[idx] += usd_amount
                     break
 
@@ -307,12 +315,21 @@ def get_strategy_twrr(strategy_id: int):
         # -----------------------------
         #
         # Determine aggregation period (day|month|quarter|year)
+        debug_requested = bool(request.args.get('debug'))
+
+        # Helper to round returns and zero-out tiny floating-point noise
+        def _clean_rate(val: float, places: int = 4) -> float:  # noqa: ANN001
+            threshold = 10 ** (-places)
+            if abs(val) < threshold:
+                return 0.0
+            return round(val, places)
         period = request.args.get('period', 'day').lower()
         if period not in {'day', 'month', 'quarter', 'year'}:
             period = 'day'
 
         # Collect daily sub-period returns
         daily_points: list[tuple[datetime, float]] = []  # (timestamp, sub_return)
+        debug_rows: list[dict] = []  # optional detailed breakdown
 
         # Start cumulative at 0.
         data = data
@@ -325,6 +342,15 @@ def get_strategy_twrr(strategy_id: int):
             flow = interval_flows.get(i, 0.0)
             sub_return = (curr_val - flow) / prev_val - 1.0
             daily_points.append((snaps[i].timestamp, sub_return))
+            if debug_requested:
+                debug_rows.append({
+                    "idx": i,
+                    "timestamp": snaps[i].timestamp.isoformat(),
+                    "prev_val": prev_val,
+                    "curr_val": curr_val,
+                    "flow": flow,
+                    "sub_return": _clean_rate(sub_return),
+                })
 
         # If day view requested, compute cumulative from daily_points and return
         if period == 'day':
@@ -333,10 +359,10 @@ def get_strategy_twrr(strategy_id: int):
                 cumulative = (1 + cumulative) * (1 + sub_return) - 1.0
                 data.append({
                     "timestamp": ts.isoformat(),
-                    "cum_return": cumulative,
-                    "sub_return": sub_return,
+                    "cum_return": _clean_rate(cumulative),
+                    "sub_return": _clean_rate(sub_return),
                 })
-            return jsonify({"strategy_id": strategy_id, "data": data})
+            return jsonify({"strategy_id": strategy_id, "data": data, **({"debug": debug_rows} if debug_requested else {})})
 
         # ---------- Aggregate returns into requested buckets ----------
         from collections import OrderedDict
@@ -366,12 +392,12 @@ def get_strategy_twrr(strategy_id: int):
             cumulative = (1 + cumulative) * (1 + bucket_ret) - 1.0
             data.append({
                 "timestamp": ts.isoformat(),  # use last day timestamp of bucket
-                "cum_return": cumulative,
-                "sub_return": bucket_ret,
+                "cum_return": _clean_rate(cumulative),
+                "sub_return": _clean_rate(bucket_ret),
                 "period": key,
             })
 
-        return jsonify({"strategy_id": strategy_id, "data": data})
+        return jsonify({"strategy_id": strategy_id, "data": data, **({"debug": debug_rows} if debug_requested else {})})
     except Exception as e:
         logger.error("Error computing TWRR for strategy %s: %s", strategy_id, e, exc_info=True)
         return jsonify({"error": "Internal error"}), 500
@@ -880,12 +906,12 @@ def get_exchange_logs(exchange_id: str):
             src_desc = (
                 'Main Account'
                 if t.strategy_id_from is None
-                else (strat_name_lookup.get(t.strategy_id_from) or getattr(t, 'strategy_name_from', None) or '(deleted)')
+                else (getattr(t, 'strategy_name_from', None) or strat_name_lookup.get(t.strategy_id_from) or '(deleted)')
             )
             dst_desc = (
                 'Main Account'
                 if t.strategy_id_to is None
-                else (strat_name_lookup.get(t.strategy_id_to) or getattr(t, 'strategy_name_to', None) or '(deleted)')
+                else (getattr(t, 'strategy_name_to', None) or strat_name_lookup.get(t.strategy_id_to) or '(deleted)')
             )
             amount_str = _trim_decimal(t.amount)
             message = f"to {dst_desc} | {amount_str} {t.asset_symbol}"

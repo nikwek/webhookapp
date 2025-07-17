@@ -7,19 +7,25 @@ from app.models.trading import TradingStrategy, AssetTransferLog, StrategyValueH
 from app.models.exchange_credentials import ExchangeCredentials
 from app.exchanges.registry import ExchangeRegistry
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.services.strategy_value_service import _value_usd
 
 logger = logging.getLogger(__name__)
 
-def _snapshot_strategy_value(strategy: TradingStrategy) -> None:
-    """Insert a StrategyValueHistory row reflecting *strategy*'s current value."""
+def _snapshot_strategy_value(strategy: TradingStrategy, *, ts: datetime | None = None) -> None:
+    """Insert a StrategyValueHistory row reflecting *strategy*'s current value.
+
+    *ts* allows the caller to supply an explicit timestamp so we can guarantee a
+    strict ordering relative to a just-logged ``AssetTransferLog``.  When *ts*
+    is *None* the current UTC time is used.
+    """
     try:
         val = _value_usd(strategy)
+        snap_ts = ts or datetime.utcnow()
         db.session.add(
             StrategyValueHistory(
                 strategy_id=strategy.id,
-                timestamp=datetime.utcnow(),
+                timestamp=snap_ts,
                 value_usd=val,
                 base_asset_quantity_snapshot=strategy.allocated_base_asset_quantity,
                 quote_asset_quantity_snapshot=strategy.allocated_quote_asset_quantity,
@@ -184,9 +190,11 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
             
             db.session.add(strategy)
 
-            # Record transfer log first so its timestamp comes *before* the subsequent snapshot.
+            # Record transfer log with an explicit timestamp so we can guarantee ordering
+            now_ts = datetime.utcnow()
             log_entry = AssetTransferLog(
                 user_id=user_id,
+                timestamp=now_ts,
                 source_identifier=source_identifier,
                 destination_identifier=destination_identifier,
                 asset_symbol=asset_symbol_to_transfer,
@@ -197,9 +205,9 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 strategy_name_to=strategy.name,
             )
             db.session.add(log_entry)
-            # Snapshot strategy *after* logging the transfer so the snapshot timestamp is guaranteed
-            # to be ≥ the transfer timestamp.  This is critical for the TWRR cash-flow alignment.
-            _snapshot_strategy_value(strategy)
+            # Snapshot strategy *after* logging the transfer. Use a timestamp *after* the transfer
+            # by a micro-second to maintain strict ordering.
+            _snapshot_strategy_value(strategy, ts=now_ts + timedelta(microseconds=1))
             db.session.commit()
             logger.info(f"Successfully transferred {amount} {asset_symbol_to_transfer} from main account (cred ID: {source_credential_id}) to strategy {strategy.name} (ID: {destination_strategy_id}) for user {user_id}.")
             return True, f"Successfully transferred {amount} {asset_symbol_to_transfer} to {strategy.name}."

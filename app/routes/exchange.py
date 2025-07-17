@@ -392,15 +392,7 @@ def transfer_assets(exchange_id: str):
             amount=amount
         )
         if success:
-            # Record transfer log entry
-            from app.models.trading import AssetTransferLog
-            db.session.add(AssetTransferLog(
-                user_id=user_id,
-                source_identifier=source_account_id_str,
-                destination_identifier=destination_account_id_str,
-                asset_symbol=asset_symbol_from_form,
-                amount=amount
-            ))
+
             db.session.commit()
             flash(message, 'success')
         else:

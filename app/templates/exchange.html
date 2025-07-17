@@ -71,8 +71,7 @@
         <div class="card-body text-center">
             <h5 class="card-title text-muted mb-3">Total Account Value</h5>
             <p class="card-text display-4">
-                {{ "{:,.2f}".format(current_exchange_data.total_value|float) }}
-                <span class="text-muted fs-5 align-baseline">{{ current_exchange_data.currency }}</span>
+                {{ "$" + "{:,.2f}".format(current_exchange_data.total_value|float) }}
             </p>
         </div>
     </div>
@@ -90,9 +89,9 @@
                         <tr>
                             <th scope="col" style="width: 40%;">Asset</th>
                             <th scope="col" class="text-end" style="width: 20%;">Total on Exchange</th>
-                            <th scope="col" class="text-end" style="width: 20%;">Total Allocated</th>
+                            <th scope="col" class="text-end" style="width: 20%;">Value</th>
                             <th scope="col" class="text-end" style="width: 20%;">Unallocated</th>
-                            <th scope="col" class="text-end" style="width: 20%;">Value ({{ current_exchange_data.currency }})</th>
+                            <th scope="col" class="text-end" style="width: 20%;">Value</th>
                             <th scope="col" style="width: 20%;">Actions</th>
                         </tr>
                     </thead>
@@ -114,15 +113,23 @@
                                 </div>
                             </td>
                             <td class="text-end">{{ asset_balance.get('total', 0)|float }}</td>
-                            <td class="text-end">{{ "{:,.8f}".format(asset_balance.get('total_allocated', 0)|float).rstrip('0').rstrip('.') if asset_balance.get('total_allocated', 0)|float > 0 else '0' }}</td>
+                            <td class="text-end">
+    {% if asset_balance.get('usd_value') is not none %}
+        ${{ "{:,.2f}".format(asset_balance.get('usd_value', 0)|float) }}
+    {% else %}
+        <span class="text-muted">N/A</span>
+    {% endif %}
+</td>
                             <td class="text-end">{{ "{:,.8f}".format(asset_balance.get('unallocated', 0)|float).rstrip('0').rstrip('.') if asset_balance.get('unallocated', 0)|float > 0 else '0' }}</td>
                             <td class="text-end">
-                                {% if asset_balance.get('usd_value') is not none %}
-                                    {{ "{:,.2f}".format(asset_balance.usd_value|float) }}
-                                {% else %}
-                                    <span class="text-muted">N/A</span>
-                                {% endif %}
-                            </td>
+    {% if asset_balance.get('unallocated', 0)|float > 0 and asset_balance.get('usd_value') is not none and asset_balance.get('total', 0)|float > 0 %}
+        {% set price_per_unit = (asset_balance.get('usd_value', 0)|float) / (asset_balance.get('total', 0)|float) %}
+        {% set unalloc_val = price_per_unit * (asset_balance.get('unallocated', 0)|float) %}
+        ${{ "{:,.2f}".format(unalloc_val) }}
+    {% else %}
+        <span class="text-muted">{% if asset_balance.get('unallocated', 0)|float == 0 %}–{% else %}N/A{% endif %}</span>
+    {% endif %}
+</td>
                             <td>
                                 <button class="btn btn-sm btn-outline-primary transfer-button"
                                         data-bs-toggle="modal"
@@ -188,7 +195,7 @@
                                 <th scope="col">Trading Pair</th>
                                 <th scope="col">Allocated Base</th>
                                 <th scope="col">Allocated Quote</th>
-                                <th scope="col">Est. Value (USD)</th>
+                                <th scope="col">Est. Value</th>
                                 <th scope="col">Status</th>
                                 <th scope="col" class="text-end">Actions</th>
                             </tr>
@@ -202,7 +209,7 @@
                                 <td>{{ (strategy.allocated_quote_asset_quantity | float) | round(8) }} {{ strategy.quote_asset_symbol }}</td>
                                 <td>
                                     {% if strategy.latest_value_usd is not none %}
-                                        ${{ strategy.latest_value_usd | round(2) }}
+                                         ${{ "{:,.2f}".format(strategy.latest_value_usd | float) }}
                                     {% else %}
                                         –
                                     {% endif %}

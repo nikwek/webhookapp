@@ -184,9 +184,7 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
             
             db.session.add(strategy)
 
-            # Snapshot strategy after allocation change
-            _snapshot_strategy_value(strategy)
-            # Record transfer log
+            # Record transfer log first so its timestamp comes *before* the subsequent snapshot.
             log_entry = AssetTransferLog(
                 user_id=user_id,
                 source_identifier=source_identifier,
@@ -199,6 +197,9 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 strategy_name_to=strategy.name,
             )
             db.session.add(log_entry)
+            # Snapshot strategy *after* logging the transfer so the snapshot timestamp is guaranteed
+            # to be ≥ the transfer timestamp.  This is critical for the TWRR cash-flow alignment.
+            _snapshot_strategy_value(strategy)
             db.session.commit()
             logger.info(f"Successfully transferred {amount} {asset_symbol_to_transfer} from main account (cred ID: {source_credential_id}) to strategy {strategy.name} (ID: {destination_strategy_id}) for user {user_id}.")
             return True, f"Successfully transferred {amount} {asset_symbol_to_transfer} to {strategy.name}."
@@ -233,9 +234,7 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
             
             db.session.add(strategy)
 
-            # Snapshot strategy after allocation change
-            _snapshot_strategy_value(strategy)
-            # Record transfer log
+            # Record transfer log first so its timestamp precedes the snapshot
             log_entry = AssetTransferLog(
                 user_id=user_id,
                 source_identifier=source_identifier,
@@ -248,6 +247,8 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 strategy_name_to=None,
             )
             db.session.add(log_entry)
+            # Snapshot strategy after logging
+            _snapshot_strategy_value(strategy)
             db.session.commit()
             logger.info(f"Successfully transferred {amount} {asset_symbol_to_transfer} from strategy {strategy.name} (ID: {source_strategy_id}) to main account (cred ID: {destination_credential_id}) for user {user_id}.")
             return True, f"Successfully transferred {amount} {asset_symbol_to_transfer} from {strategy.name} to Main Account."

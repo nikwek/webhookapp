@@ -129,7 +129,7 @@ def get_strategy_logs(strategy_id: int):
                 else (
                     "This Strategy"
                     if row.strategy_id_from == strategy_id
-                    else (name_lookup.get(row.strategy_id_from) or getattr(row, 'strategy_name_from', None) or "(deleted)")
+                    else (getattr(row, 'strategy_name_from', None) or name_lookup.get(row.strategy_id_from) or "(deleted)")
                 )
             )
             dst_desc = (
@@ -138,7 +138,7 @@ def get_strategy_logs(strategy_id: int):
                 else (
                     "This Strategy"
                     if row.strategy_id_to == strategy_id
-                    else (name_lookup.get(row.strategy_id_to) or getattr(row, 'strategy_name_to', None) or "(deleted)")
+                    else (getattr(row, 'strategy_name_to', None) or name_lookup.get(row.strategy_id_to) or "(deleted)")
                 )
             )
             amount_str = _trim_decimal(row.amount)
@@ -704,12 +704,12 @@ def get_all_logs():
             src_desc = (
                 'Main Account'
                 if row.strategy_id_from is None
-                else (name_lookup.get(row.strategy_id_from) or getattr(row, 'strategy_name_from', None) or '(deleted)')
+                else (getattr(row, 'strategy_name_from', None) or name_lookup.get(row.strategy_id_from) or '(deleted)')
             )
             dst_desc = (
                 'Main Account'
                 if row.strategy_id_to is None
-                else (name_lookup.get(row.strategy_id_to) or getattr(row, 'strategy_name_to', None) or '(deleted)')
+                else (getattr(row, 'strategy_name_to', None) or name_lookup.get(row.strategy_id_to) or '(deleted)')
             )
             if search_term and search_term.lower() not in (src_desc + dst_desc + row.asset_symbol).lower():
                 continue

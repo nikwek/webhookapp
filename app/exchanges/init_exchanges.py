@@ -24,7 +24,7 @@ def initialize_exchange_adapters():
         "kraken",
         "gemini",
         "cryptocom",
-        "bitmart",
+
         "coinbase-ccxt",
     ]
 

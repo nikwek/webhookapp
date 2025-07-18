@@ -3,6 +3,7 @@
 from app.exchanges.registry import ExchangeRegistry
 from app.exchanges.ccxt_base_adapter import CcxtBaseAdapter
 from app.exchanges.ccxt_coinbase_adapter import CcxtCoinbaseAdapter
+from app.exchanges.ccxt_cryptocom_adapter import CcxtCryptocomAdapter
 import logging
 import os
 
@@ -20,9 +21,10 @@ def initialize_exchange_adapters():
     # environment variable `CCXT_EXCHANGES` (comma-separated ids) or a Flask
     # config entry ``CCXT_EXCHANGES``.
     DEFAULT_CCXT_EXCHANGES = [
-        "binance",
         "kraken",
-        "kucoin",
+        "gemini",
+        "cryptocom",
+        "bitmart",
         "coinbase-ccxt",
     ]
 
@@ -52,13 +54,14 @@ def initialize_exchange_adapters():
 
     ExchangeRegistry.register(CoinbaseAliasAdapter)
 
+
     # Register our custom Coinbase adapter first
     # Register the rest of the exchanges dynamically
     for exch_id in exchange_ids:
         # Skip Coinbase as we have a custom implementation
         if exch_id in ["coinbase", "coinbase-ccxt"]:
             continue
-            
+
         try:
             # Dynamically create subclass for other exchanges
             AdapterCls = type(  # noqa: N806
@@ -71,6 +74,9 @@ def initialize_exchange_adapters():
             logger.error(  # noqa: E501
                 "Failed to register CCXT adapter for %s: %s", exch_id, exc
             )
+
+    # Register our custom cryptocom adapter last so it overrides any generated one
+    ExchangeRegistry.register(CcxtCryptocomAdapter)
 
     # Log final registry
     registered_exchanges = ExchangeRegistry.get_all_exchanges()

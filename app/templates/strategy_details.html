@@ -523,7 +523,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const json = await resp.json();
                 const labels = json.data.map(pt => (new Date(pt.timestamp)).toLocaleDateString(undefined, { timeZone: userTz }));
                 const equityVals = json.data.map(pt => +(pt.equity.toFixed(2)));
+                const equityMax = Math.max(...equityVals);
+                const yStep = 50; // axis tick distance
+                const rawMax = equityMax * 1.25;
+                const yAxisMax = rawMax > 0 ? Math.ceil(rawMax / yStep) * yStep : yStep;
                 const ddVals = json.data.map(pt => +(pt.drawdown * 100).toFixed(2)); // %
+                const ddMin = Math.min(...ddVals);
                 if (!labels.length) {
                     riskCanvas.parentElement.innerHTML = '<p class="text-muted mb-0">No risk data available.</p>';
                     return;
@@ -575,18 +580,31 @@ document.addEventListener('DOMContentLoaded', () => {
                                     return ctx.datasetIndex === 0 ? '$' + value.toFixed(2) : value.toFixed(2) + '%';
                                 },
                                 color: ctx => ctx.datasetIndex === 0 ? '#0d6efd' : '#dc3545',
-                                anchor: ctx => ctx.datasetIndex === 0 ? 'end' : 'center',
-                                align: ctx => ctx.datasetIndex === 0 ? 'end' : 'center',
+                                anchor: (ctx) => {
+                                    if (labels.length === 1) return 'center';
+                                    return ctx.datasetIndex === 0 ? 'end' : 'center';
+                                },
+                                align: (ctx) => {
+                                    if (labels.length === 1) return 'center';
+                                    return ctx.datasetIndex === 0 ? 'end' : 'center';
+                                },
                                 offset: 0,
                                 font: { weight: 'bold', size: 14 }
                             }
                         },
                         scales: {
+                            x: {
+                                offset: true, // ensure single bar is centered and labels not clipped
+                            },
                             y: {
+                                max: yAxisMax,
                                 type: 'linear',
                                 position: 'left',
                                 title: { display: true, text: 'Equity (USD)' },
-                                ticks: { callback: v => '$' + v.toLocaleString() },
+                                ticks: {
+                                    callback: v => '$' + v.toLocaleString(),
+                                    stepSize: yStep,
+                                }
                             },
                             y1: {
                                 type: 'linear',
@@ -594,7 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 title: { display: true, text: 'Drawdown %' },
                                 grid: { drawOnChartArea: false },
                                 ticks: { callback: v => v + '%' },
-                                min: Math.min(...ddVals) < 0 ? Math.min(...ddVals) : 0,
+                                min: ddMin < 0 ? ddMin : -1,
                                 max: 0,
                             },
                         },

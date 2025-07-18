@@ -273,28 +273,46 @@ def create_trading_strategy(exchange_id: str):
             flash('Invalid trading pair. Enter something like BTC/USDT, BTC-USDT, or BTC USDT.', 'danger')
             return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
 
-        base_asset_symbol, quote_asset_symbol = pair_components[0], pair_components[1]
-        trading_pair_normalized = f"{base_asset_symbol}/{quote_asset_symbol}"
-        # Override the original variable so downstream code continues to work
-        trading_pair = trading_pair_normalized
 
-        # Validate that the trading pair actually exists on the selected exchange using the adapter (if available)
+        # Normalise & validate the trading pair
+        base_asset_symbol, quote_asset_symbol = pair_components  # e.g. BTC, USDT
+        trading_pair = f"{base_asset_symbol}/{quote_asset_symbol}"
+
+        # --- Validate that the pair exists on the selected exchange (if we can) ---
         adapter_cls = ExchangeRegistry.get_adapter(exchange_id)
-        if adapter_cls and hasattr(adapter_cls, 'get_trading_pairs'):
+        if adapter_cls and hasattr(adapter_cls, "get_trading_pairs"):
             try:
                 available_pairs = adapter_cls.get_trading_pairs(user_id=current_user.id)
-                available_pair_ids_upper = {p.get('id', '').upper() for p in available_pairs}
-                if trading_pair.upper() not in available_pair_ids_upper:
-                    flash(f"Trading pair '{trading_pair.upper()}' is not available on {exchange_id.capitalize()}. Please double-check the symbols.", 'danger')
-                    logger.warning(f"User {current_user.id} attempted to create strategy with unsupported pair '{trading_pair}' on {exchange_id}.")
-                    return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
-            except Exception as e_pair:
-                # Do not block creation but log error; continue silently if exchange validation fails
-                logger.error(f"Error validating trading pair '{trading_pair}' for exchange {exchange_id}: {e_pair}")
-        else:
-            logger.info(f"Adapter for {exchange_id} does not support get_trading_pairs; skipping pair existence validation.")
+                normalized_pairs: set[str] = set()
+                for p in available_pairs:
+                    if isinstance(p, dict):
+                        raw_sym = str(p.get("id") or p.get("symbol") or "")
+                    else:
+                        raw_sym = str(p)
+                    normalized_pairs.add(raw_sym.replace("_", "/").upper())
 
-        # base_asset_symbol, quote_asset_symbol, and trading_pair have already been set above after normalization
+                if trading_pair.upper() not in normalized_pairs:
+                    flash(
+                        f"Trading pair '{trading_pair}' is not available on {exchange_id.capitalize()}.",
+                        "danger",
+                    )
+                    logger.warning(
+                        "User %s attempted to create strategy with unsupported pair '%s' on %s",
+                        current_user.id,
+                        trading_pair,
+                        exchange_id,
+                    )
+                    return redirect(url_for("exchange.view_exchange", exchange_id=exchange_id))
+            except Exception as e_pair:
+                # Non-fatal: log and continue.
+                logger.error(
+                    "Error validating trading pair '%s' for exchange %s: %s",
+                    trading_pair,
+                    exchange_id,
+                    e_pair,
+                )
+
+        # base_asset_symbol, quote_asset_symbol, and trading_pair are now defined
 
         # Find the ExchangeCredentials for the user and this exchange_id
         # Assuming one credential per user per exchange for simplicity here.

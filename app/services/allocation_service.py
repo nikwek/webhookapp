@@ -191,10 +191,10 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
             db.session.add(strategy)
 
             # Record transfer log with an explicit timestamp so we can guarantee ordering
-            now_ts = datetime.utcnow()
+            log_ts = datetime.utcnow()
             log_entry = AssetTransferLog(
                 user_id=user_id,
-                timestamp=now_ts,
+                timestamp=log_ts,
                 source_identifier=source_identifier,
                 destination_identifier=destination_identifier,
                 asset_symbol=asset_symbol_to_transfer,
@@ -205,9 +205,11 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 strategy_name_to=strategy.name,
             )
             db.session.add(log_entry)
-            # Snapshot strategy *after* logging the transfer. Use a timestamp *after* the transfer
-            # by a micro-second to maintain strict ordering.
-            _snapshot_strategy_value(strategy, ts=now_ts + timedelta(microseconds=1))
+            # Snapshot strategy *after* logging the transfer. Capture a fresh timestamp *after* all
+            # allocation quantities are updated so the snapshot is guaranteed to sort *after* the
+            # corresponding transfer even on databases with limited timestamp precision.
+            snap_ts = datetime.utcnow()
+            _snapshot_strategy_value(strategy, ts=snap_ts)
             db.session.commit()
             logger.info(f"Successfully transferred {amount} {asset_symbol_to_transfer} from main account (cred ID: {source_credential_id}) to strategy {strategy.name} (ID: {destination_strategy_id}) for user {user_id}.")
             return True, f"Successfully transferred {amount} {asset_symbol_to_transfer} to {strategy.name}."

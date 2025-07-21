@@ -529,6 +529,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const yAxisMax = rawMax > 0 ? Math.ceil(rawMax / yStep) * yStep : yStep;
                 const ddVals = json.data.map(pt => +(pt.drawdown * 100).toFixed(2)); // %
                 const ddMin = Math.min(...ddVals);
+                // Compute nice, evenly-spaced tick step for drawdown axis
+                const ddAbs = Math.ceil(Math.abs(ddMin));
+                const ddStep = ddAbs <= 10 ? 1 : (ddAbs <= 20 ? 2 : 5);
+                const ddAxisMin = ddAbs ? -ddAbs : -1;
                 if (!labels.length) {
                     riskCanvas.parentElement.innerHTML = '<p class="text-muted mb-0">No risk data available.</p>';
                     return;
@@ -611,8 +615,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                 position: 'right',
                                 title: { display: true, text: 'Drawdown %' },
                                 grid: { drawOnChartArea: false },
-                                ticks: { callback: v => v + '%' },
-                                min: ddMin < 0 ? ddMin : -1,
+                                ticks: {
+                                    stepSize: ddStep,
+                                    callback: v => v + '%'
+                                },
+                                min: ddAxisMin,
                                 max: 0,
                             },
                         },
@@ -653,8 +660,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 (new Date(pt.timestamp)).toLocaleDateString(undefined, { timeZone: userTz })
             );
             const twrrVals = json.data.map(pt => pt.cum_return * 100);
+            // Determine symmetric y-axis around 0 with *evenly spaced* tick marks.
             const maxAbs = twrrVals.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-            const RANGE = maxAbs > 0 ? maxAbs : 1;
+            const yTop = Math.ceil(maxAbs);            // round up to the next whole %
+            // Choose a reasonable tick step so we don’t get fractional tick labels.
+            const step = yTop <= 10 ? 1 : (yTop <= 20 ? 2 : 5);
+            const RANGE = yTop || 1;
             const valElem = document.getElementById('strategyTotalValue');
             if (valElem) valElem.textContent = '$' + latestVal.toFixed(2);
 
@@ -703,7 +714,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             min: -RANGE,
                             max: RANGE,
                             ticks: {
-                                callback: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+                                stepSize: step,
+                                callback: v => (v >= 0 ? '+' : '') + v.toFixed(0) + '%'
                             }
                         }
                     }

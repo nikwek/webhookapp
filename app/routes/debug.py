@@ -367,8 +367,121 @@ def scheduler_info():
 
     return jsonify(
         {
-            "id": job.id if job else None,
-            "next_run_time": job.next_run_time.isoformat() if job else None,
+            "id": job.id if job else "daily_strategy_snapshot",
+            "next_run_time": job.next_run_time.isoformat() if job and job.next_run_time else None,
             "last_snapshot": last_snapshot.isoformat() if last_snapshot else None,
         }
     )
+
+@debug.route("/twrr/debug/<int:strategy_id>")
+@roles_required("admin")
+def twrr_debug(strategy_id: int):
+    """Debug TWRR calculation for a specific strategy."""
+    from app.models.trading import TradingStrategy, AssetTransferLog
+    from app.services.price_service import PriceService
+    from sqlalchemy import asc
+    
+    # Get strategy and snapshots
+    strategy = TradingStrategy.query.get_or_404(strategy_id)
+    snaps = (
+        StrategyValueHistory.query
+        .filter_by(strategy_id=strategy_id)
+        .order_by(asc(StrategyValueHistory.timestamp))
+        .all()
+    )
+    
+    if len(snaps) < 2:
+        return jsonify({"error": "Need at least 2 snapshots for TWRR calculation"})
+    
+    # Get all transfers for this strategy
+    transfers = (
+        AssetTransferLog.query
+        .filter(
+            (AssetTransferLog.strategy_id_from == strategy_id)
+            | (AssetTransferLog.strategy_id_to == strategy_id)
+        )
+        .order_by(asc(AssetTransferLog.timestamp))
+        .all()
+    )
+    
+    # Build debug info
+    debug_data = {
+        "strategy_id": strategy_id,
+        "strategy_name": strategy.name,
+        "snapshots": [
+            {
+                "timestamp": snap.timestamp.isoformat(),
+                "value_usd": float(snap.value_usd)
+            }
+            for snap in snaps
+        ],
+        "transfers": [
+            {
+                "timestamp": tr.timestamp.isoformat(),
+                "asset_symbol": tr.asset_symbol,
+                "amount": float(tr.amount),
+                "strategy_id_from": tr.strategy_id_from,
+                "strategy_id_to": tr.strategy_id_to,
+                "direction": "inflow" if tr.strategy_id_to == strategy_id else "outflow"
+            }
+            for tr in transfers
+        ],
+        "intervals": []
+    }
+    
+    # Calculate interval flows like the main TWRR function does
+    first_snap_ts = snaps[0].timestamp
+    relevant_transfers = [tr for tr in transfers if tr.timestamp > first_snap_ts]
+    
+    interval_flows = {i: 0.0 for i in range(1, len(snaps))}
+    for tr in relevant_transfers:
+        # Determine sign
+        if tr.strategy_id_to == strategy_id:
+            sign = 1
+        elif tr.strategy_id_from == strategy_id:
+            sign = -1
+        else:
+            continue
+            
+        try:
+            price_usd = PriceService.get_price_usd(tr.asset_symbol)
+        except Exception:
+            price_usd = 0.0
+        usd_amount = float(tr.amount) * price_usd * sign
+        
+        # Find which interval this transfer belongs to
+        for idx in range(1, len(snaps)):
+            if snaps[idx - 1].timestamp < tr.timestamp < snaps[idx].timestamp:
+                interval_flows[idx] += usd_amount
+                break
+    
+    # Add interval analysis
+    for i in range(1, len(snaps)):
+        prev_val = float(snaps[i - 1].value_usd)
+        curr_val = float(snaps[i].value_usd)
+        flow = interval_flows.get(i, 0.0)
+        
+        # Apply the same logic as the main function
+        if abs(curr_val - prev_val) < 1e-6:
+            flow_adjusted = 0.0
+        else:
+            flow_adjusted = flow
+            
+        if prev_val > 0:
+            sub_return = (curr_val - flow_adjusted) / prev_val - 1.0
+        else:
+            sub_return = 0.0
+            
+        debug_data["intervals"].append({
+            "interval": i,
+            "prev_timestamp": snaps[i - 1].timestamp.isoformat(),
+            "curr_timestamp": snaps[i].timestamp.isoformat(),
+            "prev_value": prev_val,
+            "curr_value": curr_val,
+            "raw_flow": flow,
+            "adjusted_flow": flow_adjusted,
+            "sub_return": round(sub_return, 6),
+            "sub_return_pct": round(sub_return * 100, 2)
+        })
+    
+    return jsonify(debug_data)

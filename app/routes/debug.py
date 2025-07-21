@@ -2,12 +2,13 @@
 from flask import Blueprint, current_app, jsonify, abort, flash, redirect, url_for
 from flask_mail import Message
 from flask_security import RegisterForm, current_user, login_required, url_for_security, roles_required
-from sqlalchemy import text, inspect
+from sqlalchemy import text, inspect, func
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timezone
 from app import db, scheduler
 from app.models.user import User
 from app.models.portfolio import Portfolio
+from app.models.trading import StrategyValueHistory
 
 debug = Blueprint('debug', __name__)
 
@@ -349,3 +350,25 @@ def update_strategy_values():
             "success": False,
             "message": f"Error updating strategy values: {str(e)}"
         }), 500
+
+@debug.route("/scheduler/info")
+def scheduler_info():
+    sched_ext = current_app.extensions.get("apscheduler")
+    # Fallback to global scheduler instance if extension missing (e.g. dev server reload).
+    if sched_ext:
+        sched = sched_ext.scheduler
+    else:
+        sched = scheduler
+    job = sched.get_job("daily_strategy_snapshot")
+
+    last_snapshot = (
+        db.session.query(func.max(StrategyValueHistory.timestamp)).scalar()
+    )
+
+    return jsonify(
+        {
+            "id": job.id if job else None,
+            "next_run_time": job.next_run_time.isoformat() if job else None,
+            "last_snapshot": last_snapshot.isoformat() if last_snapshot else None,
+        }
+    )

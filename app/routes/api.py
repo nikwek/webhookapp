@@ -298,7 +298,13 @@ def get_strategy_twrr(strategy_id: int):
 
             # Locate the interval (prev_snap, curr_snap] into which this transfer falls.
             for idx in range(1, len(snaps)):
-                if snaps[idx - 1].timestamp < tr.timestamp <= snaps[idx].timestamp:
+                # Only count transfers strictly BEFORE the next snapshot.
+                # If a transfer has the *exact* same timestamp as the snapshot it
+                # belongs to (i.e. was committed in the same transaction just
+                # before we called `snapshot_all_strategies()`), including it in
+                # the cash-flow will double-count that capital and skew the
+                # return to -100 %.  Therefore use a strict "<" upper bound.
+                if snaps[idx - 1].timestamp < tr.timestamp < snaps[idx].timestamp:
                     interval_flows[idx] += usd_amount
                     break
 

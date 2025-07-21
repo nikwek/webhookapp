@@ -274,6 +274,9 @@ def get_strategy_twrr(strategy_id: int):
             transfers_q = transfers_q.filter(AssetTransferLog.timestamp >= start_dt)
 
         first_snap_ts = snaps[0].timestamp
+        # The first snapshot captures the portfolio value AFTER initial funding.
+        # Any transfers at or before the first snapshot are part of the initial
+        # allocation and should not be treated as cash flows for TWRR calculation.
         transfers = [tr for tr in transfers_q.all() if tr.timestamp > first_snap_ts]
 
         # Organize transfers by interval using timestamp

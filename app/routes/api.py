@@ -346,6 +346,10 @@ def get_strategy_twrr(strategy_id: int):
             if prev_val == 0:
                 continue
             flow = interval_flows.get(i, 0.0)
+            # If equity didn't change but a flow was (mis)detected in the same DB transaction
+            # (common for initial capital allocation), ignore the flow to avoid a -100 % blip.
+            if abs(curr_val - prev_val) < 1e-6:
+                flow = 0.0
             sub_return = (curr_val - flow) / prev_val - 1.0
             daily_points.append((snaps[i].timestamp, sub_return))
             if debug_requested:

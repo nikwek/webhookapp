@@ -67,9 +67,9 @@ def _value_usd(strategy: TradingStrategy) -> Decimal:
     return formatted_val
 
 
-def snapshot_all_strategies() -> None:
+def snapshot_all_strategies(*, source: str = "unspecified") -> None:
     """Create or update today's value snapshot for every strategy."""
-    logger.info("Running daily strategy value snapshot …")
+    logger.info("Running strategy value snapshot (source=%s) …", source)
     today = date.today()
 
     strategies = TradingStrategy.query.all()

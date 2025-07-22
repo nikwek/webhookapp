@@ -22,9 +22,7 @@ def initialize_exchange_adapters():
     # config entry ``CCXT_EXCHANGES``.
     DEFAULT_CCXT_EXCHANGES = [
         "kraken",
-        "gemini",
         "cryptocom",
-
         "coinbase-ccxt",
     ]
 

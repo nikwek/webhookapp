@@ -336,11 +336,12 @@ def list_scheduler_jobs():
 
 
 @debug.route("/debug/update-strategy-values")
+@roles_required("admin")
 def update_strategy_values():
     """Manually trigger an update of all strategy values."""
     try:
         from app.services.strategy_value_service import snapshot_all_strategies
-        snapshot_all_strategies()
+        snapshot_all_strategies(source="manual_debug_endpoint")
         return jsonify({
             "success": True,
             "message": "Strategy values updated successfully"

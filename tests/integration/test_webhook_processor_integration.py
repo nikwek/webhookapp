@@ -1,13 +1,13 @@
 import pytest
 from app.models.automation import Automation
 from app.models.webhook import WebhookLog
-from app.services.webhook_processor import WebhookProcessor
+from app.services.webhook_processor import EnhancedWebhookProcessor
 from app import db
 
 @pytest.fixture
 def webhook_processor(app):
     with app.app_context():
-        return WebhookProcessor()
+        return EnhancedWebhookProcessor()
 
 @pytest.fixture
 def test_automation(regular_user):

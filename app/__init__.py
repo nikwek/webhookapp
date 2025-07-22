@@ -20,6 +20,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
 from sqlalchemy import inspect, text
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
 from config import get_config
 from app.forms.custom_login_form import CustomLoginForm
@@ -79,8 +80,27 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
     cache.init_app(app)
 
     # Scheduler
+    # APScheduler – enable admin API for easier debugging and set sane defaults
     app.config.setdefault("SCHEDULER_API_ENABLED", False)
+    app.config.setdefault("SCHEDULER_JOB_DEFAULTS", {"misfire_grace_time": 86_400,  # 24 h tolerance
+                                                   "coalesce": True,
+                                                   "max_instances": 1})
+
     scheduler.init_app(app)
+
+    # ---------------------------------------------------------------------
+    # Log job outcomes so that failures never go unnoticed
+    # ---------------------------------------------------------------------
+
+    def _log_scheduler_event(job_event):  # noqa: ANN001
+        """Write a concise log line for every APScheduler job completion/error."""
+        if getattr(job_event, "exception", False):
+            app.logger.error("Scheduler job %s failed: %s", job_event.job_id, job_event.exception, exc_info=True)
+        else:
+            app.logger.info("Scheduler job %s executed successfully.", job_event.job_id)
+
+    scheduler.add_listener(_log_scheduler_event, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
+
     scheduler.start()
 
     # Register daily snapshot job (00:05 UTC)
@@ -93,7 +113,8 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
             trigger="cron",
             hour=0,
             minute=5,
-            misfire_grace_time=3600,
+            misfire_grace_time=86_400,  # retry for up to 24 h
+            kwargs={"source": "scheduler"},
         )
         app.logger.info("Scheduled daily_strategy_snapshot job via APScheduler.")
     except Exception as err:  # pragma: no cover
@@ -116,6 +137,23 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
 
         # Sanity query so we fail fast if DB unreachable
         db.session.execute(text("SELECT 1"))
+
+        # -----------------------------------------------------------------
+        # Ensure we never miss a daily snapshot – if the last snapshot in the
+        # DB is older than today, trigger one immediately on startup.
+        # -----------------------------------------------------------------
+        try:
+            from datetime import date
+            from sqlalchemy import func
+            from app.services.strategy_value_service import snapshot_all_strategies
+            from app.models.trading import StrategyValueHistory
+
+            last = db.session.query(func.max(StrategyValueHistory.timestamp)).scalar()
+            if not last or last.date() < date.today():
+                app.logger.info("No strategy snapshot for today – running catch-up …")
+                snapshot_all_strategies(source="startup_catchup")
+        except Exception as _err:  # pragma: no cover
+            app.logger.error("Failed catch-up snapshot: %s", _err, exc_info=True)
 
         # Flask-Security
         user_datastore = SQLAlchemyUserDatastore(db, User, Role)

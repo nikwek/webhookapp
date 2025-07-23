@@ -5,7 +5,30 @@ set -e # Exit immediately if a command fails
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 echo "Deploying branch: $BRANCH"
 
-# Step 1: Push current branch to remote
+# Step 1: Run test suite before deployment
+echo "Running test suite before deployment..."
+echo "=========================================="
+
+# Activate virtual environment if it exists
+if [ -d "venv" ]; then
+    echo "Activating virtual environment..."
+    source venv/bin/activate
+else
+    echo "No virtual environment found, using system Python"
+fi
+
+# Run the full test suite
+echo "Executing test suite..."
+python -m pytest tests/ -v --tb=short || {
+    echo "❌ TEST SUITE FAILED - DEPLOYMENT ABORTED"
+    echo "Please fix failing tests before deploying to production."
+    exit 1
+}
+
+echo "✅ All tests passed! Proceeding with deployment..."
+echo "=========================================="
+
+# Step 2: Push current branch to remote
 echo "Pushing to GitHub..."
 git push origin $BRANCH
 

@@ -30,11 +30,11 @@ def _fixture_kraken_adapter(monkeypatch):  # noqa: D401
         AdapterCls = ExchangeRegistry.get_adapter("kraken")
         assert AdapterCls is not None, "Kraken adapter not registered"
 
-        # Patch _get_client to avoid real ccxt usage
+        # Patch get_client to avoid real ccxt usage
         monkeypatch.setattr(
             AdapterCls,
-            "_get_client",
-            staticmethod(lambda *_a, **_k: _FakeKrakenClient()),
+            "get_client",
+            classmethod(lambda *_a, **_k: _FakeKrakenClient()),
         )
         return AdapterCls
 

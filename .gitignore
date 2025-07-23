@@ -13,6 +13,7 @@ env/
 # Flask
 instance/
 .webassets-cache
+flask_session/
 
 # Database
 *.db
@@ -30,3 +31,6 @@ instance/
 ehthumbs.db
 Thumbs.db
 
+# Build artifacts
+.coverage
+.coverage.*

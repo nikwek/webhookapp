@@ -6,7 +6,7 @@ def test_admin_access(admin_client, app):
     """Test admin route access with admin_client fixture"""
     admin_routes = [
         '/admin/users',
-        '/admin/automations',
+        '/admin/strategies',
         '/admin/settings'
     ]
     
@@ -31,7 +31,7 @@ def test_regular_user_cannot_access_admin(auth_client):
     """Test regular user cannot access admin routes"""
     admin_routes = [
         '/admin/users',
-        '/admin/automations',
+        '/admin/strategies',
         '/admin/settings'
     ]
     for route in admin_routes:

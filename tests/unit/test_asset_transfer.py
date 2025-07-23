@@ -40,8 +40,12 @@ def _set_encryption_key(monkeypatch):
 @pytest.fixture()
 def dummy_cred(app, regular_user):
     with app.app_context():
+        # Re-query user to ensure it's attached to current session
+        from app.models.user import User
+        user = User.query.filter_by(email="testuser@example.com").first()
+        
         cred = ExchangeCredentials(
-            user_id=regular_user.id,
+            user_id=user.id,
             exchange="dummybal",
             portfolio_name="Main",
             api_key="key",
@@ -49,23 +53,29 @@ def dummy_cred(app, regular_user):
         )
         db.session.add(cred)
         db.session.commit()
-        return cred
+        # Return the ID to avoid session issues
+        return cred.id
 
 
 @pytest.fixture()
 def dummy_strategy(app, regular_user, dummy_cred):
     with app.app_context():
+        # Re-query user to ensure it's attached to current session
+        from app.models.user import User
+        user = User.query.filter_by(email="testuser@example.com").first()
+        
         strat = TradingStrategy(
-            user_id=regular_user.id,
+            user_id=user.id,
             name="Strat",
-            exchange_credential_id=dummy_cred.id,
+            exchange_credential_id=dummy_cred,  # dummy_cred now returns ID
             trading_pair="BTC/USDT",
             base_asset_symbol="BTC",
             quote_asset_symbol="USDT",
         )
         db.session.add(strat)
         db.session.commit()
-        return strat
+        # Return the ID to avoid session issues
+        return strat.id
 
 
 @pytest.fixture()
@@ -81,27 +91,36 @@ class TestAssetTransfer:
         DummyBalanceAdapter.balances_map = {"BTC": Decimal("5")}
 
         with app.app_context():
+            # Re-query user to ensure it's attached to current session
+            from app.models.user import User
+            user = User.query.filter_by(email="testuser@example.com").first()
+            
             success, msg = allocation_service.execute_internal_asset_transfer(
-                user_id=regular_user.id,
-                source_identifier=f"main::{dummy_cred.id}::BTC",
-                destination_identifier=f"strategy::{dummy_strategy.id}",
+                user_id=user.id,
+                source_identifier=f"main::{dummy_cred}::BTC",  # dummy_cred is now ID
+                destination_identifier=f"strategy::{dummy_strategy}",  # dummy_strategy is now ID
                 asset_symbol_to_transfer="BTC",
                 amount=Decimal("2.5"),
             )
             assert success is True
-            db.session.refresh(dummy_strategy)
-            assert dummy_strategy.allocated_base_asset_quantity == Decimal("2.5")
+            # Query the strategy to check the result
+            strategy = TradingStrategy.query.get(dummy_strategy)
+            assert strategy.allocated_base_asset_quantity == Decimal("2.5")
 
     def test_cannot_over_allocate(self, app, regular_user, dummy_cred, dummy_strategy, patch_adapter):
         # Only 1 BTC balance on main account -> transfer 2 should fail
         DummyBalanceAdapter.balances_map = {"BTC": Decimal("1")}
 
         with app.app_context():
+            # Re-query user to ensure it's attached to current session
+            from app.models.user import User
+            user = User.query.filter_by(email="testuser@example.com").first()
+            
             with pytest.raises(allocation_service.AllocationError):
                 allocation_service.execute_internal_asset_transfer(
-                    user_id=regular_user.id,
-                    source_identifier=f"main::{dummy_cred.id}::BTC",
-                    destination_identifier=f"strategy::{dummy_strategy.id}",
+                    user_id=user.id,
+                    source_identifier=f"main::{dummy_cred}::BTC",  # dummy_cred is now ID
+                    destination_identifier=f"strategy::{dummy_strategy}",  # dummy_strategy is now ID
                     asset_symbol_to_transfer="BTC",
                     amount=Decimal("2"),
                 )
@@ -110,17 +129,23 @@ class TestAssetTransfer:
         DummyBalanceAdapter.balances_map = {"BTC": Decimal("10")}
 
         with app.app_context():
+            # Re-query user to ensure it's attached to current session
+            from app.models.user import User
+            user = User.query.filter_by(email="testuser@example.com").first()
+            
             # preload strategy with 3 BTC
-            dummy_strategy.allocated_base_asset_quantity = Decimal("3")
+            strategy = TradingStrategy.query.get(dummy_strategy)
+            strategy.allocated_base_asset_quantity = Decimal("3")
             db.session.commit()
             # transfer 1 back
             success, _ = allocation_service.execute_internal_asset_transfer(
-                user_id=regular_user.id,
-                source_identifier=f"strategy::{dummy_strategy.id}",
-                destination_identifier=f"main::{dummy_cred.id}::BTC",
+                user_id=user.id,
+                source_identifier=f"strategy::{dummy_strategy}",  # dummy_strategy is now ID
+                destination_identifier=f"main::{dummy_cred}::BTC",  # dummy_cred is now ID
                 asset_symbol_to_transfer="BTC",
                 amount=Decimal("1"),
             )
             assert success is True
-            db.session.refresh(dummy_strategy)
-            assert dummy_strategy.allocated_base_asset_quantity == Decimal("2")
+            # Re-query the strategy to check the result
+            strategy = TradingStrategy.query.get(dummy_strategy)
+            assert strategy.allocated_base_asset_quantity == Decimal("2")

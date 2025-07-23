@@ -1,6 +1,5 @@
 """Unit tests for Crypto.com CCXT adapter"""
 
-import types
 import pytest
 
 from app.exchanges.ccxt_cryptocom_adapter import CcxtCryptocomAdapter
@@ -36,18 +35,37 @@ def _patched_client(monkeypatch):
 
 def test_get_trading_pairs_returns_active_pairs(patched_client):  # noqa: D401
     pairs = CcxtCryptocomAdapter.get_trading_pairs(user_id=1)
-    assert pairs == ["BTC/USDT", "ETH/USDT"]
+    expected = [
+        {
+            "id": "BTC/USDT",
+            "product_id": "BTC/USDT",
+            "base_currency": None,
+            "quote_currency": None,
+            "display_name": "BTC/USDT",
+        },
+        {
+            "id": "ETH/USDT",
+            "product_id": "ETH/USDT",
+            "base_currency": None,
+            "quote_currency": None,
+            "display_name": "ETH/USDT",
+        },
+    ]
+    assert pairs == expected
 
 
 def test_ip_whitelist_error_translated(monkeypatch):
     """Simulate IP_ILLEGAL exception and ensure user-friendly message is returned."""
-
-    def _raise_ip_illegal(*_a, **_k):  # noqa: D401
+    
+    # Mock the base class method to raise IP_ILLEGAL error
+    def _mock_super_get_portfolio_value(*_a, **_k):
         raise Exception("IP_ILLEGAL – this key is bound to a different IP")
-
-    monkeypatch.setattr(CcxtCryptocomAdapter, "get_portfolio_value", classmethod(_raise_ip_illegal))
-
-    # We call through a thin wrapper that catches and rewrites errors. Use a dummy method to trigger.
+    
+    # Patch the parent class method that gets called by super()
+    from app.exchanges.ccxt_base_adapter import CcxtBaseAdapter
+    monkeypatch.setattr(CcxtBaseAdapter, "get_portfolio_value", classmethod(_mock_super_get_portfolio_value))
+    
+    # Call the Crypto.com adapter which should catch and translate the error
     result = CcxtCryptocomAdapter.get_portfolio_value(user_id=1, portfolio_id=1)
     assert result["success"] is False
     assert "IP address" in result["error"]

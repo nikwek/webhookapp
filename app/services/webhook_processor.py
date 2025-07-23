@@ -38,15 +38,7 @@ class EnhancedWebhookProcessor:
             )
             return self._process_for_strategy(strategy, payload)
 
-        automation = Automation.query.filter_by(webhook_id=identifier).first()
-        if automation:
-            logger.info(
-                f"Identifier matched to Automation ID: {automation.id} "
-                f"(via webhook_id)"
-            )
-            return self._process_for_automation(automation, payload)
-
-        logger.error(f"No Trading Strategy or Automation found for identifier: {identifier}")
+        logger.error(f"No Trading Strategy found for identifier: {identifier}")
         return {"success": False, "message": "Identifier not found"}, 404
 
     def _process_for_strategy(self, strategy: TradingStrategy, payload: Dict[str, Any]):

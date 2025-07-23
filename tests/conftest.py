@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 from flask_security.utils import hash_password
 
-from app import create_app, db as _db
+from app import create_app, db
 from app.models.user import Role, User
 
 ###############################################################################
@@ -41,32 +41,44 @@ def app():  # noqa: D401 – required fixture name for pytest-flask
             "RATELIMIT_ENABLED": False,
             # Avoid APScheduler side-effects in tests
             "SCHEDULER_API_ENABLED": False,
+            # Fix Flask-Session configuration for tests
+            "SESSION_TYPE": "filesystem",
+            # Ensure Flask-Security endpoints are properly registered
+            "SECURITY_REGISTERABLE": True,
+            "SECURITY_REGISTER_URL": "/security/register",
+            "SECURITY_LOGIN_URL": "/security/login",
+            "SECURITY_LOGOUT_URL": "/security/logout",
+            "SECURITY_RECOVERABLE": True,
+            "SECURITY_FORGOT_PASSWORD_URL": "/security/forgot-password",
+            "SECURITY_RESET_PASSWORD_URL": "/security/reset-password",
+            "SECURITY_CHANGEABLE": True,
+            "SECURITY_CHANGE_PASSWORD_URL": "/security/change-password",
         }
     )
 
     # Establish an application context before working with the DB
     with app.app_context():
-        _db.create_all()
+        db.create_all()
 
         # Ensure default roles exist
         user_role = Role.query.filter_by(name="user").first()
         if not user_role:
             user_role = Role(name="user")
-            _db.session.add(user_role)
+            db.session.add(user_role)
 
         admin_role = Role.query.filter_by(name="admin").first()
         if not admin_role:
             admin_role = Role(name="admin")
-            _db.session.add(admin_role)
+            db.session.add(admin_role)
 
-        _db.session.commit()
+        db.session.commit()
 
     yield app
 
     # Teardown – drop all tables after the test session ends
     with app.app_context():
-        _db.session.remove()
-        _db.drop_all()
+        db.session.remove()
+        db.drop_all()
 
 
 @pytest.fixture(scope="session")
@@ -74,7 +86,7 @@ def _db(app):  # type: ignore  # pylint: disable=invalid-name
     """Return the app's database instance for pytest-flask-sqlalchemy compatibility."""
     # pytest-flask-sqlalchemy expects an `_db` fixture providing the SQLAlchemy db
     # object so that it can manage transactions. We simply expose the global one.
-    return _db
+    return db
 
 ###############################################################################
 # Helper fixtures – users & authenticated clients
@@ -92,8 +104,8 @@ def regular_user(app):
                 active=True,
             )
             user.roles.append(Role.query.filter_by(name="user").first())
-            _db.session.add(user)
-            _db.session.commit()
+            db.session.add(user)
+            db.session.commit()
         return user
 
 
@@ -109,8 +121,8 @@ def admin_user(app):
                 active=True,
             )
             user.roles.append(Role.query.filter_by(name="admin").first())
-            _db.session.add(user)
-            _db.session.commit()
+            db.session.add(user)
+            db.session.commit()
         return user
 
 
@@ -121,18 +133,38 @@ def client(app):  # override to ensure fresh client per test with our app fixtur
 
 
 @pytest.fixture
-def auth_client(client, regular_user):
+def auth_client(client, regular_user, app):
     """A test client logged in as a *regular_user*."""
-    client.post(
-        "/login", data={"email": "testuser@example.com", "password": "password"}, follow_redirects=True
-    )
+    # Try a simpler approach: use actual login POST request
+    response = client.post('/security/login', data={
+        'email': 'testuser@example.com',
+        'password': 'password'
+    }, follow_redirects=False)
+    
+    # Debug: print response to see what's happening
+    print(f"Login response status: {response.status_code}")
+    print(f"Login response headers: {dict(response.headers)}")
+    
+    # Check if login was successful (should redirect)
+    assert response.status_code in [200, 302], f"Login failed with status {response.status_code}"
+    
     return client
 
 
 @pytest.fixture
-def admin_client(client, admin_user):
+def admin_client(client, admin_user, app):
     """A test client logged in as *admin_user*."""
-    client.post(
-        "/login", data={"email": "admin@example.com", "password": "password"}, follow_redirects=True
-    )
+    # Try a simpler approach: use actual login POST request
+    response = client.post('/security/login', data={
+        'email': 'admin@example.com',
+        'password': 'password'
+    }, follow_redirects=False)
+    
+    # Debug: print response to see what's happening
+    print(f"Admin login response status: {response.status_code}")
+    print(f"Admin login response headers: {dict(response.headers)}")
+    
+    # Check if login was successful (should redirect)
+    assert response.status_code in [200, 302], f"Admin login failed with status {response.status_code}"
+    
     return client

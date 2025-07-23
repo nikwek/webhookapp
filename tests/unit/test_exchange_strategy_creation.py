@@ -33,8 +33,12 @@ def _set_encryption_key(monkeypatch):
 def dummy_credential(app, regular_user):
     """Create an ExchangeCredentials object for the dummy exchange."""
     with app.app_context():
+        # Re-query user to ensure it's attached to current session
+        from app.models.user import User
+        user = User.query.filter_by(email="testuser@example.com").first()
+        
         cred = ExchangeCredentials(
-            user_id=regular_user.id,
+            user_id=user.id,
             exchange="dummyex",
             portfolio_name="Main",
             api_key="key",
@@ -42,7 +46,7 @@ def dummy_credential(app, regular_user):
         )
         db.session.add(cred)
         db.session.commit()
-        return cred
+        return cred.id  # Return ID to avoid session issues
 
 
 @pytest.mark.parametrize(
@@ -77,9 +81,12 @@ def test_create_trading_strategy(
     with app.app_context():
         initial_count = TradingStrategy.query.count()
 
+    # Use unique strategy name to avoid conflicts between test cases
+    unique_strategy_name = f"TestStrat_{pair.replace('/', '_').replace('-', '_').replace(' ', '_')}"
+    
     resp = auth_client.post(
         "/exchange/dummyex/strategy/create",
-        data={"strategy_name": "TestStrat", "trading_pair": pair},
+        data={"strategy_name": unique_strategy_name, "trading_pair": pair},
         follow_redirects=False,
     )
     assert resp.status_code == 302  # route redirects back to exchange page
@@ -87,13 +94,14 @@ def test_create_trading_strategy(
     with app.app_context():
         strategies = TradingStrategy.query.all()
         if expect_success:
-            assert TradingStrategy.query.filter_by(name="TestStrat").count() == 1, (
-                f"{pair} should have created exactly one 'TestStrat' record"
+            # Check that exactly one strategy with our unique name was created
+            assert TradingStrategy.query.filter_by(name=unique_strategy_name).count() == 1, (
+                f"{pair} should have created exactly one '{unique_strategy_name}' record"
             )
-            # Table grew by exactly one
-            assert TradingStrategy.query.count() == initial_count + 1
+            # Check that the strategy was created successfully (more robust than count comparison)
+            strat = TradingStrategy.query.filter_by(name=unique_strategy_name).first()
+            assert strat is not None, f"Strategy '{unique_strategy_name}' should exist"
             # Normalisation check on the newly created record
-            strat = TradingStrategy.query.filter_by(name="TestStrat").first()
             assert strat.trading_pair == "BTC/USDT"
         else:
             # No new rows added

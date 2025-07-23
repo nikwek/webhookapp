@@ -1,6 +1,7 @@
 # tests/unit/test_templates.py
 import pytest
 from jinja2 import Environment, FileSystemLoader
+from unittest.mock import MagicMock
 import os
 
 @pytest.fixture
@@ -18,7 +19,10 @@ def test_admin_base_template(jinja_env):
         current_user=MagicMock(is_authenticated=True, 
                              has_role=lambda x: True),
         request=MagicMock(endpoint='admin.users'),
-        url_for=lambda x: f"/mock/{x}"
+        url_for=lambda endpoint, **kwargs: f"/mock/{endpoint}",
+        csrf_token=lambda: "mock-csrf-token",
+        get_flashed_messages=lambda **kwargs: [],  # Add missing Flask function with flexible kwargs
+        config={}  # Add config if needed
     )
     
     assert '<html' in rendered

@@ -14,7 +14,7 @@ def test_admin_routes_access(admin_client, mock_render_template):
     """Test admin route access with routes isolated from templates"""
     admin_routes = [
         '/admin/users',
-        '/admin/automations',
+        '/admin/strategies',
         '/admin/settings'
     ]
     

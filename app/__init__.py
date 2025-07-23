@@ -82,9 +82,11 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
     # Scheduler
     # APScheduler – enable admin API for easier debugging and set sane defaults
     app.config.setdefault("SCHEDULER_API_ENABLED", False)
-    app.config.setdefault("SCHEDULER_JOB_DEFAULTS", {"misfire_grace_time": 86_400,  # 24 h tolerance
-                                                   "coalesce": True,
-                                                   "max_instances": 1})
+    app.config.setdefault("SCHEDULER_JOB_DEFAULTS", {
+        "misfire_grace_time": 86_400,  # 24 h tolerance
+        "coalesce": True,
+        "max_instances": 1
+    })
 
     scheduler.init_app(app)
 
@@ -104,21 +106,44 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
     scheduler.start()
 
     # Register daily snapshot job (00:05 UTC)
-    try:
-        from app.services.strategy_value_service import snapshot_all_strategies
+    # Only register jobs once to avoid conflicts in multi-worker setup
+    # Use process ID check as a simpler approach
+    import os
 
-        scheduler.add_job(
-            id="daily_strategy_snapshot",
-            func=snapshot_all_strategies,
-            trigger="cron",
-            hour=0,
-            minute=5,
-            misfire_grace_time=86_400,  # retry for up to 24 h
-            kwargs={"source": "scheduler"},
-        )
-        app.logger.info("Scheduled daily_strategy_snapshot job via APScheduler.")
-    except Exception as err:  # pragma: no cover
-        app.logger.error("Failed to schedule snapshot job: %s", err, exc_info=True)
+    # Get the current process ID and check if it's the "first" worker
+    current_pid = os.getpid()
+    app.logger.info(f"Worker PID {current_pid} attempting scheduler registration...")
+
+    # Use a simple approach: only register if no job already exists
+    existing_job = scheduler.get_job("daily_strategy_snapshot")
+    should_register_job = existing_job is None
+
+    if should_register_job:
+        app.logger.info(f"Worker PID {current_pid} will register scheduler job (no existing job found).")
+    else:
+        app.logger.info(f"Worker PID {current_pid} skipping registration (job already exists).")
+
+    if should_register_job:
+        try:
+            from app.services.strategy_value_service import snapshot_all_strategies
+
+            # Check if job already exists to avoid duplicate registration
+            existing_job = scheduler.get_job("daily_strategy_snapshot")
+            if not existing_job:
+                scheduler.add_job(
+                    id="daily_strategy_snapshot",
+                    func=snapshot_all_strategies,
+                    trigger="cron",
+                    hour=0,
+                    minute=5,
+                    misfire_grace_time=86_400,  # retry for up to 24 h
+                    kwargs={"source": "scheduler"},
+                )
+                app.logger.info("Scheduled daily_strategy_snapshot job via APScheduler.")
+            else:
+                app.logger.info("Daily snapshot job already exists, skipping registration.")
+        except Exception as err:  # pragma: no cover
+            app.logger.error(f"Worker PID {current_pid} failed to schedule snapshot job: %s", err, exc_info=True)
 
     # Rate limiter built in webhook routes
     from app.routes.webhook import limiter

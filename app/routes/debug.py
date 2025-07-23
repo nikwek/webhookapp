@@ -4,11 +4,12 @@ from flask_mail import Message
 from flask_security import RegisterForm, current_user, login_required, url_for_security, roles_required
 from sqlalchemy import text, inspect, func
 from sqlalchemy.exc import SQLAlchemyError
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from app import db, scheduler
 from app.models.user import User
 from app.models.portfolio import Portfolio
 from app.models.trading import StrategyValueHistory
+from app.models.webhook import WebhookLog
 
 debug = Blueprint('debug', __name__)
 
@@ -320,19 +321,96 @@ def try_register():
     # Redirect to the registration page
     return redirect(url_for('security.register'))
 
-@debug.route("/debug/scheduler/jobs")
+@debug.route("/debug/scheduler")
 @roles_required("admin")
-def list_scheduler_jobs():
-    """Return basic info on all APScheduler jobs."""
-    jobs = [
-        {
-            "id": j.id,
-            "next_run_time": j.next_run_time.isoformat() if j.next_run_time else None,
-            "trigger": str(j.trigger)
-        }
-        for j in scheduler.get_jobs()
-    ]
-    return jsonify(jobs)
+def scheduler_debug():
+    """Comprehensive scheduler debug information."""
+    try:
+        # Get scheduler instance
+        sched_ext = current_app.extensions.get("apscheduler")
+        if sched_ext:
+            sched = sched_ext.scheduler
+            scheduler_active = sched.running
+        else:
+            sched = scheduler
+            scheduler_active = sched.running if hasattr(sched, 'running') else None
+        
+        # Get all jobs
+        all_jobs = [
+            {
+                "id": j.id,
+                "next_run_time": j.next_run_time.isoformat() if j.next_run_time else None,
+                "trigger": str(j.trigger),
+                "func_name": j.func.__name__ if hasattr(j.func, '__name__') else str(j.func)
+            }
+            for j in sched.get_jobs()
+        ]
+        
+        # Get specific daily snapshot job info
+        snapshot_job = sched.get_job("daily_strategy_snapshot")
+        
+        # Get last snapshot timestamp and check for source info in logs
+        last_snapshot = (
+            db.session.query(func.max(StrategyValueHistory.timestamp)).scalar()
+        )
+        
+        # Try to determine what triggered the last snapshot by checking recent logs
+        # This is a best-effort attempt - we can't always determine the exact trigger
+        last_trigger_source = "unknown"
+        if last_snapshot:
+            # Check if there was a manual trigger around the same time
+            # (This is approximate since we don't store trigger source with snapshots)
+            time_window = timedelta(minutes=5)
+            recent_manual_logs = db.session.query(WebhookLog).filter(
+                WebhookLog.timestamp >= last_snapshot - time_window,
+                WebhookLog.timestamp <= last_snapshot + time_window,
+                WebhookLog.message.like('%manual%')
+            ).first()
+            
+            if recent_manual_logs:
+                last_trigger_source = "likely_manual"
+            elif snapshot_job and snapshot_job.next_run_time:
+                # Check if last snapshot was close to a scheduled time
+                # Convert both to UTC for comparison to avoid timezone issues
+                try:
+                    # Ensure last_snapshot is timezone-aware (assume UTC if naive)
+                    if last_snapshot.tzinfo is None:
+                        last_snapshot_utc = last_snapshot.replace(tzinfo=timezone.utc)
+                    else:
+                        last_snapshot_utc = last_snapshot.astimezone(timezone.utc)
+                    
+                    # Convert next_run_time to UTC and calculate expected previous run
+                    next_run_utc = snapshot_job.next_run_time.astimezone(timezone.utc)
+                    expected_time = next_run_utc.replace(
+                        year=last_snapshot_utc.year,
+                        month=last_snapshot_utc.month, 
+                        day=last_snapshot_utc.day
+                    ) - timedelta(days=1)  # Previous day's scheduled time
+                    
+                    if abs((last_snapshot_utc - expected_time).total_seconds()) < 3600:  # Within 1 hour
+                        last_trigger_source = "likely_scheduler"
+                except Exception:
+                    # If timezone conversion fails, just leave as unknown
+                    pass
+        
+        return jsonify({
+            "scheduler_active": scheduler_active,
+            "total_jobs": len(all_jobs),
+            "all_jobs": all_jobs,
+            "daily_snapshot_job": {
+                "id": snapshot_job.id if snapshot_job else "daily_strategy_snapshot",
+                "next_run_time": snapshot_job.next_run_time.isoformat() if snapshot_job and snapshot_job.next_run_time else None,
+                "trigger": str(snapshot_job.trigger) if snapshot_job else "not_found",
+                "last_snapshot": last_snapshot.isoformat() if last_snapshot else None,
+                "last_trigger_source": last_trigger_source
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Failed to get scheduler info: {str(e)}",
+            "scheduler_active": None
+        }), 500
 
 
 @debug.route("/debug/update-strategy-values")
@@ -351,28 +429,6 @@ def update_strategy_values():
             "success": False,
             "message": f"Error updating strategy values: {str(e)}"
         }), 500
-
-@debug.route("/scheduler/info")
-def scheduler_info():
-    sched_ext = current_app.extensions.get("apscheduler")
-    # Fallback to global scheduler instance if extension missing (e.g. dev server reload).
-    if sched_ext:
-        sched = sched_ext.scheduler
-    else:
-        sched = scheduler
-    job = sched.get_job("daily_strategy_snapshot")
-
-    last_snapshot = (
-        db.session.query(func.max(StrategyValueHistory.timestamp)).scalar()
-    )
-
-    return jsonify(
-        {
-            "id": job.id if job else "daily_strategy_snapshot",
-            "next_run_time": job.next_run_time.isoformat() if job and job.next_run_time else None,
-            "last_snapshot": last_snapshot.isoformat() if last_snapshot else None,
-        }
-    )
 
 @debug.route("/twrr/debug/<int:strategy_id>")
 @roles_required("admin")

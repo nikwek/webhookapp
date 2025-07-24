@@ -1,4 +1,5 @@
 # app/routes/debug.py
+import json
 from flask import Blueprint, current_app, jsonify, abort, flash, redirect, url_for
 from flask_mail import Message
 from flask_security import RegisterForm, current_user, login_required, url_for_security, roles_required
@@ -393,7 +394,7 @@ def scheduler_debug():
                     # If timezone conversion fails, just leave as unknown
                     pass
         
-        return jsonify({
+        response_data = {
             "scheduler_active": scheduler_active,
             "total_jobs": len(all_jobs),
             "all_jobs": all_jobs,
@@ -404,13 +405,26 @@ def scheduler_debug():
                 "last_snapshot": last_snapshot.isoformat() if last_snapshot else None,
                 "last_trigger_source": last_trigger_source
             }
-        })
+        }
+        
+        # Return pretty-printed JSON for better readability
+        response = current_app.response_class(
+            json.dumps(response_data, indent=2, ensure_ascii=False),
+            mimetype='application/json'
+        )
+        return response
         
     except Exception as e:
-        return jsonify({
+        error_data = {
             "error": f"Failed to get scheduler info: {str(e)}",
             "scheduler_active": None
-        }), 500
+        }
+        
+        response = current_app.response_class(
+            json.dumps(error_data, indent=2, ensure_ascii=False),
+            mimetype='application/json'
+        )
+        return response, 500
 
 
 @debug.route("/debug/update-strategy-values")

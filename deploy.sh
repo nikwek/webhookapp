@@ -43,14 +43,15 @@ ssh nik@raspberrypi.local "export BRANCH='$BRANCH'; bash -s" <<'EOF'
  cp /home/nik/webhookapp/instance/webhook.db /home/nik/webhookapp/backups/webhook_$(date +'%Y%m%d%H%M%S').db
  
  cd /home/nik/webhookapp &&
+ source venv/bin/activate &&
  git fetch origin &&
  (git checkout "$BRANCH" || git checkout -b "$BRANCH" "origin/$BRANCH") &&
+ git config pull.rebase false &&
  git pull origin "$BRANCH" &&
- source venv/bin/activate &&
  
- # Install requirements
+ # Install requirements (using virtual environment pip)
  echo 'Installing dependencies...'
- pip install -r requirements.txt &&
+ ./venv/bin/pip install -r requirements.txt &&
  
  # Check for missing dependencies 
  # Skipping import check for now

@@ -134,10 +134,10 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
                     id="daily_strategy_snapshot",
                     func=snapshot_all_strategies,
                     trigger="cron",
-                    hour=0,
-                    minute=5,
+                    hour=18,
+                    minute=2,
                     misfire_grace_time=86_400,  # retry for up to 24 h
-                    kwargs={"source": "scheduler"},
+                    kwargs={"source": "scheduler_test"},
                 )
                 app.logger.info("Scheduled daily_strategy_snapshot job via APScheduler.")
             else:

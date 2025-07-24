@@ -208,8 +208,11 @@ class CcxtBaseAdapter(ExchangeAdapter):
 
                 if value > 0:
                     total_value += value
+                    # Convert amount to Decimal with proper quantization to match database precision (18 decimal places)
+                    from decimal import Decimal
+                    amount_decimal = Decimal(str(amount)).quantize(Decimal('0.000000000000000001'))
                     detailed_balances.append(
-                        {"asset": asset_upper, "total": amount, "usd_value": value}
+                        {"asset": asset_upper, "total": amount_decimal, "usd_value": value}
                     )
 
             return {

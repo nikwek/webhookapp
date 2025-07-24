@@ -184,7 +184,7 @@ def view_exchange(exchange_id: str):
             asset_symbol = asset_balance_item.get('asset')
             if not asset_symbol: # Should not happen with valid exchange data
                 asset_balance_item['total_allocated'] = 0.0
-                asset_balance_item['unallocated'] = float(asset_balance_item.get('total', 0.0))
+                asset_balance_item['unallocated'] = asset_balance_item.get('total', 0.0)
                 logger.warning(f"Asset item found without an 'asset' symbol in balances for {exchange_id}. Data: {asset_balance_item}")
                 continue
 
@@ -199,7 +199,7 @@ def view_exchange(exchange_id: str):
             unallocated_amount = total_on_exchange - allocated_for_this_asset
             
             asset_balance_item['total_allocated'] = float(allocated_for_this_asset)
-            asset_balance_item['unallocated'] = float(max(Decimal('0.0'), unallocated_amount)) # Ensure unallocated is not negative
+            asset_balance_item['unallocated'] = max(Decimal('0.0'), unallocated_amount) # Ensure unallocated is not negative
     elif current_exchange_data.get('balances') is None:
         current_exchange_data['balances'] = [] # Ensure it's an iterable for the template if it was None
 
@@ -382,8 +382,9 @@ def transfer_assets(exchange_id: str):
     destination_account_id_str = request.form.get('destination_account_id')
     asset_symbol_from_form = request.form.get('asset_symbol')
     amount_str = request.form.get('amount')
+    is_max_transfer = request.form.get('is_max_transfer', 'false').lower() == 'true'
 
-    logger.info(f"Transfer attempt by user {user_id} on exchange {exchange_id}: Source: {source_account_id_str}, Dest: {destination_account_id_str}, Asset: {asset_symbol_from_form}, Amount: {amount_str}")
+    logger.info(f"Transfer attempt by user {user_id} on exchange {exchange_id}: Source: {source_account_id_str}, Dest: {destination_account_id_str}, Asset: {asset_symbol_from_form}, Amount: {amount_str}, Max: {is_max_transfer}")
 
     if not all([source_account_id_str, destination_account_id_str, asset_symbol_from_form, amount_str]):
         flash('Missing required fields for transfer.', 'danger')
@@ -391,6 +392,11 @@ def transfer_assets(exchange_id: str):
 
     try:
         amount = Decimal(amount_str)
+        
+        # DEBUG: Log the amount conversion
+        logger.debug(f"AMOUNT DEBUG - Original string: {amount_str!r}")
+        logger.debug(f"AMOUNT DEBUG - Converted Decimal: {amount!r} (type: {type(amount)})")
+        
         if amount <= Decimal('0'): # Amount must be positive
             # Using Decimal('0') for comparison with a Decimal type
             raise ValueError("Transfer amount must be positive.")
@@ -407,7 +413,8 @@ def transfer_assets(exchange_id: str):
             source_identifier=source_account_id_str,
             destination_identifier=destination_account_id_str,
             asset_symbol_to_transfer=asset_symbol_from_form,
-            amount=amount
+            amount=amount,
+            is_max_transfer=is_max_transfer
         )
         if success:
 

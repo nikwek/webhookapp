@@ -137,7 +137,7 @@
                                         data-transfer-type="main_to_strategy"
                                         data-asset-symbol="{{ asset_balance.asset }}"
                                         data-asset-name="{{ asset_balance.asset }}"
-                                        data-max-transferable="{{ asset_balance.get('unallocated', 0)|float }}"
+                                        data-max-transferable="{{ asset_balance.get('unallocated', 0) }}"
                                         data-credential-id="{{ current_exchange_data.current_credential_id }}">
                                     Transfer
                                 </button>
@@ -310,6 +310,7 @@
                     <form id="assetTransferForm" method="POST">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                         <input type="hidden" id="transferAssetSymbolHidden" name="asset_symbol">
+                        <input type="hidden" id="isMaxTransfer" name="is_max_transfer" value="false">
                         <div class="mb-3">
                             <label for="transferAssetSelect" class="form-label">Asset</label>
                             <select class="form-select" id="transferAssetSelect" required>

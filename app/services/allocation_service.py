@@ -75,7 +75,13 @@ def get_unallocated_balance(user_id: int, credential_id: int, asset_symbol: str)
         if portfolio_data.get('success', False):
             for balance_item in portfolio_data.get('balances', []):
                 if balance_item.get('asset') == asset_symbol:
-                    live_total_balance_for_asset = Decimal(str(balance_item.get('total', '0')))
+                    # The exchange adapter now returns exact Decimal values, so we can use them directly
+                    total_value = balance_item.get('total', Decimal('0'))
+                    if isinstance(total_value, Decimal):
+                        live_total_balance_for_asset = total_value
+                    else:
+                        # Fallback for any adapters that still return floats/strings
+                        live_total_balance_for_asset = Decimal(str(total_value))
                     break
         else:
             error_msg = portfolio_data.get('error', 'Failed to retrieve portfolio data from exchange.')
@@ -86,10 +92,16 @@ def get_unallocated_balance(user_id: int, credential_id: int, asset_symbol: str)
         raise AllocationError(f"Error communicating with {credential.exchange} to verify balance: {str(e)}")
 
     unallocated = live_total_balance_for_asset - total_allocated_for_asset
+    
+    # DEBUG: Log the calculation components
+    logger.debug(f"BALANCE DEBUG - Live total: {live_total_balance_for_asset!r} (type: {type(live_total_balance_for_asset)})")
+    logger.debug(f"BALANCE DEBUG - Total allocated: {total_allocated_for_asset!r} (type: {type(total_allocated_for_asset)})")
+    logger.debug(f"BALANCE DEBUG - Unallocated: {unallocated!r} (type: {type(unallocated)})")
+    
     return max(Decimal('0'), unallocated) # Ensure it's not negative due to sync issues or errors
 
 
-def execute_internal_asset_transfer(user_id: int, source_identifier: str, destination_identifier: str, asset_symbol_to_transfer: str, amount: Decimal):
+def execute_internal_asset_transfer(user_id: int, source_identifier: str, destination_identifier: str, asset_symbol_to_transfer: str, amount: Decimal, is_max_transfer: bool = False):
     """
     Executes an internal transfer of assets between a user's main account and their trading strategies,
     or between two trading strategies.
@@ -175,7 +187,21 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 raise AllocationError(f"Asset {asset_symbol_to_transfer} is not part of strategy {strategy.name}'s trading pair ({strategy.trading_pair}).")
 
             unallocated_balance = get_unallocated_balance(user_id, source_credential_id, asset_symbol_to_transfer)
-            if amount > unallocated_balance:
+            
+            # Quantize both values to 18 decimal places for exact comparison
+            precision = Decimal('0.000000000000000001')  # 18 decimal places
+            amount_quantized = amount.quantize(precision)
+            balance_quantized = unallocated_balance.quantize(precision)
+            
+            logger.debug(f"PRECISION DEBUG - Amount: {amount!r} -> {amount_quantized!r}")
+            logger.debug(f"PRECISION DEBUG - Unallocated: {unallocated_balance!r} -> {balance_quantized!r}")
+            
+            # Check if this is an explicit "Max" transfer (user clicked Max button)
+            if is_max_transfer:
+                logger.debug(f"EXPLICIT MAX TRANSFER - Using exact unallocated balance: {unallocated_balance!r}")
+                amount = unallocated_balance  # Use exact balance for max transfers
+            elif amount_quantized > balance_quantized:
+                logger.debug(f"PRECISION DEBUG - Comparison result: {amount_quantized} > {balance_quantized} = True")
                 raise AllocationError(
                     f"Cannot transfer {amount} {asset_symbol_to_transfer}. "
                     f"Unallocated balance is {unallocated_balance:.8f} {asset_symbol_to_transfer} on the specified main account."
@@ -231,13 +257,25 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
 
             if asset_symbol_to_transfer == strategy.base_asset_symbol:
                 current_base_allocated = strategy.allocated_base_asset_quantity if strategy.allocated_base_asset_quantity is not None else Decimal('0.0')
-                if amount > current_base_allocated:
+                
+                # Handle explicit max transfers for strategy-to-main
+                if is_max_transfer:
+                    logger.debug(f"EXPLICIT MAX TRANSFER (Strategy->Main) - Using exact allocated amount: {current_base_allocated!r}")
+                    amount = current_base_allocated  # Use exact allocated amount for max transfers
+                elif amount > current_base_allocated:
                     raise AllocationError(f"Cannot transfer {amount} {asset_symbol_to_transfer}. Strategy {strategy.name} only has {current_base_allocated:.8f} {asset_symbol_to_transfer} allocated.")
+                
                 strategy.allocated_base_asset_quantity = current_base_allocated - amount
             elif asset_symbol_to_transfer == strategy.quote_asset_symbol:
                 current_quote_allocated = strategy.allocated_quote_asset_quantity if strategy.allocated_quote_asset_quantity is not None else Decimal('0.0')
-                if amount > current_quote_allocated:
+                
+                # Handle explicit max transfers for strategy-to-main
+                if is_max_transfer:
+                    logger.debug(f"EXPLICIT MAX TRANSFER (Strategy->Main) - Using exact allocated amount: {current_quote_allocated!r}")
+                    amount = current_quote_allocated  # Use exact allocated amount for max transfers
+                elif amount > current_quote_allocated:
                     raise AllocationError(f"Cannot transfer {amount} {asset_symbol_to_transfer}. Strategy {strategy.name} only has {current_quote_allocated:.8f} {asset_symbol_to_transfer} allocated.")
+                
                 strategy.allocated_quote_asset_quantity = current_quote_allocated - amount
             else:
                 raise AllocationError(f"Asset {asset_symbol_to_transfer} is not part of strategy {strategy.name}'s trading pair ({strategy.trading_pair}).")
@@ -296,13 +334,25 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
             # Decrease from source strategy
             if asset_symbol_to_transfer == source_strategy.base_asset_symbol:
                 current_source_base_allocated = source_strategy.allocated_base_asset_quantity if source_strategy.allocated_base_asset_quantity is not None else Decimal('0.0')
-                if amount > current_source_base_allocated:
+                
+                # Handle explicit max transfers for strategy-to-strategy
+                if is_max_transfer:
+                    logger.debug(f"EXPLICIT MAX TRANSFER (Strategy->Strategy) - Using exact allocated amount: {current_source_base_allocated!r}")
+                    amount = current_source_base_allocated  # Use exact allocated amount for max transfers
+                elif amount > current_source_base_allocated:
                     raise AllocationError(f"Cannot transfer {amount} {asset_symbol_to_transfer}. Source strategy {source_strategy.name} only has {current_source_base_allocated:.8f} {asset_symbol_to_transfer} allocated.")
+                
                 source_strategy.allocated_base_asset_quantity = current_source_base_allocated - amount
             elif asset_symbol_to_transfer == source_strategy.quote_asset_symbol: # Must be quote if not base, due to earlier validation
                 current_source_quote_allocated = source_strategy.allocated_quote_asset_quantity if source_strategy.allocated_quote_asset_quantity is not None else Decimal('0.0')
-                if amount > current_source_quote_allocated:
+                
+                # Handle explicit max transfers for strategy-to-strategy
+                if is_max_transfer:
+                    logger.debug(f"EXPLICIT MAX TRANSFER (Strategy->Strategy) - Using exact allocated amount: {current_source_quote_allocated!r}")
+                    amount = current_source_quote_allocated  # Use exact allocated amount for max transfers
+                elif amount > current_source_quote_allocated:
                     raise AllocationError(f"Cannot transfer {amount} {asset_symbol_to_transfer}. Source strategy {source_strategy.name} only has {current_source_quote_allocated:.8f} {asset_symbol_to_transfer} allocated.")
+                
                 source_strategy.allocated_quote_asset_quantity = current_source_quote_allocated - amount
             
             # Increase for destination strategy

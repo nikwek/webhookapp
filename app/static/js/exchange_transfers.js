@@ -139,6 +139,13 @@ document.addEventListener('DOMContentLoaded', function () {
     // Handle max button click
     maxButton.addEventListener('click', function() {
         amountInput.value = availableToTransferSpan.textContent;
+        // Set flag to indicate this is a max transfer
+        document.getElementById('isMaxTransfer').value = 'true';
+    });
+    
+    // Reset max transfer flag when amount is manually changed
+    amountInput.addEventListener('input', function() {
+        document.getElementById('isMaxTransfer').value = 'false';
     });
     
     // Add form validation

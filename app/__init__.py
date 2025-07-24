@@ -127,17 +127,21 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
         try:
             from app.services.strategy_value_service import snapshot_all_strategies
 
+            # Create a wrapper function that provides Flask application context
+            def scheduled_snapshot_with_context():
+                with app.app_context():
+                    snapshot_all_strategies(source="scheduler_test")
+
             # Check if job already exists to avoid duplicate registration
             existing_job = scheduler.get_job("daily_strategy_snapshot")
             if not existing_job:
                 scheduler.add_job(
                     id="daily_strategy_snapshot",
-                    func=snapshot_all_strategies,
+                    func=scheduled_snapshot_with_context,
                     trigger="cron",
                     hour=18,
-                    minute=2,
+                    minute=30,
                     misfire_grace_time=86_400,  # retry for up to 24 h
-                    kwargs={"source": "scheduler_test"},
                 )
                 app.logger.info("Scheduled daily_strategy_snapshot job via APScheduler.")
             else:
@@ -170,13 +174,14 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
         try:
             from datetime import date
             from sqlalchemy import func
-            from app.services.strategy_value_service import snapshot_all_strategies
             from app.models.trading import StrategyValueHistory
 
             last = db.session.query(func.max(StrategyValueHistory.timestamp)).scalar()
             if not last or last.date() < date.today():
                 app.logger.info("No strategy snapshot for today – running catch-up …")
-                snapshot_all_strategies(source="startup_catchup")
+                # Use the imported function from the scheduler section above
+                with app.app_context():
+                    snapshot_all_strategies(source="startup_catchup")
         except Exception as _err:  # pragma: no cover
             app.logger.error("Failed catch-up snapshot: %s", _err, exc_info=True)
 

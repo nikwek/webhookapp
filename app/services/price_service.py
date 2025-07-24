@@ -131,3 +131,98 @@ class PriceService:
         except Exception as exc:  # noqa: BLE001
             logger.error("Error fetching price for %s: %s", symbol, exc, exc_info=True)
             raise
+
+    @classmethod
+    def get_prices_usd_batch(cls, symbols: list[str], *, force_refresh: bool = False) -> dict[str, float]:
+        """Return USD prices for multiple symbols in a single API call.
+        
+        This is much more efficient than calling get_price_usd() multiple times
+        as it batches all requests into a single CoinGecko API call.
+        
+        Args:
+            symbols: List of asset symbols (e.g. ["BTC", "ETH", "SOL"])
+            force_refresh: Bypass cache and fetch fresh prices
+            
+        Returns:
+            Dict mapping symbol -> USD price (e.g. {"BTC": 67000.0, "ETH": 3500.0})
+        """
+        if not symbols:
+            return {}
+            
+        # Normalize symbols to uppercase
+        symbols = [s.upper() for s in symbols]
+        now = datetime.utcnow()
+        prices = {}
+        symbols_to_fetch = []
+        
+        # Handle stablecoins and check cache
+        for symbol in symbols:
+            if symbol in cls._USD_STABLECOINS:
+                logger.debug(f"Using fixed $1.00 price for stablecoin {symbol}")
+                prices[symbol] = 1.00
+                continue
+                
+            # Check cache if not forcing refresh
+            cached = cls._price_cache.get(symbol)
+            if not force_refresh and cached and now - cached["ts"] < cls._TTL:
+                if cached["price"] > 1e-4 or symbol in cls._USD_STABLECOINS:
+                    prices[symbol] = cached["price"]  # type: ignore[assignment]
+                    continue
+                # Drop suspicious cached value
+                cls._price_cache.pop(symbol, None)
+                
+            symbols_to_fetch.append(symbol)
+        
+        # If all symbols were cached or stablecoins, return early
+        if not symbols_to_fetch:
+            return prices
+            
+        # Resolve coin IDs for symbols that need fetching
+        coin_ids = []
+        symbol_to_coin_id = {}
+        for symbol in symbols_to_fetch:
+            coin_id = cls._resolve_id(symbol)
+            if coin_id:
+                coin_ids.append(coin_id)
+                symbol_to_coin_id[coin_id] = symbol
+            else:
+                logger.warning(f"PriceService: Unknown symbol '{symbol}', skipping")
+        
+        if not coin_ids:
+            return prices
+            
+        # Make single batched API call
+        params = {
+            "ids": ",".join(coin_ids),
+            "vs_currencies": "usd",
+            "include_last_updated_at": "true"
+        }
+        
+        try:
+            logger.debug(f"Fetching batch prices for {len(coin_ids)} assets: {coin_ids}")
+            r = requests.get(f"{_API_BASE}/simple/price", params=params, timeout=15)
+            r.raise_for_status()
+            response_data = r.json()
+            
+            # Parse response and update cache
+            for coin_id, data in response_data.items():
+                if "usd" in data:
+                    symbol = symbol_to_coin_id[coin_id]
+                    price = float(data["usd"])
+                    prices[symbol] = price
+                    cls._price_cache[symbol] = {"price": price, "ts": now}
+                    logger.debug(f"Fetched price for {symbol}: ${price}")
+                    
+            return prices
+            
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error fetching batch prices for %s: %s", coin_ids, exc, exc_info=True)
+            # Fall back to individual calls for any symbols we couldn't fetch
+            for symbol in symbols_to_fetch:
+                if symbol not in prices:
+                    try:
+                        prices[symbol] = cls.get_price_usd(symbol, force_refresh=force_refresh)
+                    except Exception:
+                        logger.warning(f"Failed to fetch fallback price for {symbol}")
+                        # Don't add to prices dict - let caller handle missing prices
+            return prices

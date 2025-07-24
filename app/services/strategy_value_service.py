@@ -160,26 +160,23 @@ def snapshot_all_strategies(*, source: str = "unspecified") -> None:
             logger.error("Failed to calculate value for strategy %s: %s", strat.id, exc, exc_info=True)
             continue
 
-        existing = (
-            StrategyValueHistory.query
-            .filter(StrategyValueHistory.strategy_id == strat.id)
-            .filter(func.date(StrategyValueHistory.timestamp) == today)
-            .first()
-        )
-        if existing:
-            existing.value_usd = current_val
-            existing.base_asset_quantity_snapshot = strat.allocated_base_asset_quantity
-            existing.quote_asset_quantity_snapshot = strat.allocated_quote_asset_quantity
-        else:
-            db.session.add(
-                StrategyValueHistory(
-                    strategy_id=strat.id,
-                    timestamp=datetime.utcnow(),
-                    value_usd=current_val,
-                    base_asset_quantity_snapshot=strat.allocated_base_asset_quantity,
-                    quote_asset_quantity_snapshot=strat.allocated_quote_asset_quantity,
-                )
+        # Delete all existing records for this strategy on this date to ensure clean state
+        # This handles the case where multiple concurrent workers created duplicate records
+        StrategyValueHistory.query.filter(
+            StrategyValueHistory.strategy_id == strat.id,
+            func.date(StrategyValueHistory.timestamp) == today
+        ).delete()
+        
+        # Create a fresh record with the current calculated value
+        db.session.add(
+            StrategyValueHistory(
+                strategy_id=strat.id,
+                timestamp=datetime.utcnow(),
+                value_usd=current_val,
+                base_asset_quantity_snapshot=strat.allocated_base_asset_quantity,
+                quote_asset_quantity_snapshot=strat.allocated_quote_asset_quantity,
             )
+        )
     try:
         db.session.commit()
     except Exception as exc:  # noqa: BLE001

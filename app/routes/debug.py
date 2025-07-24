@@ -1,5 +1,6 @@
 # app/routes/debug.py
 import json
+import logging
 from flask import Blueprint, current_app, jsonify, abort, flash, redirect, url_for
 from flask_mail import Message
 from flask_security import RegisterForm, current_user, login_required, url_for_security, roles_required
@@ -11,6 +12,8 @@ from app.models.user import User
 from app.models.portfolio import Portfolio
 from app.models.trading import StrategyValueHistory
 from app.models.webhook import WebhookLog
+
+logger = logging.getLogger(__name__)
 
 debug = Blueprint('debug', __name__)
 
@@ -394,14 +397,64 @@ def scheduler_debug():
 @roles_required("admin")
 def update_strategy_values():
     """Manually trigger an update of all strategy values."""
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
+    
+    # Use database-based mutex to prevent concurrent runs (same approach as scheduler)
+    mutex_key = "manual_strategy_values_update"
+    mutex_timeout = timedelta(minutes=5)  # Timeout after 5 minutes
+    
     try:
-        from app.services.strategy_value_service import snapshot_all_strategies
-        snapshot_all_strategies(source="manual_debug_endpoint")
-        return jsonify({
-            "success": True,
-            "message": "Strategy values updated successfully"
-        })
+        # Try to acquire mutex by inserting a record
+        current_time = datetime.utcnow()
+        
+        # Clean up old mutex records first
+        cleanup_time = current_time - mutex_timeout
+        db.session.execute(text(
+            "DELETE FROM strategy_value_history WHERE strategy_id = -1 AND timestamp < :cleanup_time"
+        ), {"cleanup_time": cleanup_time})
+        
+        # Try to acquire mutex
+        try:
+            db.session.execute(text(
+                "INSERT INTO strategy_value_history (strategy_id, timestamp, value_usd, base_asset_quantity_snapshot, quote_asset_quantity_snapshot) VALUES (-1, :timestamp, 0, 0, 0)"
+            ), {"timestamp": current_time})
+            db.session.commit()
+            
+            logger.info("Manual strategy values update started (acquired database mutex)")
+            
+            try:
+                from app.services.strategy_value_service import snapshot_all_strategies
+                snapshot_all_strategies(source="manual_debug_endpoint")
+                
+                logger.info("Manual strategy values update completed successfully")
+                return jsonify({
+                    "success": True,
+                    "message": "Strategy values updated successfully"
+                })
+                
+            finally:
+                # Always clean up the mutex record
+                db.session.execute(text(
+                    "DELETE FROM strategy_value_history WHERE strategy_id = -1 AND timestamp = :timestamp"
+                ), {"timestamp": current_time})
+                db.session.commit()
+                
+        except Exception as mutex_error:
+            db.session.rollback()
+            # Check if it's a constraint violation (another worker has the mutex)
+            if "UNIQUE constraint failed" in str(mutex_error) or "IntegrityError" in str(type(mutex_error)):
+                logger.warning("Manual strategy values update skipped - another worker is already running")
+                return jsonify({
+                    "success": False,
+                    "message": "Update already in progress by another worker. Please try again in a moment."
+                }), 409  # Conflict status code
+            else:
+                raise mutex_error
+                
     except Exception as e:
+        logger.error("Error in manual strategy values update: %s", e, exc_info=True)
+        db.session.rollback()
         return jsonify({
             "success": False,
             "message": f"Error updating strategy values: {str(e)}"

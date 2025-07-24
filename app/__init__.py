@@ -130,7 +130,7 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
             # Create a wrapper function that provides Flask application context
             def scheduled_snapshot_with_context():
                 with app.app_context():
-                    snapshot_all_strategies(source="scheduler_test")
+                    snapshot_all_strategies(source="scheduled_daily")
 
             # Check if job already exists to avoid duplicate registration
             existing_job = scheduler.get_job("daily_strategy_snapshot")
@@ -139,8 +139,8 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
                     id="daily_strategy_snapshot",
                     func=scheduled_snapshot_with_context,
                     trigger="cron",
-                    hour=18,
-                    minute=30,
+                    hour=0,
+                    minute=5,
                     misfire_grace_time=86_400,  # retry for up to 24 h
                 )
                 app.logger.info("Scheduled daily_strategy_snapshot job via APScheduler.")

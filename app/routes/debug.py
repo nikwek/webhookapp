@@ -355,44 +355,8 @@ def scheduler_debug():
             db.session.query(func.max(StrategyValueHistory.timestamp)).scalar()
         )
         
-        # Try to determine what triggered the last snapshot by checking recent logs
-        # This is a best-effort attempt - we can't always determine the exact trigger
-        last_trigger_source = "unknown"
-        if last_snapshot:
-            # Check if there was a manual trigger around the same time
-            # (This is approximate since we don't store trigger source with snapshots)
-            time_window = timedelta(minutes=5)
-            recent_manual_logs = db.session.query(WebhookLog).filter(
-                WebhookLog.timestamp >= last_snapshot - time_window,
-                WebhookLog.timestamp <= last_snapshot + time_window,
-                WebhookLog.message.like('%manual%')
-            ).first()
-            
-            if recent_manual_logs:
-                last_trigger_source = "likely_manual"
-            elif snapshot_job and snapshot_job.next_run_time:
-                # Check if last snapshot was close to a scheduled time
-                # Convert both to UTC for comparison to avoid timezone issues
-                try:
-                    # Ensure last_snapshot is timezone-aware (assume UTC if naive)
-                    if last_snapshot.tzinfo is None:
-                        last_snapshot_utc = last_snapshot.replace(tzinfo=timezone.utc)
-                    else:
-                        last_snapshot_utc = last_snapshot.astimezone(timezone.utc)
-                    
-                    # Convert next_run_time to UTC and calculate expected previous run
-                    next_run_utc = snapshot_job.next_run_time.astimezone(timezone.utc)
-                    expected_time = next_run_utc.replace(
-                        year=last_snapshot_utc.year,
-                        month=last_snapshot_utc.month, 
-                        day=last_snapshot_utc.day
-                    ) - timedelta(days=1)  # Previous day's scheduled time
-                    
-                    if abs((last_snapshot_utc - expected_time).total_seconds()) < 3600:  # Within 1 hour
-                        last_trigger_source = "likely_scheduler"
-                except Exception:
-                    # If timezone conversion fails, just leave as unknown
-                    pass
+        # Note: We log the source when snapshots run, but don't store it in the database
+        # Source information is available in application logs when needed for debugging
         
         response_data = {
             "scheduler_active": scheduler_active,
@@ -402,8 +366,7 @@ def scheduler_debug():
                 "id": snapshot_job.id if snapshot_job else "daily_strategy_snapshot",
                 "next_run_time": snapshot_job.next_run_time.isoformat() if snapshot_job and snapshot_job.next_run_time else None,
                 "trigger": str(snapshot_job.trigger) if snapshot_job else "not_found",
-                "last_snapshot": last_snapshot.isoformat() if last_snapshot else None,
-                "last_trigger_source": last_trigger_source
+                "last_snapshot": last_snapshot.isoformat() if last_snapshot else None
             }
         }
         

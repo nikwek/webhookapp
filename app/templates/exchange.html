@@ -271,6 +271,12 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <!-- Error display area -->
+                    <div id="strategyModalError" class="alert alert-danger alert-dismissible fade show d-none" role="alert">
+                        <span id="strategyModalErrorMessage"></span>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    
                     <form id="createStrategyForm" method="POST" action="{{ url_for('exchange.create_trading_strategy', exchange_id=current_exchange_id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                         

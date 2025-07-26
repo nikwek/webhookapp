@@ -120,19 +120,40 @@
                     <h4>Change Password</h4>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for_security('change_password') }}">
+                    <form method="POST" action="{{ url_for_security('change_password') }}" name="settings_change_password_form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <div class="mb-3">
-                            <label for="password" class="form-label">Current Password</label>
-                            <input type="password" class="form-control" id="password" name="password" required>
+                            <label for="settings_password" class="form-label">Current Password</label>
+                            <input type="password" class="form-control" id="settings_password" name="password" required>
                         </div>
                         <div class="mb-3">
-                            <label for="new_password" class="form-label">New Password</label>
-                            <input type="password" class="form-control" id="new_password" name="new_password" required>
+                            <label for="settings_new_password" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="settings_new_password" name="new_password" required>
+                            <div id="settings-password-strength" class="mt-2" style="display: none;">
+                                <div class="progress" style="height: 8px;">
+                                    <div id="settings-strength-bar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <small id="settings-strength-text" class="text-muted">Password strength</small>
+                            </div>
+                            <div class="mt-2">
+                                <small class="text-muted">
+                                    Password must be at least 8 characters long and contain:
+                                    <ul class="small mb-0 mt-1">
+                                        <li id="settings-length-check" class="text-muted">At least 8 characters</li>
+                                        <li id="settings-uppercase-check" class="text-muted">One uppercase letter</li>
+                                        <li id="settings-lowercase-check" class="text-muted">One lowercase letter</li>
+                                        <li id="settings-number-check" class="text-muted">One number</li>
+                                        <li id="settings-special-check" class="text-muted">One special character (!@#$%^&*)</li>
+                                    </ul>
+                                </small>
+                            </div>
                         </div>
                         <div class="mb-3">
-                            <label for="new_password_confirm" class="form-label">Confirm New Password</label>
-                            <input type="password" class="form-control" id="new_password_confirm" name="new_password_confirm" required>
+                            <label for="settings_new_password_confirm" class="form-label">Confirm New Password</label>
+                            <input type="password" class="form-control" id="settings_new_password_confirm" name="new_password_confirm" required>
+                            <div id="settings-password-match" class="mt-2" style="display: none;">
+                                <small id="settings-match-text" class="text-muted">Passwords match</small>
+                            </div>
                         </div>
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary">Update Password</button>
@@ -754,5 +775,136 @@
             }
         });
     }
+
+// Password strength validation for settings form
+$(document).ready(function() {
+    const passwordInput = $('#settings_new_password');
+    const confirmInput = $('#settings_new_password_confirm');
+    const strengthDiv = $('#settings-password-strength');
+    const strengthBar = $('#settings-strength-bar');
+    const strengthText = $('#settings-strength-text');
+    const matchDiv = $('#settings-password-match');
+    const matchText = $('#settings-match-text');
+    
+    // Password strength validation
+    passwordInput.on('input', function() {
+        const password = $(this).val();
+        
+        if (password.length === 0) {
+            strengthDiv.hide();
+            resetSettingsChecks();
+            return;
+        }
+        
+        strengthDiv.show();
+        
+        // Check individual requirements
+        const checks = {
+            length: password.length >= 8,
+            uppercase: /[A-Z]/.test(password),
+            lowercase: /[a-z]/.test(password),
+            number: /\d/.test(password),
+            special: /[!@#$%^&*(),.?":{}|<>]/.test(password)
+        };
+        
+        // Update visual indicators
+        updateSettingsCheck('settings-length-check', checks.length);
+        updateSettingsCheck('settings-uppercase-check', checks.uppercase);
+        updateSettingsCheck('settings-lowercase-check', checks.lowercase);
+        updateSettingsCheck('settings-number-check', checks.number);
+        updateSettingsCheck('settings-special-check', checks.special);
+        
+        // Calculate strength
+        const score = Object.values(checks).filter(Boolean).length;
+        const percentage = (score / 5) * 100;
+        
+        strengthBar.css('width', percentage + '%');
+        
+        if (score < 2) {
+            strengthBar.removeClass().addClass('progress-bar bg-danger');
+            strengthText.text('Weak password').removeClass().addClass('text-danger');
+        } else if (score < 4) {
+            strengthBar.removeClass().addClass('progress-bar bg-warning');
+            strengthText.text('Medium password').removeClass().addClass('text-warning');
+        } else if (score < 5) {
+            strengthBar.removeClass().addClass('progress-bar bg-info');
+            strengthText.text('Good password').removeClass().addClass('text-info');
+        } else {
+            strengthBar.removeClass().addClass('progress-bar bg-success');
+            strengthText.text('Strong password').removeClass().addClass('text-success');
+        }
+        
+        // Check password match if confirm field has content
+        if (confirmInput.val().length > 0) {
+            checkSettingsPasswordMatch();
+        }
+    });
+    
+    // Password confirmation validation
+    confirmInput.on('input', checkSettingsPasswordMatch);
+    
+    function checkSettingsPasswordMatch() {
+        const password = passwordInput.val();
+        const confirm = confirmInput.val();
+        
+        if (confirm.length === 0) {
+            matchDiv.hide();
+            return;
+        }
+        
+        matchDiv.show();
+        
+        if (password === confirm) {
+            matchText.text('Passwords match').removeClass().addClass('text-success');
+        } else {
+            matchText.text('Passwords do not match').removeClass().addClass('text-danger');
+        }
+    }
+    
+    function updateSettingsCheck(id, passed) {
+        const element = $('#' + id);
+        if (passed) {
+            element.removeClass('text-muted text-danger').addClass('text-success');
+        } else {
+            element.removeClass('text-muted text-success').addClass('text-danger');
+        }
+    }
+    
+    function resetSettingsChecks() {
+        ['settings-length-check', 'settings-uppercase-check', 'settings-lowercase-check', 'settings-number-check', 'settings-special-check'].forEach(id => {
+            $('#' + id).removeClass('text-success text-danger').addClass('text-muted');
+        });
+    }
+    
+    // Form submission validation
+    $('form[name="settings_change_password_form"]').on('submit', function(e) {
+        const password = passwordInput.val();
+        const confirm = confirmInput.val();
+        
+        // Check if password meets all requirements
+        const checks = {
+            length: password.length >= 8,
+            uppercase: /[A-Z]/.test(password),
+            lowercase: /[a-z]/.test(password),
+            number: /\d/.test(password),
+            special: /[!@#$%^&*(),.?":{}|<>]/.test(password)
+        };
+        
+        const allChecksPassed = Object.values(checks).every(Boolean);
+        
+        if (!allChecksPassed) {
+            e.preventDefault();
+            alert('Please ensure your password meets all requirements.');
+            return false;
+        }
+        
+        if (password !== confirm) {
+            e.preventDefault();
+            alert('Passwords do not match.');
+            return false;
+        }
+    });
+});
+
 </script>
 {% endblock %}

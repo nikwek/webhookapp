@@ -72,7 +72,7 @@ class Config:
     SECURITY_TOTP_ISSUER = "WebhookApp"
     SECURITY_TWO_FACTOR_ENABLED_METHODS = ["totp"]  # only Google-Auth style
     SECURITY_TWO_FACTOR_REQUIRED = False            # user may opt-in
-    SECURITY_TWO_FACTOR_RESCUE_MAIL = True          # allow e-mail rescue
+    SECURITY_TWO_FACTOR_RESCUE_EMAIL = False          # allow e-mail rescue
     SECURITY_TWO_FACTOR_VALIDITY = 120              # seconds
     SECURITY_TWO_FACTOR_REG_VALIDITY = 3600
     SECURITY_TWO_FACTOR_QR_VERSION = 1
@@ -83,7 +83,7 @@ class Config:
     # Security redirects
     SECURITY_POST_LOGIN_VIEW = '/login-redirect'
     SECURITY_POST_LOGOUT_VIEW = '/login'
-    SECURITY_POST_REGISTER_VIEW = '/dashboard'
+    SECURITY_POST_REGISTER_VIEW = '/login'  # Redirect to login page after registration
 
     # Password requirements
     SECURITY_PASSWORD_RULES = [
@@ -115,6 +115,10 @@ class Config:
     MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
     MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
     MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER')
+    
+    # Flask-Security-Too email sender configuration
+    SECURITY_EMAIL_SENDER = os.environ.get('MAIL_DEFAULT_SENDER')
+    SECURITY_TWO_FACTOR_RESCUE_MAIL = os.environ.get('MAIL_DEFAULT_SENDER')
 
 
 class DevelopmentConfig(Config):

@@ -1,0 +1,25 @@
+{# This template receives the following context:
+  reset_link - the link that should be fetched (GET) to reset
+  reset_token - this token is part of reset link - but can be used to
+    construct arbitrary URLs for redirecting.
+  user - the entire user model object
+  security - the Flask-Security configuration
+#}
+Webhook Manager - Password Reset Request
+
+Hi {{ user.email }},
+
+We received a request to reset your password for your Webhook Manager account. If you made this request, visit the link below to reset your password:
+
+{{ reset_link }}
+
+Important: This link will expire in 24 hours for security reasons.
+
+If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
+
+Best regards,
+The Webhook Manager Team
+
+---
+This email was sent from Webhook Manager.
+If you have any questions, please contact our support team.

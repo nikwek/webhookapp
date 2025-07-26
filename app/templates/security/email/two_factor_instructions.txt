@@ -1,0 +1,17 @@
+Webhook Manager - Two-Factor Authentication Code
+
+Hi {{ username }},
+
+Here's your two-factor authentication code to complete your login to Webhook Manager:
+
+{{ token }}
+
+Important: This code will expire in a few minutes for security reasons.
+
+If you didn't request this code, please secure your account immediately by changing your password.
+
+Best regards,
+The Webhook Manager Team
+
+---
+This email was sent from Webhook Manager for security verification.

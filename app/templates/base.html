@@ -74,10 +74,10 @@
         {% endif %}
         <!-- Alert messages - avoid duplicates on security pages that handle their own flashes -->
         <div class="container mt-3">
-            {% set security_endpoints = ['security.two_factor_verify_code', 'security.two_factor_token_validation', 'security.mf_recovery'] %}
+            {% set security_endpoints = ['security.two_factor_verify_code', 'security.two_factor_token_validation', 'security.mf_recovery', 'security.login', 'security.register', 'security.forgot_password', 'security.reset_password', 'security.change_password'] %}
             {% set is_security_page = request.endpoint in security_endpoints %}
             
-            {% if not (disable_global_flashes|default(false)) %}
+            {% if not (disable_global_flashes|default(false)) and not is_security_page %}
                 {% with messages = get_flashed_messages(with_categories=true) %}
                     {% if messages %}
                         {% for category, message in messages %}

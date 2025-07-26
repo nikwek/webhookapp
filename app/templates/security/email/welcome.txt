@@ -1,0 +1,38 @@
+{# This template receives the following context:
+  confirmation_link - the link that should be fetched (GET) to confirm
+  confirmation_token - this token is part of confirmation link - but can be used to
+    construct arbitrary URLs for redirecting.
+  user - the entire user model object
+  security - the Flask-Security configuration
+#}
+Welcome to Webhook Manager!
+
+Hi {{ user.email }},
+
+Thank you for joining Webhook Manager! You're now part of a platform that makes crypto trading automation simple and powerful.
+
+{% if security.confirmable %}
+To get started, please confirm your email address by visiting this link:
+{{ confirmation_link }}
+{% endif %}
+
+What you can do with Webhook Manager:
+
+📊 Virtual Portfolios: Create safe, controlled environments for your trading strategies
+🔗 Webhook Integration: Connect with TradingView alerts or your custom applications  
+🏦 Multiple Exchanges: Trade across different cryptocurrency exchanges seamlessly
+
+Once your email is confirmed, you'll be able to:
+• Connect your exchange API keys securely
+• Create and manage trading strategies
+• Set up webhook endpoints for automated trading
+• Monitor your portfolio performance
+
+If you have any questions or need help getting started, don't hesitate to reach out!
+
+Happy trading!
+The Webhook Manager Team
+
+---
+This email was sent because you created an account at Webhook Manager.
+If you didn't create this account, you can safely ignore this email.

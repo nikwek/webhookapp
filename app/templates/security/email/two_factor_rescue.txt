@@ -1,0 +1,29 @@
+🔐 Two-Factor Authentication Recovery - Webhook Manager
+
+Hello,
+
+We received a request to recover access to your Webhook Manager account using two-factor authentication recovery.
+
+⚠️ ACCOUNT RECOVERY REQUEST
+Someone requested 2FA recovery for: {{ user.email }}
+
+Your Recovery Code: {{ code }}
+
+How to use this code:
+1. Return to the Webhook Manager login page
+2. Enter this recovery code when prompted
+3. You'll be able to access your account and reconfigure 2FA if needed
+
+🛡️ SECURITY INFORMATION:
+• This recovery code expires in {{ config.SECURITY_TWO_FACTOR_VALIDITY // 60 }} minutes
+• If you didn't request this recovery, please secure your account immediately
+• Consider updating your 2FA settings after successful login
+
+If you didn't request this recovery code, please ignore this email and ensure your account is secure.
+
+Best regards,
+The Webhook Manager Team
+
+---
+This is an automated security message from Webhook Manager.
+Please do not reply to this email.

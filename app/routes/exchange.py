@@ -1,6 +1,6 @@
 # app/routes/exchange.py
 
-from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app
+from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app, jsonify
 from flask_security import login_required, current_user
 from app.models.exchange_credentials import ExchangeCredentials
 from app.exchanges.ccxt_base_adapter import CcxtBaseAdapter # Needed for issubclass check
@@ -20,6 +20,12 @@ from app.services import allocation_service
 logger = logging.getLogger(__name__)
 
 exchange_bp = Blueprint('exchange', __name__, url_prefix='/exchange')
+
+def is_ajax_request():
+    """Check if the current request is an AJAX request."""
+    return request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+           'application/json' in request.headers.get('Accept', '') or \
+           request.is_json
 
 @exchange_bp.route('/<string:exchange_id>') # Path adjusted due to url_prefix
 @login_required
@@ -262,7 +268,10 @@ def create_trading_strategy(exchange_id: str):
         trading_pair = request.form.get('trading_pair') # e.g., BTC/USDT
 
         if not strategy_name or not trading_pair:
-            flash('Strategy Name and Trading Pair are required.', 'danger')
+            error_msg = 'Strategy Name and Trading Pair are required.'
+            if is_ajax_request():
+                return jsonify({'error': error_msg}), 400
+            flash(error_msg, 'danger')
             return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
 
         # Parse and normalize the trading pair. Accept '/', '-', or whitespace as separators.
@@ -270,7 +279,10 @@ def create_trading_strategy(exchange_id: str):
         # Split by one or more of space, slash, or dash
         pair_components = re.split(r'[\s/\-]+', trading_pair_clean)
         if len(pair_components) != 2 or not pair_components[0] or not pair_components[1]:
-            flash('Invalid trading pair. Enter something like BTC/USDT, BTC-USDT, or BTC USDT.', 'danger')
+            error_msg = 'Invalid trading pair. Enter something like BTC/USDT, BTC-USDT, or BTC USDT.'
+            if is_ajax_request():
+                return jsonify({'error': error_msg}), 400
+            flash(error_msg, 'danger')
             return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
 
 
@@ -292,16 +304,16 @@ def create_trading_strategy(exchange_id: str):
                     normalized_pairs.add(raw_sym.replace("_", "/").upper())
 
                 if trading_pair.upper() not in normalized_pairs:
-                    flash(
-                        f"Trading pair '{trading_pair}' is not available on {exchange_id.capitalize()}.",
-                        "danger",
-                    )
+                    error_msg = f"Trading pair '{trading_pair}' is not available on {exchange_id.capitalize()}."
                     logger.warning(
                         "User %s attempted to create strategy with unsupported pair '%s' on %s",
                         current_user.id,
                         trading_pair,
                         exchange_id,
                     )
+                    if is_ajax_request():
+                        return jsonify({'error': error_msg}), 400
+                    flash(error_msg, "danger")
                     return redirect(url_for("exchange.view_exchange", exchange_id=exchange_id))
             except Exception as e_pair:
                 # Non-fatal: log and continue.

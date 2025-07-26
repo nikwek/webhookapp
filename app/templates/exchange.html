@@ -603,11 +603,22 @@
         }
         // The redundant if/else for setStrategiesData has been removed.
 
-        // Disable submit button and show spinner when creating strategy
+        // AJAX form submission for strategy creation
         const createStrategyForm = document.getElementById('createStrategyForm');
         if (createStrategyForm) {
-            createStrategyForm.addEventListener('submit', function () {
+            createStrategyForm.addEventListener('submit', function (e) {
+                e.preventDefault(); // Prevent default form submission
+                
                 const submitBtn = document.getElementById('createStrategySubmitBtn');
+                const errorDiv = document.getElementById('strategyModalError');
+                const errorMessage = document.getElementById('strategyModalErrorMessage');
+                
+                // Hide any existing errors
+                if (errorDiv) {
+                    errorDiv.classList.add('d-none');
+                }
+                
+                // Show loading state
                 if (submitBtn && !submitBtn.disabled) {
                     submitBtn.disabled = true;
                     const spinner = submitBtn.querySelector('.spinner-border');
@@ -619,6 +630,69 @@
                         btnText.textContent = 'Creating...';
                     }
                 }
+                
+                // Prepare form data
+                const formData = new FormData(createStrategyForm);
+                
+                // Submit via AJAX
+                fetch(createStrategyForm.action, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: formData
+                })
+                .then(response => {
+                    if (response.ok) {
+                        // Success - reload the page to show the new strategy
+                        window.location.reload();
+                    } else {
+                        // Error - try to parse JSON error response first
+                        const contentType = response.headers.get('content-type');
+                        if (contentType && contentType.includes('application/json')) {
+                            return response.json().then(data => {
+                                throw new Error(data.error || 'An error occurred while creating the strategy.');
+                            });
+                        } else {
+                            // Fallback: parse HTML response for flash messages
+                            return response.text().then(text => {
+                                const parser = new DOMParser();
+                                const doc = parser.parseFromString(text, 'text/html');
+                                const alerts = doc.querySelectorAll('.alert-danger');
+                                
+                                let errorText = 'An error occurred while creating the strategy.';
+                                if (alerts.length > 0) {
+                                    errorText = alerts[0].textContent.trim();
+                                    // Remove any close button text
+                                    errorText = errorText.replace(/×/g, '').trim();
+                                }
+                                
+                                throw new Error(errorText);
+                            });
+                        }
+                    }
+                })
+                .catch(error => {
+                    // Show error in modal
+                    if (errorMessage && errorDiv) {
+                        errorMessage.textContent = error.message;
+                        errorDiv.classList.remove('d-none');
+                    }
+                })
+                .finally(() => {
+                    // Reset button state
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        const spinner = submitBtn.querySelector('.spinner-border');
+                        const btnText = submitBtn.querySelector('.btn-text');
+                        if (spinner) {
+                            spinner.classList.add('d-none');
+                        }
+                        if (btnText) {
+                            btnText.textContent = 'Create Strategy';
+                        }
+                    }
+                });
             });
         }
 

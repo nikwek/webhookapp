@@ -284,6 +284,8 @@ def get_strategy_twrr(strategy_id: int):
         # Build a mapping: interval index i  → net cash-flow that occurred **after** snaps[i-1]
         # and **up to and including** snaps[i].  This precisely follows the TWRR convention.
         interval_flows: dict[int, float] = {i: 0.0 for i in range(1, len(snaps))}
+        
+
         for tr in transfers:
             # Determine sign (+1 inflow, −1 outflow, 0 ignore if unrelated)
             if tr.strategy_id_to == strategy_id:
@@ -298,8 +300,11 @@ def get_strategy_twrr(strategy_id: int):
             except Exception:
                 price_usd = 0.0
             usd_amount = float(tr.amount) * price_usd * sign
+            
+
 
             # Locate the interval (prev_snap, curr_snap] into which this transfer falls.
+            assigned = False
             for idx in range(1, len(snaps)):
                 # Only count transfers strictly BEFORE the next snapshot.
                 # If a transfer has the *exact* same timestamp as the snapshot it
@@ -309,7 +314,18 @@ def get_strategy_twrr(strategy_id: int):
                 # return to -100 %.  Therefore use a strict "<" upper bound.
                 if snaps[idx - 1].timestamp < tr.timestamp < snaps[idx].timestamp:
                     interval_flows[idx] += usd_amount
+
+                    assigned = True
                     break
+            
+            # If transfer occurs after the last snapshot, assign it to the final interval
+            if not assigned and tr.timestamp >= snaps[-1].timestamp:
+                final_idx = len(snaps) - 1
+                interval_flows[final_idx] += usd_amount
+
+                assigned = True
+            
+
 
         # Continue building on the initial data point
         # (index 0 already added above).
@@ -349,11 +365,12 @@ def get_strategy_twrr(strategy_id: int):
             if prev_val == 0:
                 continue
             flow = interval_flows.get(i, 0.0)
-            # If equity didn't change but a flow was (mis)detected in the same DB transaction
-            # (common for initial capital allocation), ignore the flow to avoid a -100 % blip.
-            if abs(curr_val - prev_val) < 1e-6:
-                flow = 0.0
+            # TWRR (Time-Weighted Rate of Return) should ALWAYS ignore cash flows (transfers)
+            # to measure only trading performance, regardless of portfolio value changes.
+            # The formula: sub_return = (ending_value - cash_flows) / beginning_value - 1
             sub_return = (curr_val - flow) / prev_val - 1.0
+            
+
             daily_points.append((snaps[i].timestamp, sub_return))
             if debug_requested:
                 debug_rows.append({

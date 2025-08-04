@@ -318,8 +318,6 @@ def get_strategy_twrr(strategy_id: int):
 
 
             # Locate the interval (prev_snap, curr_snap] into which this transfer falls.
-            # IMPORTANT: Only count transfers as cash flows AFTER the first actual trade.
-            # All transfers before trading activity are considered funding, not performance-affecting.
             assigned = False
             
             # If no trades have occurred yet, treat all transfers as funding (no cash flows)
@@ -379,44 +377,34 @@ def get_strategy_twrr(strategy_id: int):
         data = data
         cumulative = 0.0
         
-        # If no trades have occurred, all value changes are due to funding transfers
-        # In this case, performance should be 0% for all periods
-        if first_trade is None:
-            for i in range(1, len(snaps)):
-                daily_points.append((snaps[i].timestamp, 0.0))
-                if debug_requested:
-                    debug_rows.append({
-                        "idx": i,
-                        "timestamp": snaps[i].timestamp.isoformat(),
-                        "prev_val": float(snaps[i - 1].value_usd),
-                        "curr_val": float(snaps[i].value_usd),
-                        "flow": 0.0,
-                        "sub_return": 0.0,
-                        "note": "No trades - all changes are funding"
-                    })
-        else:
-            # Normal TWRR calculation when trades have occurred
-            for i in range(1, len(snaps)):
-                prev_val = float(snaps[i - 1].value_usd)
-                curr_val = float(snaps[i].value_usd)
-                if prev_val == 0:
-                    continue
-                flow = interval_flows.get(i, 0.0)
-                # TWRR (Time-Weighted Rate of Return) should ALWAYS ignore cash flows (transfers)
-                # to measure only trading performance, regardless of portfolio value changes.
-                # The formula: sub_return = (ending_value - cash_flows) / beginning_value - 1
-                sub_return = (curr_val - flow) / prev_val - 1.0
-                
-                daily_points.append((snaps[i].timestamp, sub_return))
-                if debug_requested:
-                    debug_rows.append({
-                        "idx": i,
-                        "timestamp": snaps[i].timestamp.isoformat(),
-                        "prev_val": prev_val,
-                        "curr_val": curr_val,
-                        "flow": flow,
-                        "sub_return": _clean_rate(sub_return),
-                    })
+        # Calculate TWRR for all strategies, regardless of trade status
+        # TWRR measures all value changes (trades + asset price movements) while excluding cash flows
+        for i in range(1, len(snaps)):
+            prev_val = float(snaps[i - 1].value_usd)
+            curr_val = float(snaps[i].value_usd)
+            if prev_val == 0:
+                continue
+            flow = interval_flows.get(i, 0.0)
+            
+            # TWRR formula: sub_return = (ending_value - cash_flows) / beginning_value - 1
+            # This captures both trading performance AND asset price movements
+            sub_return = (curr_val - flow) / prev_val - 1.0
+            
+            daily_points.append((snaps[i].timestamp, sub_return))
+            if debug_requested:
+                # Add note for strategies with no trades to clarify the source of returns
+                note = "Asset performance (no trades)" if first_trade is None else None
+                debug_row = {
+                    "idx": i,
+                    "timestamp": snaps[i].timestamp.isoformat(),
+                    "prev_val": prev_val,
+                    "curr_val": curr_val,
+                    "flow": flow,
+                    "sub_return": _clean_rate(sub_return),
+                }
+                if note:
+                    debug_row["note"] = note
+                debug_rows.append(debug_row)
 
         # If day view requested, compute cumulative from daily_points and return
         if period == 'day':

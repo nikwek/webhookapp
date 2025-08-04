@@ -279,12 +279,13 @@ def get_strategy_twrr(strategy_id: int):
         from app.models.webhook import WebhookLog
         
         # Find the first successful trade (webhook) for this strategy
+        # Look for trades with status 'success' OR 'closed' and messages containing 'Trade'
         first_trade = (
             db.session.query(WebhookLog)
             .filter(
                 WebhookLog.strategy_id == strategy_id,
-                WebhookLog.status == 'success',
-                WebhookLog.message.like('%Success%')
+                WebhookLog.status.in_(['success', 'closed']),
+                WebhookLog.message.like('%Trade%')
             )
             .order_by(WebhookLog.timestamp.asc())
             .first()

@@ -274,8 +274,22 @@ def get_strategy_twrr(strategy_id: int):
             transfers_q = transfers_q.filter(AssetTransferLog.timestamp >= start_dt)
 
         first_snap_ts = snaps[0].timestamp
-        # For TWRR calculation, we need to account for ALL transfers as cash flows.
-        # The key is to properly subtract them from ending values, not exclude them.
+        # For TWRR calculation, we need to distinguish between funding transfers
+        # and performance-affecting cash flows. We'll check for actual trading activity.
+        from app.models.webhook import WebhookLog
+        
+        # Find the first successful trade (webhook) for this strategy
+        first_trade = (
+            db.session.query(WebhookLog)
+            .filter(
+                WebhookLog.strategy_id == strategy_id,
+                WebhookLog.status == 'success',
+                WebhookLog.response_data.like('%Success%')
+            )
+            .order_by(WebhookLog.timestamp.asc())
+            .first()
+        )
+        
         transfers = transfers_q.all()
 
         # Organize transfers by interval using timestamp
@@ -303,10 +317,20 @@ def get_strategy_twrr(strategy_id: int):
 
 
             # Locate the interval (prev_snap, curr_snap] into which this transfer falls.
-            # IMPORTANT: Skip interval 1 (first interval) as it represents the baseline period.
-            # Transfers that occur before or during the second snapshot are part of initial funding.
+            # IMPORTANT: Only count transfers as cash flows AFTER the first actual trade.
+            # All transfers before trading activity are considered funding, not performance-affecting.
             assigned = False
-            for idx in range(2, len(snaps)):  # Start from interval 2, not 1
+            
+            # If no trades have occurred yet, treat all transfers as funding (no cash flows)
+            if first_trade is None:
+                continue  # Skip this transfer - it's funding, not a cash flow
+                
+            # Only count transfers that occur AFTER the first trade as cash flows
+            if tr.timestamp <= first_trade.timestamp:
+                continue  # Skip this transfer - it's pre-trading funding
+                
+            # Now assign post-trading transfers to appropriate intervals
+            for idx in range(1, len(snaps)):
                 if snaps[idx - 1].timestamp < tr.timestamp < snaps[idx].timestamp:
                     interval_flows[idx] += usd_amount
                     assigned = True

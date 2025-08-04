@@ -231,10 +231,9 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 strategy_name_to=strategy.name,
             )
             db.session.add(log_entry)
-            # Snapshot strategy *after* logging the transfer. Capture a fresh timestamp *after* all
-            # allocation quantities are updated so the snapshot is guaranteed to sort *after* the
-            # corresponding transfer even on databases with limited timestamp precision.
-            snap_ts = datetime.utcnow()
+            # Snapshot strategy *after* logging the transfer. Add 1 millisecond to guarantee
+            # the snapshot timestamp is always after the transfer timestamp for TWRR accuracy
+            snap_ts = log_ts + timedelta(milliseconds=1)
             _snapshot_strategy_value(strategy, ts=snap_ts)
             db.session.commit()
             logger.info(f"Successfully transferred {amount} {asset_symbol_to_transfer} from main account (cred ID: {source_credential_id}) to strategy {strategy.name} (ID: {destination_strategy_id}) for user {user_id}.")
@@ -283,8 +282,10 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
             db.session.add(strategy)
 
             # Record transfer log first so its timestamp precedes the snapshot
+            log_ts = datetime.utcnow()
             log_entry = AssetTransferLog(
                 user_id=user_id,
+                timestamp=log_ts,
                 source_identifier=source_identifier,
                 destination_identifier=destination_identifier,
                 asset_symbol=asset_symbol_to_transfer,
@@ -295,8 +296,9 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 strategy_name_to=None,
             )
             db.session.add(log_entry)
-            # Snapshot strategy after logging
-            _snapshot_strategy_value(strategy)
+            # Snapshot strategy after logging with guaranteed later timestamp
+            snap_ts = log_ts + timedelta(milliseconds=1)
+            _snapshot_strategy_value(strategy, ts=snap_ts)
             db.session.commit()
             logger.info(f"Successfully transferred {amount} {asset_symbol_to_transfer} from strategy {strategy.name} (ID: {source_strategy_id}) to main account (cred ID: {destination_credential_id}) for user {user_id}.")
             return True, f"Successfully transferred {amount} {asset_symbol_to_transfer} from {strategy.name} to Main Account."
@@ -364,8 +366,10 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 destination_strategy.allocated_quote_asset_quantity = current_dest_quote_allocated + amount
 
 
+            log_ts = datetime.utcnow()
             log_entry = AssetTransferLog(
                 user_id=user_id,
+                timestamp=log_ts,
                 source_identifier=source_identifier,
                 destination_identifier=destination_identifier,
                 asset_symbol=asset_symbol_to_transfer,
@@ -376,9 +380,10 @@ def execute_internal_asset_transfer(user_id: int, source_identifier: str, destin
                 strategy_name_to=destination_strategy.name,
             )
             db.session.add(log_entry)
-            # Snapshot both strategies since both allocations changed
-            _snapshot_strategy_value(source_strategy)
-            _snapshot_strategy_value(destination_strategy)
+            # Snapshot both strategies since both allocations changed, with guaranteed later timestamps
+            snap_ts = log_ts + timedelta(milliseconds=1)
+            _snapshot_strategy_value(source_strategy, ts=snap_ts)
+            _snapshot_strategy_value(destination_strategy, ts=snap_ts)
             db.session.add(source_strategy)
             db.session.add(destination_strategy)
             db.session.commit()

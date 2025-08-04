@@ -79,18 +79,6 @@ class PriceService:
             cls._load_symbol_map()
         return cls._symbol_to_id.get(symbol)
 
-    # List of known USD stablecoins that should always be valued at $1
-    _USD_STABLECOINS = {
-        'USDT',    # Tether
-        'USDC',    # USD Coin
-        'DAI',     # Dai
-        'PYUSD',   # PayPal USD
-        'FDUSD',   # First Digital USD
-        'USDE',    # Ethena USDe
-        'TUSD',    # TrueUSD
-        'BUSD',    # Binance USD
-        'USDP',    # Pax Dollar
-    }
     @classmethod
     def get_price_usd(cls, symbol: str, *, force_refresh: bool = False) -> float:
         """Return the latest *USD* price for *symbol* (e.g. "BTC").
@@ -99,11 +87,6 @@ class PriceService:
         a fresh price from CoinGecko.  Use this sparingly because the
         public API has a soft rate-limit of ~50 requests / minute per IP.
         """
-        # Special handling for USD stablecoins
-        symbol = symbol.upper()
-        if symbol in cls._USD_STABLECOINS:
-            logger.debug(f"Using fixed $1.00 price for stablecoin {symbol}")
-            return 1.00
         symbol = symbol.upper()
         now = datetime.utcnow()
 
@@ -112,7 +95,7 @@ class PriceService:
         if not force_refresh and cached and now - cached["ts"] < cls._TTL:
             # Very small prices are sometimes erroneous if the API returns
             # inverse values – sanity-check and ignore if clearly wrong.
-            if cached["price"] > 1e-4 or symbol in cls._USD_STABLECOINS:
+            if cached["price"] > 1e-4:
                 return cached["price"]  # type: ignore[return-value]
             # drop suspicious cached value
             cls._price_cache.pop(symbol, None)
@@ -155,17 +138,12 @@ class PriceService:
         prices = {}
         symbols_to_fetch = []
         
-        # Handle stablecoins and check cache
+        # Check cache for each symbol
         for symbol in symbols:
-            if symbol in cls._USD_STABLECOINS:
-                logger.debug(f"Using fixed $1.00 price for stablecoin {symbol}")
-                prices[symbol] = 1.00
-                continue
-                
             # Check cache if not forcing refresh
             cached = cls._price_cache.get(symbol)
             if not force_refresh and cached and now - cached["ts"] < cls._TTL:
-                if cached["price"] > 1e-4 or symbol in cls._USD_STABLECOINS:
+                if cached["price"] > 1e-4:
                     prices[symbol] = cached["price"]  # type: ignore[assignment]
                     continue
                 # Drop suspicious cached value

@@ -265,146 +265,116 @@ def get_strategy_twrr(strategy_id: int):
             }
         ]
 
-        # Fetch transfers in the same time window for efficiency
+        # Fetch ALL transfers for this strategy (no time filtering for TWRR)
         transfers_q = AssetTransferLog.query.filter(
             (AssetTransferLog.strategy_id_from == strategy_id)
             | (AssetTransferLog.strategy_id_to == strategy_id)
         )
-        if days and days > 0:
-            transfers_q = transfers_q.filter(AssetTransferLog.timestamp >= start_dt)
-
-        first_snap_ts = snaps[0].timestamp
-        # For TWRR calculation, we need to distinguish between funding transfers
-        # and performance-affecting cash flows. We'll check for actual trading activity.
-        from app.models.webhook import WebhookLog
-        
-        # Find the first successful trade (webhook) for this strategy
-        # Look for trades with status 'success' OR 'closed' and messages containing 'Trade'
-        first_trade = (
-            db.session.query(WebhookLog)
-            .filter(
-                WebhookLog.strategy_id == strategy_id,
-                WebhookLog.status.in_(['success', 'closed']),
-                WebhookLog.message.like('%Trade%')
-            )
-            .order_by(WebhookLog.timestamp.asc())
-            .first()
-        )
-        
         transfers = transfers_q.all()
-
-        # Organize transfers by interval using timestamp
-        from collections import defaultdict
-        # Build a mapping: interval index i  → net cash-flow that occurred **after** snaps[i-1]
-        # and **up to and including** snaps[i].  This precisely follows the TWRR convention.
-        interval_flows: dict[int, float] = {i: 0.0 for i in range(1, len(snaps))}
         
-
+        # Convert transfers to USD and organize by timestamp
+        transfer_data = []
         for tr in transfers:
-            # Determine sign (+1 inflow, −1 outflow, 0 ignore if unrelated)
-            if tr.strategy_id_to == strategy_id:
-                sign = 1
-            elif tr.strategy_id_from == strategy_id:
-                sign = -1
-            else:
-                continue  # unrelated transfer
+            # Determine the sign: positive for deposits (to this strategy),
+            # negative for withdrawals (from this strategy).
+            sign = 1 if tr.strategy_id_to == strategy_id else -1
 
+            # Convert to USD
+            price_service = PriceService()
             try:
-                price_usd = PriceService.get_price_usd(tr.asset_symbol)
+                price_usd = price_service.get_price_usd(tr.asset_symbol)
             except Exception:
+                # If we can't get the price, skip this transfer or use 0
                 price_usd = 0.0
             usd_amount = float(tr.amount) * price_usd * sign
             
-
-
-            # Locate the interval (prev_snap, curr_snap] into which this transfer falls.
-            assigned = False
-            
-            # If no trades have occurred yet, treat all transfers as funding (no cash flows)
-            if first_trade is None:
-                continue  # Skip this transfer - it's funding, not a cash flow
-                
-            # Only count transfers that occur AFTER the first trade as cash flows
-            if tr.timestamp <= first_trade.timestamp:
-                continue  # Skip this transfer - it's pre-trading funding
-                
-            # Now assign post-trading transfers to appropriate intervals
-            for idx in range(1, len(snaps)):
-                if snaps[idx - 1].timestamp < tr.timestamp < snaps[idx].timestamp:
-                    interval_flows[idx] += usd_amount
-                    assigned = True
-                    break
-            
-            # If transfer occurs after the last snapshot, assign it to the final interval
-            if not assigned and tr.timestamp >= snaps[-1].timestamp:
-                final_idx = len(snaps) - 1
-                interval_flows[final_idx] += usd_amount
-
-                assigned = True
-            
-
-
-        # Continue building on the initial data point
-        # (index 0 already added above).
-        # Subsequent points will show period sub-returns and cumulative TWRR.
-        #
-        # Note: keep existing variable name for minimal diff.
-        #
-        # 'data' already has one element; we will append to it next.
-        #
-        # -----------------------------
-        # Existing calculation loop
-        # -----------------------------
-        #
-        # Determine aggregation period (day|month|quarter|year)
-        debug_requested = bool(request.args.get('debug'))
-
+            transfer_data.append({
+                'timestamp': tr.timestamp,
+                'usd_amount': usd_amount
+            })
+        
+        # Sort transfers by timestamp
+        transfer_data.sort(key=lambda x: x['timestamp'])
+        
+        # Handle initial deposit case: Check if there are transfers before first snapshot
+        initial_transfers = [t for t in transfer_data if t['timestamp'] <= snaps[0].timestamp]
+        if initial_transfers:
+            # Sum all initial transfers as the starting value
+            initial_value = sum(t['usd_amount'] for t in initial_transfers)
+            # Use first snapshot as PVE_0, initial transfers sum as PVS_0
+            pvs_0 = initial_value
+            pve_0 = float(snaps[0].value_usd)
+            # Calculate first sub-period return if we have an initial deposit
+            if pvs_0 > 0:
+                first_sub_return = (pve_0 / pvs_0) - 1.0
+                data[0]['sub_return'] = first_sub_return
+        
         # Helper to round returns and zero-out tiny floating-point noise
-        def _clean_rate(val: float, places: int = 4) -> float:  # noqa: ANN001
+        def _clean_rate(val: float, places: int = 4) -> float:
             threshold = 10 ** (-places)
             if abs(val) < threshold:
                 return 0.0
             return round(val, places)
+        
+        # Determine aggregation period (day|month|quarter|year)
         period = request.args.get('period', 'day').lower()
         if period not in {'day', 'month', 'quarter', 'year'}:
             period = 'day'
-
-        # Collect daily sub-period returns
-        daily_points: list[tuple[datetime, float]] = []  # (timestamp, sub_return)
-        debug_rows: list[dict] = []  # optional detailed breakdown
-
-        # Start cumulative at 0.
-        data = data
-        cumulative = 0.0
         
-        # Calculate TWRR for all strategies, regardless of trade status
-        # TWRR measures all value changes (trades + asset price movements) while excluding cash flows
+        # Calculate TWRR using standard formula: sub_return_i = (PVE_i - CF_i) / PVS_i - 1
+        debug_requested = bool(request.args.get('debug'))
+        debug_rows = []
+        daily_points = []
+        
+        # Process each sub-period (consecutive snapshot pairs)
         for i in range(1, len(snaps)):
-            prev_val = float(snaps[i - 1].value_usd)
-            curr_val = float(snaps[i].value_usd)
-            if prev_val == 0:
-                continue
-            flow = interval_flows.get(i, 0.0)
+            # Define sub-period boundaries
+            pvs_i = float(snaps[i - 1].value_usd)  # Period start value
+            pve_i = float(snaps[i].value_usd)      # Period end value
+            start_time = snaps[i - 1].timestamp
+            end_time = snaps[i].timestamp
             
-            # TWRR formula: sub_return = (ending_value - cash_flows) / beginning_value - 1
-            # This captures both trading performance AND asset price movements
-            sub_return = (curr_val - flow) / prev_val - 1.0
+            # Find and sum all cash flows in this sub-period
+            # Use inclusive interval logic to be more resilient to timing edge cases
+            # Any transfer that occurred within the interval [start_time, end_time] is included
+            cf_i = sum(
+                t['usd_amount'] for t in transfer_data 
+                if start_time <= t['timestamp'] <= end_time
+            )
+            
+            # Sanity check: warn if large value change but no cash flow detected
+            value_change = abs(pve_i - pvs_i)
+            if value_change > 100 and cf_i == 0:  # $100+ change with no cash flow
+                print(f"WARNING: Strategy {strategy_id} sub-period {i}: Large value change "
+                      f"(${value_change:.2f}) but no cash flow detected. "
+                      f"PVS: ${pvs_i:.2f}, PVE: ${pve_i:.2f}, CF: ${cf_i:.2f}")
+            
+            # Apply standard TWRR formula
+            if pvs_i == 0:
+                sub_return = 0.0  # Avoid division by zero
+            else:
+                sub_return = (pve_i - cf_i) / pvs_i - 1.0
             
             daily_points.append((snaps[i].timestamp, sub_return))
+            
             if debug_requested:
-                # Add note for strategies with no trades to clarify the source of returns
-                note = "Asset performance (no trades)" if first_trade is None else None
-                debug_row = {
+                # Show which transfers were included in this sub-period
+                period_transfers = [
+                    f"{t['timestamp'].isoformat()}: ${t['usd_amount']:.2f}"
+                    for t in transfer_data 
+                    if start_time <= t['timestamp'] <= end_time
+                ]
+                debug_rows.append({
                     "idx": i,
                     "timestamp": snaps[i].timestamp.isoformat(),
-                    "prev_val": prev_val,
-                    "curr_val": curr_val,
-                    "flow": flow,
+                    "prev_val": pvs_i,
+                    "curr_val": pve_i,
+                    "flow": cf_i,
                     "sub_return": _clean_rate(sub_return),
-                }
-                if note:
-                    debug_row["note"] = note
-                debug_rows.append(debug_row)
+                    "interval": f"[{start_time.isoformat()} <= t <= {end_time.isoformat()}]",
+                    "transfers_in_period": period_transfers,
+                    "note": "Inclusive interval logic applied"
+                })
 
         # If day view requested, compute cumulative from daily_points and return
         if period == 'day':

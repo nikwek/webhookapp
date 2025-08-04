@@ -274,10 +274,9 @@ def get_strategy_twrr(strategy_id: int):
             transfers_q = transfers_q.filter(AssetTransferLog.timestamp >= start_dt)
 
         first_snap_ts = snaps[0].timestamp
-        # The first snapshot captures the portfolio value AFTER initial funding.
-        # Any transfers at or before the first snapshot are part of the initial
-        # allocation and should not be treated as cash flows for TWRR calculation.
-        transfers = [tr for tr in transfers_q.all() if tr.timestamp > first_snap_ts]
+        # For TWRR calculation, we need to account for ALL transfers as cash flows.
+        # The key is to properly subtract them from ending values, not exclude them.
+        transfers = transfers_q.all()
 
         # Organize transfers by interval using timestamp
         from collections import defaultdict
@@ -304,17 +303,12 @@ def get_strategy_twrr(strategy_id: int):
 
 
             # Locate the interval (prev_snap, curr_snap] into which this transfer falls.
+            # IMPORTANT: Skip interval 1 (first interval) as it represents the baseline period.
+            # Transfers that occur before or during the second snapshot are part of initial funding.
             assigned = False
-            for idx in range(1, len(snaps)):
-                # Only count transfers strictly BEFORE the next snapshot.
-                # If a transfer has the *exact* same timestamp as the snapshot it
-                # belongs to (i.e. was committed in the same transaction just
-                # before we called `snapshot_all_strategies()`), including it in
-                # the cash-flow will double-count that capital and skew the
-                # return to -100 %.  Therefore use a strict "<" upper bound.
+            for idx in range(2, len(snaps)):  # Start from interval 2, not 1
                 if snaps[idx - 1].timestamp < tr.timestamp < snaps[idx].timestamp:
                     interval_flows[idx] += usd_amount
-
                     assigned = True
                     break
             

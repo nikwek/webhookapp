@@ -284,7 +284,7 @@ def get_strategy_twrr(strategy_id: int):
             .filter(
                 WebhookLog.strategy_id == strategy_id,
                 WebhookLog.status == 'success',
-                WebhookLog.response_data.like('%Success%')
+                WebhookLog.message.like('%Success%')
             )
             .order_by(WebhookLog.timestamp.asc())
             .first()

@@ -363,7 +363,7 @@ def create_trading_strategy(exchange_id: str):
             # Generate a default webhook template
             ticker_format = new_strategy.trading_pair.replace('/', '-')
             default_webhook_template_dict = {
-                "action": "{{strategy.action}}",
+                "action": "{{strategy.order.action}}",
                 "ticker": ticker_format,
                 "timestamp": "{{timenow}}",
                 "message": "Optional message"

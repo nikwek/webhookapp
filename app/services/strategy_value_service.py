@@ -120,8 +120,15 @@ def _value_usd_with_prices(strategy: TradingStrategy, asset_prices: dict[str, fl
     return formatted_val
 
 
-def snapshot_all_strategies(*, source: str = "unspecified") -> None:
-    """Create or update today's value snapshot for every strategy."""
+def snapshot_all_strategies(*, source: str = "unspecified", max_retries: int = 3) -> None:
+    """Create or update today's value snapshot for every strategy.
+    
+    Args:
+        source: Source of the snapshot request (e.g., "scheduled_daily", "manual")
+        max_retries: Maximum number of retry attempts if price fetching fails
+    """
+    import time
+    
     logger.info("Running strategy value snapshot (source=%s) …", source)
     today = date.today()
 
@@ -142,43 +149,105 @@ def snapshot_all_strategies(*, source: str = "unspecified") -> None:
                 strat.quote_asset_symbol):
             required_assets.add(strat.quote_asset_symbol.upper())
 
-    # Fetch all required prices in a single batch API call
-    logger.info(f"Fetching prices for {len(required_assets)} unique assets: {sorted(required_assets)}")
-    try:
-        asset_prices = PriceService.get_prices_usd_batch(list(required_assets), force_refresh=True)
-        logger.info(f"Successfully fetched {len(asset_prices)} asset prices")
-    except Exception as exc:
-        logger.error("Failed to fetch batch asset prices: %s", exc, exc_info=True)
-        # Fall back to individual pricing (existing behavior)
-        asset_prices = {}
+    if not required_assets:
+        logger.info("No assets to price, skipping snapshot")
+        return
+
+    # Retry logic for price fetching with exponential backoff
+    asset_prices = None
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Fetching prices for {len(required_assets)} unique assets (attempt {attempt + 1}/{max_retries}): {sorted(required_assets)}")
+            asset_prices = PriceService.get_prices_usd_batch(list(required_assets), force_refresh=True)
+            
+            # Validate that we got prices for the critical assets
+            missing_prices = required_assets - set(asset_prices.keys())
+            if missing_prices:
+                logger.warning(f"Missing prices for {len(missing_prices)} assets: {sorted(missing_prices)}")
+                # If we're missing more than 50% of required prices, consider this a failure
+                if len(missing_prices) > len(required_assets) * 0.5:
+                    raise ValueError(f"Too many missing prices: {len(missing_prices)}/{len(required_assets)}")
+            
+            logger.info(f"Successfully fetched {len(asset_prices)} asset prices")
+            break  # Success, exit retry loop
+            
+        except Exception as exc:
+            logger.error(f"Price fetch attempt {attempt + 1} failed: %s", exc, exc_info=True)
+            if attempt < max_retries - 1:
+                # Exponential backoff: 30s, 60s, 120s
+                wait_time = 30 * (2 ** attempt)
+                logger.info(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                logger.error("All price fetch attempts failed. Aborting snapshot to prevent recording 0 values.")
+                return  # Exit completely - do not record any values
+
+    # Double-check we have valid prices before proceeding
+    if not asset_prices:
+        logger.error("No asset prices available. Aborting snapshot to prevent recording 0 values.")
+        return
 
     # Calculate values for all strategies using the batched prices
+    successful_snapshots = 0
+    failed_snapshots = 0
+    
     for strat in strategies:
         try:
             current_val = _value_usd_with_prices(strat, asset_prices)
+            
+            # Critical check: Never record 0 values unless the strategy actually has 0 assets
+            has_assets = ((strat.allocated_base_asset_quantity or 0) > 0 or 
+                         (strat.allocated_quote_asset_quantity or 0) > 0)
+            
+            if current_val == 0 and has_assets:
+                logger.error(f"Strategy {strat.id} ({strat.name}) calculated as $0 but has assets. Skipping to prevent bad data.")
+                failed_snapshots += 1
+                continue
+                
         except Exception as exc:
             logger.error("Failed to calculate value for strategy %s: %s", strat.id, exc, exc_info=True)
+            failed_snapshots += 1
             continue
 
-        # Delete all existing records for this strategy on this date to ensure clean state
-        # This handles the case where multiple concurrent workers created duplicate records
-        StrategyValueHistory.query.filter(
-            StrategyValueHistory.strategy_id == strat.id,
-            func.date(StrategyValueHistory.timestamp) == today
-        ).delete()
-        
-        # Create a fresh record with the current calculated value
-        db.session.add(
-            StrategyValueHistory(
-                strategy_id=strat.id,
-                timestamp=datetime.utcnow(),
-                value_usd=current_val,
-                base_asset_quantity_snapshot=strat.allocated_base_asset_quantity,
-                quote_asset_quantity_snapshot=strat.allocated_quote_asset_quantity,
+        try:
+            # Delete all existing records for this strategy on this date to ensure clean state
+            # This handles the case where multiple concurrent workers created duplicate records
+            deleted_count = StrategyValueHistory.query.filter(
+                StrategyValueHistory.strategy_id == strat.id,
+                func.date(StrategyValueHistory.timestamp) == today
+            ).delete()
+            
+            if deleted_count > 0:
+                logger.info(f"Deleted {deleted_count} existing snapshot(s) for strategy {strat.id}")
+            
+            # Create a fresh record with the current calculated value
+            db.session.add(
+                StrategyValueHistory(
+                    strategy_id=strat.id,
+                    timestamp=datetime.utcnow(),
+                    value_usd=current_val,
+                    base_asset_quantity_snapshot=strat.allocated_base_asset_quantity,
+                    quote_asset_quantity_snapshot=strat.allocated_quote_asset_quantity,
+                )
             )
-        )
-    try:
-        db.session.commit()
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to commit strategy value snapshots: %s", exc, exc_info=True)
+            successful_snapshots += 1
+            logger.info(f"Prepared snapshot for strategy {strat.id} ({strat.name}): ${current_val}")
+            
+        except Exception as exc:
+            logger.error(f"Failed to prepare snapshot for strategy {strat.id}: %s", exc, exc_info=True)
+            failed_snapshots += 1
+            continue
+    
+    # Only commit if we have at least some successful snapshots
+    if successful_snapshots > 0:
+        try:
+            db.session.commit()
+            logger.info(f"Successfully committed {successful_snapshots} strategy snapshots. Failed: {failed_snapshots}")
+        except Exception as exc:
+            logger.error("Failed to commit strategy value snapshots: %s", exc, exc_info=True)
+            db.session.rollback()
+            raise
+    else:
+        logger.error(f"No successful snapshots to commit. All {failed_snapshots} strategies failed.")
+        db.session.rollback()
         db.session.rollback()

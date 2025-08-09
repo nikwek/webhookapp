@@ -6,7 +6,7 @@ Restored after accidental deletion so that `run.py` can import `create_app` agai
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 from flask import Flask, flash, jsonify, render_template, request
@@ -130,7 +130,36 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
             # Create a wrapper function that provides Flask application context
             def scheduled_snapshot_with_context():
                 with app.app_context():
-                    snapshot_all_strategies(source="scheduled_daily")
+                    try:
+                        snapshot_all_strategies(source="scheduled_daily")
+                    except Exception as exc:
+                        app.logger.error(f"Daily strategy snapshot failed: {exc}", exc_info=True)
+                        # Schedule a retry in 5 minutes
+                        try:
+                            scheduler.add_job(
+                                id="daily_strategy_snapshot_retry",
+                                func=scheduled_snapshot_retry,
+                                trigger="date",
+                                run_date=datetime.now() + timedelta(minutes=5),
+                                replace_existing=True,
+                                misfire_grace_time=3600,  # 1 hour grace period
+                            )
+                            app.logger.info("Scheduled retry for daily strategy snapshot in 5 minutes")
+                        except Exception as retry_exc:
+                            app.logger.error(f"Failed to schedule retry: {retry_exc}")
+                        raise  # Re-raise so the failure is logged
+            
+            # Retry function with limited attempts
+            def scheduled_snapshot_retry():
+                with app.app_context():
+                    try:
+                        app.logger.info("Executing retry for daily strategy snapshot")
+                        snapshot_all_strategies(source="scheduled_daily_retry")
+                        app.logger.info("Retry successful")
+                    except Exception as exc:
+                        app.logger.error(f"Daily strategy snapshot retry failed: {exc}", exc_info=True)
+                        # Don't schedule another retry to avoid infinite loops
+                        raise
 
             # Check if job already exists to avoid duplicate registration
             existing_job = scheduler.get_job("daily_strategy_snapshot")

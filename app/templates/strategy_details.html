@@ -731,9 +731,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // Determine symmetric y-axis around 0 with *evenly spaced* tick marks.
             const maxAbs = twrrVals.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
             const yTop = Math.ceil(maxAbs);            // round up to the next whole %
-            // Choose a reasonable tick step so we don’t get fractional tick labels.
+            // Choose a reasonable tick step so we don't get fractional tick labels.
             const step = yTop <= 10 ? 1 : (yTop <= 20 ? 2 : 5);
-            const RANGE = yTop || 1;
+            // Ensure there's always padding above the highest data point
+            const paddedRange = Math.ceil((yTop + step) / step) * step;
+            const RANGE = Math.max(paddedRange, yTop + 1) || 1;
             const valElem = document.getElementById('strategyTotalValue');
             if (valElem) valElem.textContent = '$' + latestVal.toFixed(2);
 
@@ -794,7 +796,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 
                                 return true;
                             },
-                            formatter: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+                            formatter: v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%'
                         }
                     },
                     scales: {

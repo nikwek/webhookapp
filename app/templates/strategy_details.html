@@ -516,6 +516,45 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.ChartDataLabels) { Chart.register(window.ChartDataLabels); }
         const stratId = {{ strategy.id }};
         const userTz = window.APP_USER_TZ || 'UTC';
+        
+        // Custom plugin for floating drawdown labels
+        const floatingLabels = {
+            id: 'floatingLabels',
+            afterDatasetsDraw(chart, args, options) {
+                const {
+                    ctx,
+                    chartArea: { top },
+                    scales: { x, y1 }
+                } = chart;
+                
+                // Only draw labels for drawdown dataset (index 1)
+                const drawdownDataset = chart.config.data.datasets[1];
+                if (!drawdownDataset || !drawdownDataset.data) return;
+                
+                // Calculate fixed Y position (slightly below zero line)
+                const zeroY = y1.getPixelForValue(0);
+                const fixedY = zeroY + 15; // 15px below zero line
+                
+                ctx.save();
+                ctx.fillStyle = '#dc3545'; // Red color for drawdown labels
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 12px Arial';
+                
+                for (let i = 0; i < drawdownDataset.data.length; i++) {
+                    const value = drawdownDataset.data[i];
+                    const xPosition = chart.getDatasetMeta(1).data[i].x;
+                    
+                    // Format the label (round to whole number)
+                    const label = Math.round(value) + '%';
+                    
+                    // Draw the label at fixed position
+                    ctx.fillText(label, xPosition, fixedY);
+                }
+                
+                ctx.restore();
+            }
+        };
+        
         async function renderRisk() {
             try {
                 const days = riskSelect.value;
@@ -564,6 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             },
                         ]
                     },
+                    plugins: [floatingLabels], // Register our custom plugin
                     options: {
                         plugins: {
                             legend: { display: true },
@@ -580,20 +620,48 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
                             },
                             datalabels: {
+                                display: function(ctx) {
+                                    // Only show labels for equity dataset (index 0)
+                                    // Drawdown labels are handled by our custom floatingLabels plugin
+                                    if (ctx.datasetIndex === 1) return false;
+                                    
+                                    const dataset = ctx.chart.data.datasets[ctx.datasetIndex].data;
+                                    const count = ctx.chart.data.labels.length;
+                                    
+                                    // Always show if only a few points
+                                    if (count <= 10) return true;
+                                    
+                                    // Always show first and last points
+                                    if (ctx.dataIndex === 0 || ctx.dataIndex === count - 1) return true;
+                                    
+                                    // For dense data, be more selective
+                                    if (count > 30) {
+                                        // Equity: show significant changes (>$50 difference from previous)
+                                        if (ctx.dataIndex > 0) {
+                                            const prevValue = dataset[ctx.dataIndex - 1];
+                                            const currentValue = dataset[ctx.dataIndex];
+                                            if (Math.abs(currentValue - prevValue) > 50) return true;
+                                        }
+                                        
+                                        // Show every 4th point as backup
+                                        return ctx.dataIndex % 4 === 0;
+                                    }
+                                    
+                                    return true;
+                                },
                                 formatter: function(value, ctx) {
-                                    return ctx.datasetIndex === 0 ? '$' + value.toFixed(2) : value.toFixed(2) + '%';
+                                    // Only equity chart now (drawdown handled by custom plugin)
+                                    return '$' + Math.round(value).toLocaleString();
                                 },
-                                color: ctx => ctx.datasetIndex === 0 ? '#0d6efd' : '#dc3545',
-                                anchor: (ctx) => {
-                                    if (labels.length === 1) return 'center';
-                                    return ctx.datasetIndex === 0 ? 'end' : 'center';
+                                color: '#0d6efd',
+                                anchor: 'center',
+                                align: function(ctx) {
+                                    if (!ctx.parsed || ctx.parsed.y === undefined) return 'top';
+                                    // Equity chart: hybrid approach - above positive values, below negative
+                                    return ctx.parsed.y >= 0 ? 'top' : 'bottom';
                                 },
-                                align: (ctx) => {
-                                    if (labels.length === 1) return 'center';
-                                    return ctx.datasetIndex === 0 ? 'end' : 'center';
-                                },
-                                offset: 0,
-                                font: { weight: 'bold', size: 14 }
+                                offset: 6,
+                                font: { weight: 'bold', size: 12 }
                             }
                         },
                         scales: {
@@ -695,15 +763,35 @@ document.addEventListener('DOMContentLoaded', () => {
                     plugins: {
                         legend: { display: false },
                         datalabels: {
-                            align: 'top',
+                            anchor: 'center',
+                            align: function(ctx) {
+                                // Position above positive values, below negative values
+                                if (!ctx.parsed || ctx.parsed.y === undefined) return 'top';
+                                return ctx.parsed.y >= 0 ? 'top' : 'bottom';
+                            },
+                            offset: 6,
                             color: '#000',
-                            font: { weight: 'bold', size: 14 },
-                            // Sparse labels for dense day view
+                            font: { weight: 'bold', size: 12 },
                             display: function(ctx) {
+                                const dataset = ctx.chart.data.datasets[ctx.datasetIndex].data;
                                 const count = ctx.chart.data.labels.length;
-                                if (period === 'day' && count > 60) {
-                                    return ctx.dataIndex % Math.ceil(count / 60) === 0 || ctx.dataIndex === count -1;
+                                
+                                // Always show first and last points
+                                if (ctx.dataIndex === 0 || ctx.dataIndex === count - 1) return true;
+                                
+                                // For day view, be more selective
+                                if (period === 'day' && count > 30) {
+                                    // Show significant changes (>0.5% difference from previous)
+                                    if (ctx.dataIndex > 0) {
+                                        const prevValue = dataset[ctx.dataIndex - 1];
+                                        const currentValue = dataset[ctx.dataIndex];
+                                        if (Math.abs(currentValue - prevValue) > 0.5) return true;
+                                    }
+                                    
+                                    // Show every 4th point as backup
+                                    return ctx.dataIndex % 4 === 0;
                                 }
+                                
                                 return true;
                             },
                             formatter: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%'

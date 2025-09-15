@@ -224,24 +224,19 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
         except Exception as _err:  # pragma: no cover
             app.logger.error("Failed catch-up snapshot: %s", _err, exc_info=True)
 
-        # Flask-Security
-        user_datastore = SQLAlchemyUserDatastore(db, User, Role)
-        security.init_app(
-            app,
-            user_datastore,
-            register_form=CustomRegisterForm,
-            login_form=CustomLoginForm,
-            two_factor_verify_code_form=Custom2FACodeForm,
-            flash_messages=True,
-        )
+    # Security
+    from app.models.user import User, Role
+    from app.forms.custom_register_form import CustomRegisterForm
+    user_datastore = SQLAlchemyUserDatastore(db, User, Role)
+    security.init_app(app, user_datastore, register_form=CustomRegisterForm)
 
-        # Block suspended users
-        @user_authenticated.connect_via(app)  # pylint: disable=unused-variable
-        def _block_suspended(app, user, **extra):  # noqa: ANN001
-            if getattr(user, "is_suspended", False):
-                logout_user()
-                flash("Your account is suspended.", "error")
-                return False
+    # Block suspended users
+    @user_authenticated.connect_via(app)  # pylint: disable=unused-variable
+    def _block_suspended(app, user, **extra):  # noqa: ANN001
+        if getattr(user, "is_suspended", False):
+            logout_user()
+            flash("Your account is suspended.", "error")
+            return False
 
     # ---------------------------------------------------------------------
     # Blueprints

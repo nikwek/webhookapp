@@ -3,9 +3,43 @@
 
 from flask import current_app, request
 from flask_security.forms import ConfirmRegisterForm
-from wtforms import PasswordField, SubmitField
+from wtforms import PasswordField, SubmitField, HiddenField, ValidationError
 from wtforms.validators import DataRequired, EqualTo, Length
 import requests
+
+
+class RecaptchaValidator:
+    """Custom validator for reCAPTCHA."""
+    
+    def __init__(self, message=None):
+        self.message = message or 'Please complete the reCAPTCHA verification'
+    
+    def __call__(self, form, field):
+        if not current_app.config.get('RECAPTCHA_ENABLED'):
+            return  # Skip validation if reCAPTCHA is disabled
+            
+        recaptcha_response = request.form.get('g-recaptcha-response')
+        if not recaptcha_response:
+            raise ValidationError(self.message)
+            
+        secret_key = current_app.config.get('RECAPTCHA_SECRET_KEY')
+        if not secret_key:
+            return  # Skip validation if no secret key configured
+            
+        verify_url = 'https://www.google.com/recaptcha/api/siteverify'
+        data = {
+            'secret': secret_key,
+            'response': recaptcha_response,
+            'remoteip': request.remote_addr
+        }
+        
+        try:
+            response = requests.post(verify_url, data=data, timeout=10)
+            result = response.json()
+            if not result.get('success', False):
+                raise ValidationError(self.message)
+        except Exception:
+            raise ValidationError('reCAPTCHA verification failed. Please try again.')
 
 
 class CustomRegisterForm(ConfirmRegisterForm):
@@ -24,45 +58,7 @@ class CustomRegisterForm(ConfirmRegisterForm):
         EqualTo('password', message='Passwords must match')
     ])
     
+    # Hidden field to trigger reCAPTCHA validation
+    recaptcha = HiddenField('reCAPTCHA', validators=[RecaptchaValidator()])
+    
     submit = SubmitField('Create Account')
-    
-    def validate_recaptcha(self):
-        """Validate reCAPTCHA response."""
-        if not current_app.config.get('RECAPTCHA_ENABLED'):
-            return True
-            
-        recaptcha_response = request.form.get('g-recaptcha-response')
-        if not recaptcha_response:
-            return False
-            
-        secret_key = current_app.config.get('RECAPTCHA_SECRET_KEY')
-        if not secret_key:
-            return True  # Skip validation if no secret key configured
-            
-        verify_url = 'https://www.google.com/recaptcha/api/siteverify'
-        data = {
-            'secret': secret_key,
-            'response': recaptcha_response,
-            'remoteip': request.remote_addr
-        }
-        
-        try:
-            response = requests.post(verify_url, data=data, timeout=10)
-            result = response.json()
-            return result.get('success', False)
-        except Exception:
-            return False
-    
-    def validate(self, **kwargs):
-        """Custom validation including reCAPTCHA check."""
-        # Run standard form validation first
-        if not super().validate(**kwargs):
-            return False
-        
-        # Check reCAPTCHA if enabled
-        if current_app.config.get('RECAPTCHA_ENABLED'):
-            if not self.validate_recaptcha():
-                self.form_errors.append('Please complete the reCAPTCHA verification')
-                return False
-        
-        return True

@@ -63,14 +63,16 @@
                     <div class="mb-3">
                         <div class="g-recaptcha" data-sitekey="{{ config.RECAPTCHA_SITE_KEY }}"></div>
                         <div class="form-text text-muted">Please complete the verification above</div>
-                        <!-- Hidden field for reCAPTCHA validation -->
-                        {{ register_user_form.recaptcha() }}
-                        {% if register_user_form.recaptcha.errors %}
-                            <div class="invalid-feedback d-block">
-                                {% for error in register_user_form.recaptcha.errors %}
-                                    {{ error }}
-                                {% endfor %}
-                            </div>
+                        <!-- Hidden field for reCAPTCHA validation (only if custom form is used) -->
+                        {% if register_user_form.recaptcha is defined %}
+                            {{ register_user_form.recaptcha() }}
+                            {% if register_user_form.recaptcha.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in register_user_form.recaptcha.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
                         {% endif %}
                     </div>
                     {% endif %}

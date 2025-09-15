@@ -227,8 +227,12 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
     # Security
     from app.models.user import User, Role
     from app.forms.custom_register_form import CustomRegisterForm
+    
+    # Configure Flask-Security to use our custom form
+    app.config['SECURITY_REGISTERABLE_FORM'] = CustomRegisterForm
+    
     user_datastore = SQLAlchemyUserDatastore(db, User, Role)
-    security.init_app(app, user_datastore, register_form=CustomRegisterForm)
+    security.init_app(app, user_datastore)
 
     # Block suspended users
     @user_authenticated.connect_via(app)  # pylint: disable=unused-variable

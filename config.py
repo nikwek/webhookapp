@@ -47,6 +47,8 @@ class Config:
     SECURITY_CONFIRMABLE = True
     SECURITY_RECOVERABLE = True
     SECURITY_CHANGEABLE = True
+    SECURITY_CONFIRM_EMAIL_WITHIN = '5 days'
+    SECURITY_LOGIN_WITHOUT_CONFIRMATION = False  # Force email confirmation
     SECURITY_PASSWORD_COMPLEXITY_CHECKER = 'zxcvbn'
     SECURITY_CSRF_PROTECT_MECHANISMS = ('session',)
     SECURITY_CSRF_IGNORE_UNAUTH_ENDPOINTS = True
@@ -119,6 +121,12 @@ class Config:
     # Flask-Security-Too email sender configuration
     SECURITY_EMAIL_SENDER = os.environ.get('MAIL_DEFAULT_SENDER')
     SECURITY_TWO_FACTOR_RESCUE_MAIL = os.environ.get('MAIL_DEFAULT_SENDER')
+    
+    # reCAPTCHA settings for bot protection
+    # Temporary hardcoded values for production testing
+    RECAPTCHA_SITE_KEY = '6LdNrcorAAAAAJF9v5MF-OztU7OwqqNWX7Jj1f7p'
+    RECAPTCHA_SECRET_KEY = '6LdNrcorAAAAAFXiFgz7SMWsGMwbbEYDwkt-L25-'
+    RECAPTCHA_ENABLED = True
 
 
 class DevelopmentConfig(Config):

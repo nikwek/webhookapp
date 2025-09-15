@@ -1,6 +1,4 @@
-import pytest
-from flask_security import hash_password
-from app.models.user import User, Role
+from app.models.user import Role
 from app import db
 
 def test_login_success(client, regular_user):
@@ -45,7 +43,16 @@ def test_register(client, app):
         assert b'Password must be at least' not in response.data
         # If no validation errors, registration was successful
 
-def test_register_duplicate_email(client, regular_user):
+def test_register_duplicate_email(client, regular_user, app):
+    with app.app_context():
+        # First, ensure the regular_user exists in the database
+        from app.models.user import User
+        existing_user = User.query.filter_by(email='testuser@example.com').first()
+        if not existing_user:
+            # Create the user if it doesn't exist
+            db.session.add(regular_user)
+            db.session.commit()
+    
     response = client.post('/security/register', data={
         'email': 'testuser@example.com',  # Same as global regular_user
         'password': 'password123',  # Must be at least 8 characters
@@ -54,7 +61,7 @@ def test_register_duplicate_email(client, regular_user):
     # Should stay on registration form (200) and show error about existing email
     assert response.status_code == 200
     # Flask-Security shows "Invalid email address" for duplicate emails
-    assert b'Invalid email address' in response.data
+    assert b'Invalid email address' in response.data or b'Email already exists' in response.data
 
 def test_unauthenticated_user_cannot_access_dashboard(client):
     """Test that unauthenticated users cannot see dashboard content."""

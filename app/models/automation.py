@@ -35,3 +35,7 @@ class Automation(db.Model):
     @template.setter
     def template(self, template):
         self._template = json.dumps(template)
+
+
+# Alias for backward compatibility with tests
+AutomationStrategy = Automation

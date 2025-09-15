@@ -25,7 +25,7 @@ from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 from config import get_config
 from app.forms.custom_login_form import CustomLoginForm
 from app.forms.custom_2fa_form import Custom2FACodeForm
-from flask_security.forms import RegisterFormV2
+from app.forms.custom_register_form import CustomRegisterForm
 
 # ---------------------------------------------------------------------------
 # Extension instances (singletons that will be imported elsewhere)
@@ -50,7 +50,18 @@ logger = logging.getLogger(__name__)
 def create_app(test_config: dict | None = None):  # noqa: C901 complex
     """Application factory used by run.py and WSGI servers."""
 
-    load_dotenv()
+    # Load environment variables - try multiple paths for dev/prod compatibility
+    import os
+    load_dotenv()  # Development (current directory)
+    
+    # Debug: Check if production .env file exists and load it
+    prod_env_path = '/home/nik/webhookapp/.env'
+    if os.path.exists(prod_env_path):
+        print(f"Loading production .env from: {prod_env_path}")
+        load_dotenv(prod_env_path, override=True)
+        print(f"After loading: RECAPTCHA_SITE_KEY = {os.environ.get('RECAPTCHA_SITE_KEY', 'NOT SET')}")
+    else:
+        print(f"Production .env file not found at: {prod_env_path}")
 
     app = Flask(__name__)
     app.jinja_env.add_extension("jinja2.ext.do")
@@ -181,6 +192,9 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
     # Rate limiter built in webhook routes
     from app.routes.webhook import limiter
     limiter.init_app(app)
+    
+    # reCAPTCHA is handled directly in our custom form validation
+    # No need to initialize Flask-ReCaptcha extension
 
     # ---------------------------------------------------------------------
     # Database bootstrap & security setup – inside app context
@@ -219,7 +233,7 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
         security.init_app(
             app,
             user_datastore,
-            register_form=RegisterFormV2,
+            register_form=CustomRegisterForm,
             login_form=CustomLoginForm,
             two_factor_verify_code_form=Custom2FACodeForm,
             flash_messages=True,

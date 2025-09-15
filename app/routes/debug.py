@@ -4,14 +4,17 @@ import logging
 from flask import Blueprint, current_app, jsonify, abort, flash, redirect, url_for
 from flask_mail import Message
 from flask_security import RegisterForm, current_user, login_required, url_for_security, roles_required
-from sqlalchemy import text, inspect, func
-from sqlalchemy.exc import SQLAlchemyError
-from datetime import datetime, timezone, timedelta
-from app import db, scheduler
+from flask import Blueprint, render_template, jsonify, request, current_app, redirect, url_for
+from flask_security import login_required, current_user
 from app.models.user import User
-from app.models.portfolio import Portfolio
-from app.models.trading import StrategyValueHistory
 from app.models.webhook import WebhookLog
+from app.models.exchange_credentials import ExchangeCredentials
+from app.models.automation import AutomationStrategy
+from app.models.trading import TradingStrategy
+from app.models.account_cache import AccountCache
+from app import db
+import json
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -572,3 +575,15 @@ def twrr_debug(strategy_id: int):
         })
     
     return jsonify(debug_data)
+
+
+@debug.route('/recaptcha-config')
+def recaptcha_config():
+    """Debug route to check reCAPTCHA configuration"""
+    return jsonify({
+        'RECAPTCHA_SITE_KEY': current_app.config.get('RECAPTCHA_SITE_KEY', 'NOT SET'),
+        'RECAPTCHA_SECRET_KEY': 'SET' if current_app.config.get('RECAPTCHA_SECRET_KEY') else 'NOT SET',
+        'RECAPTCHA_ENABLED': current_app.config.get('RECAPTCHA_ENABLED', False),
+        'env_site_key': 'SET' if os.environ.get('RECAPTCHA_SITE_KEY') else 'NOT SET',
+        'env_secret_key': 'SET' if os.environ.get('RECAPTCHA_SECRET_KEY') else 'NOT SET'
+    })

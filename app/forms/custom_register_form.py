@@ -45,6 +45,9 @@ class RecaptchaValidator:
 class CustomRegisterForm(ConfirmRegisterForm):
     """Custom registration form with reCAPTCHA protection."""
     
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
     # Don't override email field - let Flask-Security handle email validation
     # including duplicate email checking
     
@@ -62,3 +65,4 @@ class CustomRegisterForm(ConfirmRegisterForm):
     recaptcha = HiddenField('reCAPTCHA', validators=[RecaptchaValidator()])
     
     submit = SubmitField('Create Account')
+    

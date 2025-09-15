@@ -35,7 +35,7 @@
                 
                     <!-- Render all form fields dynamically -->
                     {% for field in register_user_form %}
-                        {% if field.name not in ['csrf_token', 'submit', 'next'] %}
+                        {% if field.name not in ['csrf_token', 'submit', 'next', 'recaptcha'] %}
                             <div class="mb-3">
                                 {{ field.label(class_="form-label") }}
                                 {% if field.type == 'PasswordField' %}
@@ -63,6 +63,15 @@
                     <div class="mb-3">
                         <div class="g-recaptcha" data-sitekey="{{ config.RECAPTCHA_SITE_KEY }}"></div>
                         <div class="form-text text-muted">Please complete the verification above</div>
+                        <!-- Hidden field for reCAPTCHA validation -->
+                        {{ register_user_form.recaptcha() }}
+                        {% if register_user_form.recaptcha.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in register_user_form.recaptcha.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
                     </div>
                     {% endif %}
                     

@@ -54,14 +54,10 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
     import os
     load_dotenv()  # Development (current directory)
     
-    # Debug: Check if production .env file exists and load it
+    # Production explicit path for environment variables
     prod_env_path = '/home/nik/webhookapp/.env'
     if os.path.exists(prod_env_path):
-        print(f"Loading production .env from: {prod_env_path}")
         load_dotenv(prod_env_path, override=True)
-        print(f"After loading: RECAPTCHA_SITE_KEY = {os.environ.get('RECAPTCHA_SITE_KEY', 'NOT SET')}")
-    else:
-        print(f"Production .env file not found at: {prod_env_path}")
 
     app = Flask(__name__)
     app.jinja_env.add_extension("jinja2.ext.do")

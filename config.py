@@ -123,10 +123,9 @@ class Config:
     SECURITY_TWO_FACTOR_RESCUE_MAIL = os.environ.get('MAIL_DEFAULT_SENDER')
     
     # reCAPTCHA settings for bot protection
-    # Temporary hardcoded values for production testing
-    RECAPTCHA_SITE_KEY = '6LdNrcorAAAAAJF9v5MF-OztU7OwqqNWX7Jj1f7p'
-    RECAPTCHA_SECRET_KEY = '6LdNrcorAAAAAFXiFgz7SMWsGMwbbEYDwkt-L25-'
-    RECAPTCHA_ENABLED = True
+    RECAPTCHA_SITE_KEY = os.environ.get('RECAPTCHA_SITE_KEY')
+    RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY')
+    RECAPTCHA_ENABLED = bool(os.environ.get('RECAPTCHA_SITE_KEY') and os.environ.get('RECAPTCHA_SECRET_KEY'))
 
 
 class DevelopmentConfig(Config):

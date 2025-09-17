@@ -98,58 +98,47 @@
 <script>
 // Track bot behavior without compromising security
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Registration tracking script loaded');
-    
     // Track page visits to registration page
     if (typeof gtag !== 'undefined') {
-        console.log('Tracking registration page visit');
-        gtag('event', 'page_view', {
+        gtag('event', 'registration_page_visit', {
             'page_title': 'Registration Page',
             'page_location': window.location.href,
             'event_category': 'bot_protection'
         });
-    } else {
-        console.log('Google Analytics not available for page tracking');
     }
     
     const form = document.querySelector('form[name="register_user_form"]');
-    if (form) {
-        console.log('Registration form found, adding event listener');
-        form.addEventListener('submit', function(e) {
-            console.log('Form submission attempt detected');
-            
+    const submitButton = form ? form.querySelector('input[type="submit"], button[type="submit"]') : null;
+    
+    if (form && submitButton) {
+        // Track when submit button is clicked (before reCAPTCHA validation)
+        submitButton.addEventListener('click', function(e) {
             let recaptchaResponse = '';
             try {
                 if (typeof grecaptcha !== 'undefined') {
                     recaptchaResponse = grecaptcha.getResponse();
-                    console.log('reCAPTCHA response:', recaptchaResponse ? 'present' : 'missing');
-                } else {
-                    console.log('grecaptcha not available');
                 }
             } catch (error) {
-                console.log('reCAPTCHA API error:', error);
+                // reCAPTCHA API not available
             }
             
             // Track attempted submissions for analytics
             if (typeof gtag !== 'undefined') {
-                const eventType = recaptchaResponse ? 'with_captcha' : 'without_captcha';
-                console.log('Sending GA event:', eventType);
                 gtag('event', 'registration_attempt', {
-                    'custom_parameter_1': eventType,
+                    'custom_parameter_1': recaptchaResponse ? 'with_captcha' : 'without_captcha',
                     'event_category': 'bot_protection'
                 });
-            } else {
-                console.log('Google Analytics (gtag) not available');
-            }
-            
-            // Let reCAPTCHA handle form validation normally
-            if (!recaptchaResponse) {
-                console.log('No reCAPTCHA response, form should be blocked');
-                // Don't prevent default - let reCAPTCHA handle it
             }
         });
-    } else {
-        console.log('Registration form not found');
+        
+        // Also track form submission (for successful attempts)
+        form.addEventListener('submit', function(e) {
+            if (typeof gtag !== 'undefined') {
+                gtag('event', 'registration_form_submit', {
+                    'event_category': 'bot_protection'
+                });
+            }
+        });
     }
 });
 </script>

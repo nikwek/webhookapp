@@ -48,6 +48,10 @@ def monitor_register_traffic():
         print("1. SSH into your Pi: ssh nik@your-pi-ip")
         print("2. Navigate to the app directory: cd /home/nik/webhookapp")
         print("3. Run: python3 scripts/monitor_bot_traffic.py")
+        print("\n📊 Alternative: Check Google Analytics for bot traffic:")
+        print("- Events → 'registration_attempt' (blocked attempts)")
+        print("- Events → 'registration_page_visit' (page visits)")
+        print("- Compare 'form_start' vs 'form_submit' for bot behavior")
         return
     
     try:

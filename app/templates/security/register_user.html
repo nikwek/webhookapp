@@ -125,7 +125,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Track attempted submissions for analytics
             if (typeof gtag !== 'undefined') {
                 gtag('event', 'registration_attempt', {
-                    'custom_parameter_1': recaptchaResponse ? 'with_captcha' : 'without_captcha',
+                    'captcha_status': recaptchaResponse ? 'completed' : 'missing',
                     'event_category': 'bot_protection'
                 });
             }

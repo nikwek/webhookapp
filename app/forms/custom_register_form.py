@@ -19,7 +19,18 @@ class RecaptchaValidator:
             return  # Skip validation if reCAPTCHA is disabled
             
         recaptcha_response = request.form.get('g-recaptcha-response')
+        
+        # Log registration attempt for monitoring
+        user_agent = request.headers.get('User-Agent', 'Unknown')
+        ip_address = request.remote_addr
+        current_app.logger.warning(
+            f"Registration attempt - IP: {ip_address}, "
+            f"User-Agent: {user_agent}, "
+            f"reCAPTCHA response: {'Present' if recaptcha_response else 'Missing'}"
+        )
+        
         if not recaptcha_response:
+            current_app.logger.warning(f"BLOCKED: Registration from {ip_address} - No reCAPTCHA response")
             raise ValidationError(self.message)
             
         secret_key = current_app.config.get('RECAPTCHA_SECRET_KEY')
@@ -37,8 +48,12 @@ class RecaptchaValidator:
             response = requests.post(verify_url, data=data, timeout=10)
             result = response.json()
             if not result.get('success', False):
+                current_app.logger.warning(f"BLOCKED: Registration from {ip_address} - reCAPTCHA verification failed: {result}")
                 raise ValidationError(self.message)
-        except Exception:
+            else:
+                current_app.logger.info(f"ALLOWED: Registration from {ip_address} - reCAPTCHA verified successfully")
+        except Exception as e:
+            current_app.logger.error(f"BLOCKED: Registration from {ip_address} - reCAPTCHA verification error: {e}")
             raise ValidationError('reCAPTCHA verification failed. Please try again.')
 
 

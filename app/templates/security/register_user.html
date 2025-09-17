@@ -99,6 +99,19 @@
 // Track bot behavior without compromising security
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Registration tracking script loaded');
+    
+    // Track page visits to registration page
+    if (typeof gtag !== 'undefined') {
+        console.log('Tracking registration page visit');
+        gtag('event', 'page_view', {
+            'page_title': 'Registration Page',
+            'page_location': window.location.href,
+            'event_category': 'bot_protection'
+        });
+    } else {
+        console.log('Google Analytics not available for page tracking');
+    }
+    
     const form = document.querySelector('form[name="register_user_form"]');
     if (form) {
         console.log('Registration form found, adding event listener');

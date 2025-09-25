@@ -54,6 +54,82 @@
             </div>
         </div>
 
+        <!-- Email Notifications Section (hidden for admins) -->
+        {% if not current_user.has_role('admin') %}
+        <div class="col-md-8 mx-auto mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">Email Notifications</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="form_name" value="notifications_form">
+                        
+                        {% set titles = {
+                            'USER_TRANSACTION_ACTIVITY': 'Notify me when a transaction occurs (strategy trade activity)'
+                        } %}
+                        
+                        {% if available_user_notifications %}
+                        <div class="list-group mb-3">
+                            {% for t in available_user_notifications %}
+                            <label class="list-group-item d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" name="notif_types" value="{{ t }}" {% if user_notification_prefs.get(t) %}checked{% endif %}>
+                                <span>{{ titles.get(t, t) }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <p class="text-muted">No notifications available.</p>
+                        {% endif %}
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Save Preferences</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if current_user.has_role('admin') %}
+        <!-- Admin Email Notifications Section (admins only) -->
+        <div class="col-md-8 mx-auto mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">Admin Email Notifications</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('dashboard.settings') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="form_name" value="admin_notifications_form">
+
+                        {% set admin_titles = {
+                            'ADMIN_NEW_USER_SIGNUP': 'Email me when a new user signs up'
+                        } %}
+
+                        {% if available_admin_notifications %}
+                        <div class="list-group mb-3">
+                            {% for t in available_admin_notifications %}
+                            <label class="list-group-item d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" name="notif_types" value="{{ t }}" {% if admin_notification_prefs.get(t) %}checked{% endif %}>
+                                <span>{{ admin_titles.get(t, t) }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <p class="text-muted">No admin notifications available.</p>
+                        {% endif %}
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Save Admin Preferences</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Two-Factor Authentication Section -->
         <div class="col-md-8 mx-auto mb-4">
           <div class="card">
@@ -162,6 +238,7 @@
                 </div>
             </div>
         </div>
+        <!-- Email Notifications section moved above -->
         
     </div>
 </div>

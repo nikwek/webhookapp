@@ -11,6 +11,7 @@ from app.models.portfolio import Portfolio
 from .account_cache import AccountCache
 from app.models.trading import AssetTransferLog
 from app.models.trading import TradingStrategy, StrategyValueHistory
+from app.models.notification import UserNotificationPreference
 
 # Update __all__ if you're using it
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     'AccountCache',
     'TradingStrategy',
     'StrategyValueHistory',
-    'AssetTransferLog'
+    'AssetTransferLog',
+    'UserNotificationPreference'
 ]

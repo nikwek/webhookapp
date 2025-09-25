@@ -9,6 +9,8 @@ from typing import Dict, Any
 from app import db
 from app.models import TradingStrategy, Automation, WebhookLog
 from app.services.exchange_service import ExchangeService
+from app.services.notification_service import NotificationService
+from app.exchanges.registry import ExchangeRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +187,36 @@ class EnhancedWebhookProcessor:
 
             # Log the full trade result for debugging
             logger.info(f"Processing Response / Info:\n{json.dumps(trade_result, indent=2, default=str)}")
+
+            # Send user transaction activity email (opt-in)
+            try:
+                strategy_obj = kwargs.get('target')
+                if strategy_obj and getattr(strategy_obj, 'user', None):
+                    user = strategy_obj.user
+                    # Resolve exchange display name
+                    ex_name = strategy_obj.exchange_credential.exchange if strategy_obj.exchange_credential else 'unknown'
+                    adapter_cls = ExchangeRegistry.get_adapter(ex_name)
+                    if adapter_cls and hasattr(adapter_cls, 'get_display_name'):
+                        exchange_display_name = adapter_cls.get_display_name()
+                    elif adapter_cls and hasattr(adapter_cls, 'get_name'):
+                        exchange_display_name = adapter_cls.get_name()
+                    else:
+                        exchange_display_name = ex_name.rsplit('-ccxt', 1)[0] if ex_name.endswith('-ccxt') else ex_name
+                    information = f"{kwargs.get('action', '').upper()} {kwargs.get('trading_pair', '')}"
+                    status_text = status_value.capitalize() if isinstance(status_value, str) else str(status_value)
+                    ts = datetime.utcnow().isoformat()
+                    coid = kwargs.get('client_order_id')
+                    NotificationService.send_user_transaction_activity(
+                        user=user,
+                        exchange_display_name=exchange_display_name,
+                        strategy_name=strategy_obj.name,
+                        information=information,
+                        status=status_text,
+                        timestamp=ts,
+                        client_order_id=coid,
+                    )
+            except Exception as notify_exc:
+                logger.error(f"Failed to send transaction email: {notify_exc}")
             return trade_result, 200
 
         except Exception as e:

@@ -8,6 +8,7 @@ from app.models.webhook import WebhookLog
 from sqlalchemy import func
 from app import db
 from flask_security import roles_required, current_user
+ 
 
 bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -68,10 +69,11 @@ def debug_routes_page():
     return render_template('admin/debug.html', routes=routes)
 
 
-@bp.route('/settings')
+@bp.route('/settings', methods=['GET', 'POST'])
 @roles_required('admin') 
 def settings():
-    return render_template('admin/settings.html')
+    """Redirect to the unified dashboard settings page to avoid duplication."""
+    return redirect(url_for('dashboard.settings'))
 
 # API endpoints for user management
 @bp.route('/api/user/<int:user_id>/reset', methods=['POST'])

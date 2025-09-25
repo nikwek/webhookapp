@@ -1,0 +1,1 @@
+New user signed up\n\n{{ new_user_email }} has created a new account.\nManage users: https://app.wekwerth.services/admin/users\n\nYou can manage your notification preferences at:\nhttps://app.wekwerth.services/dashboard/settings\n

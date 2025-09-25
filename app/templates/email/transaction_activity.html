@@ -1,0 +1,15 @@
+{% extends "email/base_email.html" %}
+{% block content %}
+  <h2 style="margin:0 0 12px 0;">New activity on {{ exchange }}</h2>
+  <div class="badge {% if status|lower == 'success' %}badge-success{% elif status|lower in ['error','failed'] %}badge-error{% else %}badge-pending{% endif %}">
+    {{ status }}
+  </div>
+  <table>
+    <tr><td>Exchange</td><td>{{ exchange }}</td></tr>
+    <tr><td>Account</td><td>{{ strategy_name }}</td></tr>
+    <tr><td>Information</td><td>{{ information }}</td></tr>
+    {% if timestamp %}<tr><td>Time</td><td>{{ timestamp }}</td></tr>{% endif %}
+    {% if client_order_id %}<tr><td>Client Order ID</td><td>{{ client_order_id }}</td></tr>{% endif %}
+  </table>
+  <a class="btn" href="https://app.wekwerth.services/dashboard">View activity</a>
+{% endblock %}

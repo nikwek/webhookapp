@@ -13,9 +13,10 @@ from app.exchanges.registry import ExchangeRegistry
 from typing import List, Dict, Any
 from app import db
 import logging
+from app.services.notification_service import NotificationService, AVAILABLE_USER_NOTIFICATIONS, AVAILABLE_ADMIN_NOTIFICATIONS
 
 from app.models.trading import TradingStrategy # Added for trading strategies
-import uuid # Added for generating unique webhook IDs for strategies
+ 
 
 # Add the logger that's missing
 logger = logging.getLogger(__name__)
@@ -202,6 +203,30 @@ def settings():
                 logger.error("Error saving timezone: %s", e, exc_info=True)
                 db.session.rollback()
                 flash(f'Error saving timezone: {e}', 'danger')
+        elif submitted_form_name == 'notifications_form':
+            # Save user notification preferences
+            enabled_types = request.form.getlist('notif_types')
+            logger.info("Saving user notification preferences: %s", enabled_types)
+            try:
+                NotificationService.save_preferences(current_user.id, enabled_types, scope="user")
+                flash('Notification preferences saved.', 'success')
+                return redirect(url_for('dashboard.settings'))
+            except Exception as e:
+                logger.error("Error saving notification prefs: %s", e, exc_info=True)
+                db.session.rollback()
+                flash(f'Error saving notifications: {e}', 'danger')
+        elif submitted_form_name == 'admin_notifications_form' and current_user.has_role('admin'):
+            # Save admin notification preferences
+            enabled_types = request.form.getlist('notif_types')
+            logger.info("Saving ADMIN notification preferences: %s", enabled_types)
+            try:
+                NotificationService.save_preferences(current_user.id, enabled_types, scope="admin")
+                flash('Admin notification preferences saved.', 'success')
+                return redirect(url_for('dashboard.settings'))
+            except Exception as e:
+                logger.error("Error saving admin notification prefs: %s", e, exc_info=True)
+                db.session.rollback()
+                flash(f'Error saving admin notifications: {e}', 'danger')
         elif submitted_form_name == 'ccxt_form':
             form_exchange = request.form.get('exchange')
             logger.info("Validating ccxt_form for exchange: %s", form_exchange)
@@ -322,6 +347,9 @@ def settings():
 
     from zoneinfo import available_timezones
     timezones_list = sorted(available_timezones())
+    # Notification preferences
+    user_notification_prefs = NotificationService.get_prefs_map(current_user.id)
+    admin_notification_prefs = NotificationService.get_prefs_map(current_user.id) if current_user.has_role('admin') else {}
 
     return render_template(
         'settings.html',
@@ -330,7 +358,11 @@ def settings():
         user_creds_map=exchange_creds_map,
         available_exchange_adapters=available_exchange_adapters,
         user=current_user,
-        timezones=timezones_list
+        timezones=timezones_list,
+        available_user_notifications=AVAILABLE_USER_NOTIFICATIONS,
+        user_notification_prefs=user_notification_prefs,
+        available_admin_notifications=AVAILABLE_ADMIN_NOTIFICATIONS,
+        admin_notification_prefs=admin_notification_prefs
     )
 
 

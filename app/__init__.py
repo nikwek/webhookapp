@@ -14,7 +14,7 @@ from flask_apscheduler import APScheduler
 from flask_caching import Cache
 from flask_login import logout_user
 from flask_mail import Mail
-from flask_security import Security, SQLAlchemyUserDatastore, user_authenticated
+from flask_security import Security, SQLAlchemyUserDatastore, user_authenticated, user_registered
 from flask_session import Session
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
@@ -240,6 +240,16 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
             logout_user()
             flash("Your account is suspended.", "error")
             return False
+
+    # Notify admins on new user sign-up if they have opted in
+    @user_registered.connect_via(app)  # pylint: disable=unused-variable
+    def _notify_admins_on_signup(app, user, **extra):  # noqa: ANN001
+        try:
+            from app.services.notification_service import NotificationService
+            # Send async-like (fire-and-forget) within request; failures are logged only
+            NotificationService.send_admin_new_user_signup(user.email)
+        except Exception as exc:  # pragma: no cover - never let this break registration
+            app.logger.error(f"Failed to send admin signup notifications: {exc}")
 
     # ---------------------------------------------------------------------
     # Blueprints

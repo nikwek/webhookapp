@@ -1,24 +1,21 @@
 # app/routes/debug.py
 import json
 import logging
-from flask import Blueprint, current_app, jsonify, abort, flash, redirect, url_for
-from flask_mail import Message
-from flask_security import RegisterForm, current_user, login_required, url_for_security, roles_required
-from flask import Blueprint, render_template, jsonify, request, current_app, redirect, url_for
-from flask_security import login_required, current_user
-from app.models.user import User
-from app.models.webhook import WebhookLog
-from app.models.exchange_credentials import ExchangeCredentials
-from app.models.automation import AutomationStrategy
-from app.models.trading import TradingStrategy
-from app.models.account_cache import AccountCache
-from app import db
-import json
 import os
+from datetime import datetime, timedelta, timezone
+from flask import Blueprint, current_app, jsonify, flash, redirect, url_for, render_template_string, session, get_flashed_messages
+from flask_mail import Message
+from flask_security import current_user, login_required, url_for_security, roles_required
+from sqlalchemy import inspect, text, func
+from sqlalchemy.exc import SQLAlchemyError
+from app.models.user import User
+from app.models.trading import TradingStrategy, StrategyValueHistory, AssetTransferLog
+from app.services.price_service import PriceService
+from app import db
 
 logger = logging.getLogger(__name__)
 
-debug = Blueprint('debug', __name__)
+debug = Blueprint('debug', __name__, url_prefix='/admin/debug')
 
 @debug.route('/test_email')
 def test_email():
@@ -39,7 +36,7 @@ def test_email():
         return f"Error sending email: {str(e)}"
     
 
-@debug.route('/debug/register_form')
+@debug.route('/register_form')
 @roles_required("admin")
 def debug_register_form():
     """Debug the registration form fields"""
@@ -51,7 +48,7 @@ def debug_register_form():
     fields = [f.name for f in form]
     return f"Registration form fields: {fields}"
 
-@debug.route('/debug/db-test')
+@debug.route('/db-test')
 @roles_required("admin")
 def test_db():
     """Test database connectivity and user table"""
@@ -109,7 +106,7 @@ def db_health_check():
             'timestamp': datetime.now(timezone.utc).isoformat()
         }), 500
     
-@debug.route('/debug/db-tables')
+@debug.route('/db-tables')
 @roles_required("admin")
 def db_tables():
     """List all database tables and their columns"""
@@ -140,7 +137,7 @@ def db_tables():
 
 
 
-@debug.route('/debug/check-suspension/<int:user_id>')
+@debug.route('/check-suspension/<int:user_id>')
 @roles_required("admin")
 @login_required
 def check_suspension(user_id):
@@ -186,7 +183,7 @@ def flash_test():
     flash("This is a test info message", "info")
     return redirect(url_for_security('login'))
 
-@debug.route('/debug/session')
+@debug.route('/session')
 def debug_session():
     """Debug the current session and flash messages"""
     from flask import session, get_flashed_messages
@@ -207,7 +204,7 @@ def debug_session():
         'flash_messages': flashed_messages
     })
 
-@debug.route('/debug/login-test')
+@debug.route('/login-test')
 def login_test():
     """Trigger flash messages for all common categories and redirect to login for visual inspection."""
     
@@ -224,7 +221,7 @@ def login_test():
     
     return redirect(url_for_security('login'))
 
-@debug.route('/debug/versions')
+@debug.route('/versions')
 def debug_versions():
     """Return the current versions of Flask and Flask-Security the app is running with."""
     import flask_security
@@ -236,7 +233,7 @@ def debug_versions():
         'flask_security_version': flask_security.__version__
     })
 
-@debug.route('/debug/security-messages')
+@debug.route('/security-messages')
 @roles_required("admin")
 def security_messages():
     """Check Flask-Security message configuration"""
@@ -256,7 +253,7 @@ def security_messages():
         'security_messages': security_config
     })
 
-@debug.route('/debug/login-process')
+@debug.route('/login-process')
 @roles_required("admin")
 def debug_login_process():
     """Debug the login process"""
@@ -287,7 +284,7 @@ def debug_login_process():
         security_flash_messages=current_app.config.get('SECURITY_FLASH_MESSAGES', False)
     )
 
-@debug.route('/debug/flash-categories')
+@debug.route('/flash-categories')
 def flash_categories():
     """Test various flash message categories"""
     
@@ -299,7 +296,7 @@ def flash_categories():
     # Use your URL pattern instead of url_for_security
     return redirect(url_for('security.login'))
 
-@debug.route('/debug/registration-config')
+@debug.route('/registration-config')
 @roles_required("admin")
 def registration_config():
     """Show registration configuration"""
@@ -317,7 +314,7 @@ def registration_config():
     
     return jsonify(config)
 
-@debug.route('/debug/try-register')
+@debug.route('/try-register')
 def try_register():
     """Debug registration process"""
     
@@ -328,7 +325,7 @@ def try_register():
     # Redirect to the registration page
     return redirect(url_for('security.register'))
 
-@debug.route("/debug/scheduler")
+@debug.route("/scheduler")
 @roles_required("admin")
 def scheduler_debug():
     """Comprehensive scheduler debug information."""
@@ -396,7 +393,7 @@ def scheduler_debug():
         return response, 500
 
 
-@debug.route("/debug/update-strategy-values")
+@debug.route("/update-strategy-values")
 @roles_required("admin")
 def update_strategy_values():
     """Manually trigger an update of all strategy values."""
@@ -463,7 +460,7 @@ def update_strategy_values():
             "message": f"Error updating strategy values: {str(e)}"
         }), 500
 
-@debug.route("/twrr/debug/<int:strategy_id>")
+@debug.route("/twrr/<int:strategy_id>")
 @roles_required("admin")
 def twrr_debug(strategy_id: int):
     """Debug TWRR calculation for a specific strategy."""

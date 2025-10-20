@@ -203,7 +203,10 @@ class EnhancedWebhookProcessor:
                     else:
                         exchange_display_name = ex_name.rsplit('-ccxt', 1)[0] if ex_name.endswith('-ccxt') else ex_name
                     information = f"{kwargs.get('action', '').upper()} {kwargs.get('trading_pair', '')}"
-                    status_text = status_value.capitalize() if isinstance(status_value, str) else str(status_value)
+                    # Normalize status for consistent display (closed -> success)
+                    from app.models.webhook import normalize_trade_status
+                    normalized_status = normalize_trade_status(status_value)
+                    status_text = normalized_status.capitalize() if isinstance(normalized_status, str) else str(normalized_status)
                     ts = datetime.utcnow().isoformat()
                     coid = kwargs.get('client_order_id')
                     NotificationService.send_user_transaction_activity(

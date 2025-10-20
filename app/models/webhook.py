@@ -1,14 +1,41 @@
-# app/models/webhook.py
 from app import db
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime
 import json
 
+
+def normalize_trade_status(status):
+    """
+    Normalize trade status for consistent display across UI and emails.
+    
+    CCXT returns 'closed' for successfully filled orders, but we want to show 'success'
+    for better user understanding.
+    
+    Args:
+        status: Raw status string from exchange/trade result
+        
+    Returns:
+        Normalized status string ('success', 'error', or original status)
+    """
+    if not status:
+        return status
+    
+    status_lower = str(status).lower()
+    
+    # Normalize 'closed' to 'success' (CCXT unified status for filled orders)
+    if status_lower == 'closed':
+        return 'success'
+    
+    # Keep other statuses as-is
+    return status
+
 class WebhookLog(db.Model):
-    idempotency_hash = db.Column(db.String(64), index=True, nullable=True)  # Hash of the payload for idempotency
+    idempotency_hash = Column(String(64), index=True, nullable=True)  # Hash of the payload for idempotency
     """Model for storing webhook execution logs"""
     __tablename__ = 'webhook_logs'
     
-    id = db.Column(db.Integer, primary_key=True)
+    id = Column(Integer, primary_key=True)
     
     # A log can belong to an old Automation or a new Trading Strategy
     automation_id = db.Column(db.String(36), db.ForeignKey('automations.automation_id'), nullable=True, index=True)
@@ -99,7 +126,7 @@ class WebhookLog(db.Model):
             'action': action,
             'ticker': ticker,
             'information': message,
-            'status': 'success' if self.status and self.status.lower() == 'closed' else self.status,
+            'status': normalize_trade_status(self.status),
             'order_id': self.order_id,
             'client_order_id': self.client_order_id,
             'raw_response': response_dict,

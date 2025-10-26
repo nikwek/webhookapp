@@ -580,8 +580,8 @@ def cleanup_zero_snapshots():
     """Delete zero-valued StrategyValueHistory snapshots for a strategy.
 
     Query params:
-      - strategy_id (required, int)
-      - dry_run (optional, bool-like) – if true, only returns count
+      &strategy_id=<int> (required, int)
+      &dry_run=true (optional, bool-like) – if true, only returns count
     """
     try:
         from flask import request

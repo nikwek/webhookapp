@@ -574,6 +574,40 @@ def twrr_debug(strategy_id: int):
     return jsonify(debug_data)
 
 
+@debug.route("/cleanup-zero-snapshots")
+@roles_required("admin")
+def cleanup_zero_snapshots():
+    """Delete zero-valued StrategyValueHistory snapshots for a strategy.
+
+    Query params:
+      - strategy_id (required, int)
+      - dry_run (optional, bool-like) – if true, only returns count
+    """
+    try:
+        from flask import request
+        from app.models.trading import StrategyValueHistory
+        strategy_id = request.args.get("strategy_id", type=int)
+        if not strategy_id:
+            return jsonify({"success": False, "error": "strategy_id is required"}), 400
+
+        dry_run = request.args.get("dry_run", default="false").lower() in {"1", "true", "yes"}
+
+        q = StrategyValueHistory.query.filter(
+            StrategyValueHistory.strategy_id == strategy_id,
+            StrategyValueHistory.value_usd == 0,
+        )
+        count = q.count()
+        if dry_run:
+            return jsonify({"success": True, "strategy_id": strategy_id, "zero_rows": count, "deleted": 0, "dry_run": True})
+
+        deleted = q.delete(synchronize_session=False)
+        db.session.commit()
+        return jsonify({"success": True, "strategy_id": strategy_id, "zero_rows": count, "deleted": deleted, "dry_run": False})
+    except Exception as e:
+        db.session.rollback()
+        logger.error("Error cleaning up zero snapshots: %s", e, exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @debug.route('/recaptcha-config')
 def recaptcha_config():
     """Debug route to check reCAPTCHA configuration"""

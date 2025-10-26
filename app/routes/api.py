@@ -327,10 +327,11 @@ def get_strategy_twrr(strategy_id: int):
         daily_points = []
         
         # Process each sub-period (consecutive snapshot pairs)
+        prev_eff_val = float(snaps[0].value_usd)
         for i in range(1, len(snaps)):
-            # Define sub-period boundaries
-            pvs_i = float(snaps[i - 1].value_usd)  # Period start value
-            pve_i = float(snaps[i].value_usd)      # Period end value
+            # Define sub-period boundaries with effective start value
+            pvs_i = prev_eff_val  # Period start value (effective)
+            pve_raw = float(snaps[i].value_usd)      # Period end value (raw)
             start_time = snaps[i - 1].timestamp
             end_time = snaps[i].timestamp
             
@@ -343,17 +344,25 @@ def get_strategy_twrr(strategy_id: int):
             )
             
             # Sanity check: warn if large value change but no cash flow detected
-            value_change = abs(pve_i - pvs_i)
+            value_change = abs(pve_raw - pvs_i)
             if value_change > 100 and cf_i == 0:  # $100+ change with no cash flow
                 print(f"WARNING: Strategy {strategy_id} sub-period {i}: Large value change "
                       f"(${value_change:.2f}) but no cash flow detected. "
-                      f"PVS: ${pvs_i:.2f}, PVE: ${pve_i:.2f}, CF: ${cf_i:.2f}")
+                      f"PVS: ${pvs_i:.2f}, PVE_raw: ${pve_raw:.2f}, CF: ${cf_i:.2f}")
             
             # Apply standard TWRR formula
             if pvs_i == 0:
                 sub_return = 0.0  # Avoid division by zero
             else:
-                sub_return = (pve_i - cf_i) / pvs_i - 1.0
+                # If the end snapshot is spuriously zero with no cash flow, carry forward
+                # the previous effective value to avoid a false -100% drop.
+                adjusted = False
+                if pve_raw == 0.0 and cf_i == 0 and pvs_i > 0:
+                    pve_eff = pvs_i
+                    adjusted = True
+                else:
+                    pve_eff = pve_raw
+                sub_return = (pve_eff - cf_i) / pvs_i - 1.0
             
             daily_points.append((snaps[i].timestamp, sub_return))
             
@@ -368,13 +377,16 @@ def get_strategy_twrr(strategy_id: int):
                     "idx": i,
                     "timestamp": snaps[i].timestamp.isoformat(),
                     "prev_val": pvs_i,
-                    "curr_val": pve_i,
+                    "curr_val": pve_eff if 'pve_eff' in locals() else pve_raw,
                     "flow": cf_i,
                     "sub_return": _clean_rate(sub_return),
                     "interval": f"[{start_time.isoformat()} <= t <= {end_time.isoformat()}]",
                     "transfers_in_period": period_transfers,
-                    "note": "Inclusive interval logic applied"
+                    "note": ("zero_end_no_cf_carry_forward" if adjusted else "Inclusive interval logic applied")
                 })
+
+            # Carry forward effective end value to next interval
+            prev_eff_val = pve_eff if 'pve_eff' in locals() else pve_raw
 
         # If day view requested, compute cumulative from daily_points and return
         if period == 'day':

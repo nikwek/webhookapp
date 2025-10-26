@@ -49,13 +49,13 @@ class CcxtCoinbaseAdapter(CcxtBaseAdapter):
                 "client_order_id": client_order_id,
             }
 
-        order_type = payload.get("order_type", "market").lower()
+        order_type = (payload.get("order_type") or payload.get("type") or "market").lower()
         price = payload.get("price") if order_type == "limit" else None
         
         # Get the client - same as in base class
         client = cls.get_client(
             credentials.user_id,
-            portfolio.name if portfolio else "default",
+            credentials.portfolio_name,
         )
         
         # Coinbase requires a minimum order size ($10 USD minimum)
@@ -66,7 +66,12 @@ class CcxtCoinbaseAdapter(CcxtBaseAdapter):
             try:
                 # Fetch the current price to ensure we meet min order requirements
                 ticker = client.fetch_ticker(trading_pair)
-                current_price = float(ticker['last'])
+                current_price = float(
+                    ticker.get('last')
+                    or ticker.get('close')
+                    or ticker.get('ask')
+                    or ticker.get('bid')
+                )
                 logger.info(f"Current price for {trading_pair}: {current_price}")
                 
                 # Calculate the cost (quote currency amount)
@@ -93,13 +98,13 @@ class CcxtCoinbaseAdapter(CcxtBaseAdapter):
                 logger.info(f"Using createMarketBuyOrderWithCost with USD amount: ${cost:.2f}")
                 
                 # Use the specialized Coinbase method for cost-based market buy orders
-                initial_order = client.createMarketBuyOrderWithCost(trading_pair, cost)
+                initial_order = client.create_market_buy_order_with_cost(trading_pair, cost)
                 
                 # Log the successful order
                 logger.info(f"Placed Coinbase market BUY order for {trading_pair} with cost ${cost:.2f}")
                 
                 # Get the order ID for follow-up
-                order_id = initial_order["id"]
+                order_id = initial_order.get("id")
                 
                 # Now fetch the complete order details with filled amount
                 # Market orders execute quickly, but we'll add a small retry mechanism
@@ -110,7 +115,7 @@ class CcxtCoinbaseAdapter(CcxtBaseAdapter):
                 for attempt in range(max_retries):
                     try:
                         logger.info(f"Fetching complete order details for order ID {order_id} (attempt {attempt+1}/{max_retries})")
-                        complete_order = client.fetchOrder(order_id, trading_pair)
+                        complete_order = client.fetch_order(order_id, trading_pair)
                         
                         # Check if we have the filled amount
                         if complete_order.get('filled') is not None:
@@ -138,20 +143,51 @@ class CcxtCoinbaseAdapter(CcxtBaseAdapter):
                     final_order['filled'] = estimated_filled
                     logger.info(f"Estimated filled amount: {estimated_filled} from cost ${cost:.2f}")
                 
-                # Return the enhanced order details
+                # Return structure consistent with base adapter
                 return {
-                    "success": True,
-                    "order_id": order_id,
+                    "trade_executed": True,
+                    "message": "success",
+                    "trade_status": final_order.get("status", "closed"),
                     "client_order_id": client_order_id,
-                    "order": final_order,
-                    # Add these fields directly at the top level for easier access
-                    "filled": final_order.get('filled'),
-                    "cost": final_order.get('cost'),
-                    "price": current_price
+                    "exchange_order_id": order_id,
+                    "raw_order": final_order,
                 }
             except Exception as exc:
-                logger.error(f"Error using createMarketBuyOrderWithCost for {trading_pair}: {exc}")
-                # Fall through to standard order handling as fallback
+                logger.error(f"Error using create_market_buy_order_with_cost for {trading_pair}: {exc}")
+                # Robust fallback: use create_order with cost and option override
+                try:
+                    fallback_initial = client.create_order(
+                        trading_pair,
+                        "market",
+                        "buy",
+                        cost,  # pass cost as amount when option disabled
+                        None,
+                        params={"createMarketBuyOrderRequiresPrice": False},
+                    )
+                    order_id = fallback_initial.get("id")
+                    final_order = fallback_initial
+                    try:
+                        final_order = client.fetch_order(order_id, trading_pair)
+                    except Exception:
+                        pass
+                    return {
+                        "trade_executed": True,
+                        "message": "success",
+                        "trade_status": final_order.get("status"),
+                        "client_order_id": client_order_id,
+                        "exchange_order_id": order_id,
+                        "raw_order": final_order,
+                    }
+                except Exception as fallback_exc:
+                    logger.error(
+                        f"Fallback market buy by cost failed for {trading_pair}: {fallback_exc}"
+                    )
+                    return {
+                        "trade_executed": False,
+                        "message": str(fallback_exc),
+                        "trade_status": "error",
+                        "client_order_id": client_order_id,
+                    }
         
         # For all other order types (and fallback for market buy if the specialized method fails),
         # delegate to the parent class implementation

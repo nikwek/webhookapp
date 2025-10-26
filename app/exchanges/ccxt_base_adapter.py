@@ -87,6 +87,17 @@ class CcxtBaseAdapter(ExchangeAdapter):
 
         client = cls._get_exchange_class()(params)
 
+        # Coinbase Advanced via CCXT may require a price for market buy orders unless
+        # this option is disabled. Our Coinbase adapter uses cost-based market buys,
+        # so disable the requirement at the client level for robustness.
+        try:
+            if cls.get_name() in ["coinbase", "coinbase-ccxt"]:
+                if hasattr(client, "options") and isinstance(client.options, dict):
+                    client.options["createMarketBuyOrderRequiresPrice"] = False
+        except Exception:
+            # Defensive: ignore if options structure changes
+            pass
+
         if cls.get_name() in current_app.config.get("CCXT_SANDBOX_EXCHANGES", []):
             if hasattr(client, "set_sandbox_mode"):
                 client.set_sandbox_mode(True)

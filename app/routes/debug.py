@@ -580,7 +580,7 @@ def cleanup_zero_snapshots():
     """Delete zero-valued StrategyValueHistory snapshots for a strategy.
 
     Query params:
-      &strategy_id=<int> (required, int)
+      ?strategy_id=<int> (required, int)
       &dry_run=true (optional, bool-like) – if true, only returns count
     """
     try:

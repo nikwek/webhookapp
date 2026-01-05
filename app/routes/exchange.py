@@ -15,6 +15,7 @@ from collections import defaultdict
 from sqlalchemy import desc
 from decimal import Decimal, InvalidOperation
 from app.services import allocation_service
+from app.services.exchange_service import ExchangeService
 
 
 logger = logging.getLogger(__name__)
@@ -571,4 +572,78 @@ def edit_strategy_name(exchange_id: str, strategy_id: int):
         logger.error(f"Error updating strategy name for strategy {strategy.id}: {e}", exc_info=True)
         flash('An error occurred while updating the strategy name. Please try again.', 'danger')
 
+    return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))
+
+
+@exchange_bp.route('/<string:exchange_id>/strategy/<int:strategy_id>/trade', methods=['POST'])
+@login_required
+def manual_trade(exchange_id: str, strategy_id: int):
+    """Execute a manual trade for a trading strategy."""
+    strategy = TradingStrategy.query.get_or_404(strategy_id)
+    
+    # Verify ownership
+    if strategy.exchange_credential.user_id != current_user.id:
+        flash('Unauthorized access to strategy.', 'danger')
+        return redirect(url_for('exchange.view_exchange', exchange_id=exchange_id))
+    
+    trade_type = request.form.get('trade_type')
+    
+    if trade_type not in ['buy', 'sell']:
+        flash('Invalid trade type.', 'danger')
+        return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))
+    
+    try:
+        # Generate a unique client order ID
+        client_order_id = f"manual_{trade_type}_{strategy.id}_{uuid.uuid4().hex[:8]}"
+        
+        # Execute the trade based on type
+        if trade_type == 'buy':
+            # Buy: Convert all quote asset to base asset
+            quote_amount = strategy.allocated_quote_asset_quantity
+            if quote_amount <= 0:
+                flash(f'No {strategy.quote_asset_symbol} available to buy with.', 'warning')
+                return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))
+            
+            # Create payload for buy order - same format as webhook API
+            payload = {
+                "action": "buy",
+                "ticker": strategy.trading_pair
+            }
+            
+        elif trade_type == 'sell':
+            # Sell: Convert all base asset to quote asset
+            base_amount = strategy.allocated_base_asset_quantity
+            if base_amount <= 0:
+                flash(f'No {strategy.base_asset_symbol} available to sell.', 'warning')
+                return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))
+            
+            # Create payload for sell order - same format as webhook API
+            payload = {
+                "action": "sell",
+                "ticker": strategy.trading_pair
+            }
+        
+        # Execute trade using ExchangeService (same as webhook processor)
+        result = ExchangeService.execute_trade(
+            credentials=strategy.exchange_credential,
+            portfolio=None,
+            trading_pair=strategy.trading_pair,
+            action=trade_type,
+            payload=payload,
+            client_order_id=client_order_id,
+            target_type='strategy',
+            target_id=strategy.id
+        )
+        
+        # Handle the result - ExchangeService already updates allocations
+        if result.get('trade_executed') or result.get('success'):
+            flash(f'{trade_type.capitalize()} order executed successfully!', 'success')
+        else:
+            flash(f'{trade_type.capitalize()} order failed: {result.get("message", "Unknown error")}', 'danger')
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error executing manual trade for strategy {strategy.id}: {e}", exc_info=True)
+        flash(f'Trade execution failed: {str(e)}', 'danger')
+    
     return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))

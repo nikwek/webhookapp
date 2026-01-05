@@ -4,6 +4,13 @@
 
 {% block content %}
 <div class="container mt-4 mb-4" data-strategy-id="{{ strategy.id }}">
+    <!-- Back to Exchange button moved to top-left -->
+    <div class="mb-3">
+        <a href="{{ url_for('exchange.view_exchange', exchange_id=exchange_id) }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-2"></i>Back to {{ current_exchange_display_name }}
+        </a>
+    </div>
+    
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div class="d-flex align-items-center">
             <h1 class="mb-0 me-2">Strategy:</h1>
@@ -30,9 +37,6 @@
             </div>
         </div>
         <div>
-            <a href="{{ url_for('exchange.view_exchange', exchange_id=exchange_id) }}" class="btn btn-outline-secondary me-2">
-                <i class="fas fa-arrow-left me-2"></i>Back to {{ current_exchange_display_name }}
-            </a>
             <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteStrategyModal">
                 <i class="fas fa-trash-alt me-1"></i> Delete Strategy
             </button>
@@ -85,6 +89,22 @@
                         <dt class="col-sm-5">Est. Total Value (USD):</dt>
                         <dd class="col-sm-7" id="strategyTotalValue">–</dd>
                     </dl>
+                </div>
+            </div>
+            
+            <!-- Manual Trading Buttons -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="d-flex gap-3 justify-content-center">
+                        <button type="button" class="btn btn-success" id="buyButton" data-bs-toggle="modal" data-bs-target="#tradeConfirmModal" data-trade-type="buy">
+                            <i class="fas fa-arrow-up me-2"></i>Buy {{ strategy.base_asset_symbol }}
+                            <br><small class="text-white-50">Convert all {{ strategy.quote_asset_symbol }} to {{ strategy.base_asset_symbol }}</small>
+                        </button>
+                        <button type="button" class="btn btn-danger" id="sellButton" data-bs-toggle="modal" data-bs-target="#tradeConfirmModal" data-trade-type="sell">
+                            <i class="fas fa-arrow-down me-2"></i>Sell {{ strategy.base_asset_symbol }}
+                            <br><small class="text-white-50">Convert all {{ strategy.base_asset_symbol }} to {{ strategy.quote_asset_symbol }}</small>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -388,6 +408,34 @@
 </script>
 {% endraw %}
 
+<!-- Trade Confirmation Modal -->
+<div class="modal fade" id="tradeConfirmModal" tabindex="-1" aria-labelledby="tradeConfirmModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="tradeConfirmModalLabel">Confirm Trade</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="tradeDetails">
+          <!-- Trade details will be populated by JavaScript -->
+        </div>
+        <div class="alert alert-warning mt-3">
+          <i class="fas fa-exclamation-triangle me-2"></i>
+          <strong>Warning:</strong> This will execute a market order immediately. Make sure you want to proceed.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form id="tradeForm" method="POST" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <input type="hidden" name="trade_type" id="tradeTypeInput"/>
+          <button type="submit" class="btn" id="confirmTradeBtn">Confirm Trade</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Delete Strategy Modal -->
 <div class="modal fade" id="deleteStrategyModal" tabindex="-1" aria-labelledby="deleteStrategyModalLabel" aria-hidden="true">
@@ -448,6 +496,42 @@ document.addEventListener('DOMContentLoaded', function() {
 
     saveBtn.addEventListener('click', () => {
         form.requestSubmit();
+    });
+
+    // Trade button handlers
+    const tradeModal = document.getElementById('tradeConfirmModal');
+    const tradeDetails = document.getElementById('tradeDetails');
+    const tradeForm = document.getElementById('tradeForm');
+    const tradeTypeInput = document.getElementById('tradeTypeInput');
+    const confirmTradeBtn = document.getElementById('confirmTradeBtn');
+
+    tradeModal.addEventListener('show.bs.modal', function (event) {
+        const button = event.relatedTarget;
+        const tradeType = button.getAttribute('data-trade-type');
+        const strategyId = document.querySelector('[data-strategy-id]').getAttribute('data-strategy-id');
+        
+        tradeTypeInput.value = tradeType;
+        tradeForm.action = `/exchange/{{ exchange_id }}/strategy/${strategyId}/trade`;
+
+        if (tradeType === 'buy') {
+            tradeDetails.innerHTML = `
+                <p><strong>Trade Type:</strong> <span class="badge bg-success">BUY</span></p>
+                <p><strong>Action:</strong> Convert all allocated <strong>{{ strategy.quote_asset_symbol }}</strong> to <strong>{{ strategy.base_asset_symbol }}</strong></p>
+                <p><strong>Amount:</strong> {{ (strategy.allocated_quote_asset_quantity | float) | round(8) }} {{ strategy.quote_asset_symbol }}</p>
+                <p><strong>Trading Pair:</strong> {{ strategy.trading_pair }}</p>
+            `;
+            confirmTradeBtn.className = 'btn btn-success';
+            confirmTradeBtn.innerHTML = '<i class="fas fa-arrow-up me-2"></i>Execute Buy Order';
+        } else if (tradeType === 'sell') {
+            tradeDetails.innerHTML = `
+                <p><strong>Trade Type:</strong> <span class="badge bg-danger">SELL</span></p>
+                <p><strong>Action:</strong> Convert all allocated <strong>{{ strategy.base_asset_symbol }}</strong> to <strong>{{ strategy.quote_asset_symbol }}</strong></p>
+                <p><strong>Amount:</strong> {{ (strategy.allocated_base_asset_quantity | float) | round(8) }} {{ strategy.base_asset_symbol }}</p>
+                <p><strong>Trading Pair:</strong> {{ strategy.trading_pair }}</p>
+            `;
+            confirmTradeBtn.className = 'btn btn-danger';
+            confirmTradeBtn.innerHTML = '<i class="fas fa-arrow-down me-2"></i>Execute Sell Order';
+        }
     });
 });
 

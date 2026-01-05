@@ -22,6 +22,7 @@ class EnhancedWebhookProcessor:
 
     def __init__(self):
         self.exchange_service = ExchangeService()
+        self.identifier = None  # Initialize identifier attribute
 
     def process_webhook(self, identifier: str, payload: Dict[str, Any]):
         """

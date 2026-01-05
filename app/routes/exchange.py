@@ -618,6 +618,7 @@ def manual_trade(exchange_id: str, strategy_id: int):
         
         # Use webhook processor directly (same as API calls)
         processor = EnhancedWebhookProcessor()
+        processor.identifier = f"manual_trade_{strategy.id}"
         result, status_code = processor._process_for_strategy(strategy, payload)
         
         # Handle the result

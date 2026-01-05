@@ -16,6 +16,22 @@
     </div>
     {% endif %}
     
+    {% if exchanges and exchanges|length > 0 %}
+    <!-- Total Value Across All Exchanges -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-body text-center">
+                    <h5 class="card-title text-muted mb-3">Total Value</h5>
+                    <p class="card-text display-4">
+                        {{ "$" + "{:,.2f}".format(total_value_all_exchanges|float) }}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
     <!-- Exchanges Section -->
     <div class="row mb-4">
         <div class="col-md-12">

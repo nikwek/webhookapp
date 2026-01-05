@@ -152,10 +152,14 @@ def dashboard():
         user_id=user_id
     ).first() is not None
 
+    # Compute the total value across all connected exchanges
+    total_value_all_exchanges = round(sum(ex['value'] for ex in connected_exchanges_display_data), 2)
+
     return render_template(
         'dashboard.html',
         exchanges=connected_exchanges_display_data,
-        has_any_exchange_keys=has_any_exchange_keys
+        has_any_exchange_keys=has_any_exchange_keys,
+        total_value_all_exchanges=total_value_all_exchanges
     )
 
 

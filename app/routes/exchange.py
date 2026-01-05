@@ -15,7 +15,7 @@ from collections import defaultdict
 from sqlalchemy import desc
 from decimal import Decimal, InvalidOperation
 from app.services import allocation_service
-from app.services.exchange_service import ExchangeService
+from app.services.webhook_processor import EnhancedWebhookProcessor
 
 
 logger = logging.getLogger(__name__)
@@ -593,9 +593,6 @@ def manual_trade(exchange_id: str, strategy_id: int):
         return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))
     
     try:
-        # Generate a unique client order ID
-        client_order_id = f"manual_{trade_type}_{strategy.id}_{uuid.uuid4().hex[:8]}"
-        
         # Execute the trade based on type
         if trade_type == 'buy':
             # Buy: Convert all quote asset to base asset
@@ -604,39 +601,27 @@ def manual_trade(exchange_id: str, strategy_id: int):
                 flash(f'No {strategy.quote_asset_symbol} available to buy with.', 'warning')
                 return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))
             
-            # Create payload for buy order - same format as webhook API
-            payload = {
-                "action": "buy",
-                "ticker": strategy.trading_pair
-            }
-            
         elif trade_type == 'sell':
             # Sell: Convert all base asset to quote asset
             base_amount = strategy.allocated_base_asset_quantity
             if base_amount <= 0:
                 flash(f'No {strategy.base_asset_symbol} available to sell.', 'warning')
                 return redirect(url_for('exchange.view_strategy_details', exchange_id=exchange_id, strategy_id=strategy_id))
-            
-            # Create payload for sell order - same format as webhook API
-            payload = {
-                "action": "sell",
-                "ticker": strategy.trading_pair
-            }
         
-        # Execute trade using ExchangeService (same as webhook processor)
-        result = ExchangeService.execute_trade(
-            credentials=strategy.exchange_credential,
-            portfolio=None,
-            trading_pair=strategy.trading_pair,
-            action=trade_type,
-            payload=payload,
-            client_order_id=client_order_id,
-            target_type='strategy',
-            target_id=strategy.id
-        )
+        # Create payload exactly like webhook API calls
+        payload = {
+            "action": trade_type,
+            "ticker": strategy.trading_pair,
+            "timestamp": "2026-01-05T22:00:00Z",
+            "message": f"Manual {trade_type} order"
+        }
         
-        # Handle the result - ExchangeService already updates allocations
-        if result.get('trade_executed') or result.get('success'):
+        # Use webhook processor directly (same as API calls)
+        processor = EnhancedWebhookProcessor()
+        result, status_code = processor._process_for_strategy(strategy, payload)
+        
+        # Handle the result
+        if result.get('success', False):
             flash(f'{trade_type.capitalize()} order executed successfully!', 'success')
         else:
             flash(f'{trade_type.capitalize()} order failed: {result.get("message", "Unknown error")}', 'danger')

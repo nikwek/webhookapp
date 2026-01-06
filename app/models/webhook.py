@@ -5,15 +5,17 @@ from datetime import datetime
 import json
 
 
-def normalize_trade_status(status):
+def normalize_trade_status(status, trade_result=None):
     """
     Normalize trade status for consistent display across UI and emails.
     
     CCXT returns 'closed' for successfully filled orders, but we want to show 'success'
-    for better user understanding.
+    for better user understanding. Coinbase returns 'open' for market orders that
+    are effectively complete but still settling.
     
     Args:
         status: Raw status string from exchange/trade result
+        trade_result: Optional trade result dict to check for completion indicators
         
     Returns:
         Normalized status string ('success', 'error', or original status)
@@ -26,6 +28,28 @@ def normalize_trade_status(status):
     # Normalize 'closed' to 'success' (CCXT unified status for filled orders)
     if status_lower == 'closed':
         return 'success'
+    
+    # Handle Coinbase 'open' status for effectively completed market orders
+    if status_lower == 'open' and trade_result:
+        # Check if trade has significant fill percentage (>95%) indicating completion
+        if isinstance(trade_result, dict):
+            raw_order = trade_result.get('raw_order', {})
+            info = raw_order.get('info', {})
+            
+            # Check completion percentage from Coinbase
+            completion_pct = info.get('completion_percentage')
+            if completion_pct:
+                try:
+                    completion_float = float(completion_pct)
+                    if completion_float > 95.0:  # >95% filled = effectively complete
+                        return 'success'
+                except (ValueError, TypeError):
+                    pass
+            
+            # Also check if we have filled amount and it's substantial
+            filled = raw_order.get('filled')
+            if filled and float(filled) > 0:
+                return 'success'
     
     # Keep other statuses as-is
     return status

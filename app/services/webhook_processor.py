@@ -206,7 +206,7 @@ class EnhancedWebhookProcessor:
                     information = f"{kwargs.get('action', '').upper()} {kwargs.get('trading_pair', '')}"
                     # Normalize status for consistent display (closed -> success)
                     from app.models.webhook import normalize_trade_status
-                    normalized_status = normalize_trade_status(status_value)
+                    normalized_status = normalize_trade_status(status_value, trade_result)
                     status_text = normalized_status.capitalize() if isinstance(normalized_status, str) else str(normalized_status)
                     ts = datetime.utcnow().isoformat()
                     coid = kwargs.get('client_order_id')

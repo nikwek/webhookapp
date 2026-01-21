@@ -43,7 +43,7 @@ ssh nik@raspberrypi.local "export BRANCH='$BRANCH'; bash -s" <<'EOF'
  cp /home/nik/webhookapp/instance/webhook.db /home/nik/webhookapp/backups/webhook_$(date +'%Y%m%d%H%M%S').db
 
  # After backup clean up old backups
- ls -t backups/webhook_*.db | tail -n +31 | xargs rm -f 2>/dev/null || true
+ ls -t /home/nik/webhookapp/backups/webhook_*.db | tail -n +31 | xargs rm -f 2>/dev/null || true
  
  cd /home/nik/webhookapp &&
  source venv/bin/activate &&

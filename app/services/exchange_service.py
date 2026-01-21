@@ -1,11 +1,12 @@
 # app/services/exchange_service.py
 
 import logging
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.exchanges.registry import ExchangeRegistry
 from app.models import ExchangeCredentials, Portfolio, TradingStrategy
+from app.exchanges.precision import get_market_precisions
 
 logger = logging.getLogger(__name__)
 
@@ -301,7 +302,26 @@ class ExchangeService:
                 amount = Decimal("0")
 
 
-            # Update payload with the calculated or validated amount
+            # Determine exchange precision for amount and quantize conservatively
+            quant = Decimal('0.00000001')
+            try:
+                client = adapter.get_client(credentials.user_id, credentials.portfolio_name or "default")
+                if client:
+                    prec = get_market_precisions(client, trading_pair)
+                    q = prec.get('amount_quant')
+                    if q is not None:
+                        quant = q
+            except Exception:
+                # Fallback to default 8 decimals if market metadata isn't available
+                quant = Decimal('0.00000001')
+            if action.lower() == 'sell':
+                # Strict: quantize to exchange precision using ROUND_DOWN so we never exceed holdings
+                amount = amount.quantize(quant, rounding=ROUND_DOWN)
+            elif action.lower() == 'buy':
+                # Strict: quantize to exchange precision to avoid overspending
+                amount = amount.quantize(quant, rounding=ROUND_DOWN)
+
+            # Pass a numeric type to adapters/ccxt; keep to float at the last moment
             payload["amount"] = float(amount)
             payload["type"] = "market"  # Strategies use market orders
 

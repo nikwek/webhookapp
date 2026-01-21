@@ -4,6 +4,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from decimal import Decimal, ROUND_DOWN
 
 import ccxt
 from ccxt.base.errors import ExchangeError
@@ -14,6 +15,7 @@ from app.exchanges.base_adapter import ExchangeAdapter
 from app.models.exchange_credentials import ExchangeCredentials
 from app.models.portfolio import Portfolio
 from app.utils.circuit_breaker import circuit_breaker
+from app.exchanges.precision import get_market_precisions
 
 logger = logging.getLogger(__name__)
 
@@ -261,11 +263,21 @@ class CcxtBaseAdapter(ExchangeAdapter):
             }
 
         side = action.lower()
-        amount = payload.get("size") or payload.get("amount") or payload.get("quantity")
-        if not amount:
+        raw_amount = payload.get("size") or payload.get("amount") or payload.get("quantity")
+        if raw_amount is None:
             return {
                 "trade_executed": False,
                 "message": "No trade size specified in payload",
+                "trade_status": "error",
+                "client_order_id": client_order_id,
+            }
+        # Normalize amount to Decimal for safe math and rounding
+        try:
+            amount_dec = Decimal(str(raw_amount))
+        except Exception:
+            return {
+                "trade_executed": False,
+                "message": "Invalid amount format",
                 "trade_status": "error",
                 "client_order_id": client_order_id,
             }
@@ -302,32 +314,49 @@ class CcxtBaseAdapter(ExchangeAdapter):
                 except Exception as e:
                     logger.warning("Failed to fetch ticker for cost validation: %s", e)
 
-            # Check amount minimum
-            if amount_min is not None and amount < amount_min:
-                msg = (
-                    f"Order amount {amount} below exchange minimum {amount_min}. "
-                    "Trade aborted."
-                )
-                logger.info(msg)
-                return {
-                    "trade_executed": False,
-                    "message": msg,
-                    "trade_status": "rejected",
-                    "client_order_id": client_order_id,
-                }
+            # Resolve amount quantum and quantize amount
+            try:
+                prec = get_market_precisions(client, trading_pair)
+                amount_quant = prec.get('amount_quant') or Decimal('0.00000001')
+            except Exception:
+                amount_quant = Decimal('0.00000001')
 
-            # Check cost minimum
+            try:
+                amount_dec = amount_dec.quantize(amount_quant, rounding=ROUND_DOWN)
+            except Exception:
+                amount_dec = max(amount_dec, Decimal('0'))
+
+            # Check amount minimum with Decimal
+            if amount_min is not None:
+                try:
+                    amount_min_dec = Decimal(str(amount_min))
+                except Exception:
+                    amount_min_dec = None
+                if amount_min_dec is not None and amount_dec < amount_min_dec:
+                    msg = (
+                        f"Order amount {amount_dec} below exchange minimum {amount_min}. "
+                        "Trade aborted."
+                    )
+                    logger.info(msg)
+                    return {
+                        "trade_executed": False,
+                        "message": msg,
+                        "trade_status": "rejected",
+                        "client_order_id": client_order_id,
+                    }
+
+            # Check cost minimum with Decimal
             if cost_min is not None and price_for_cost is not None:
                 try:
-                    order_cost = float(amount) * float(price_for_cost)
-                    cost_min_value = float(cost_min)
-                except (ValueError, TypeError) as e:
-                    logger.warning("Failed to cast amount/cost to float for validation: %s", e)
+                    price_dec = Decimal(str(price_for_cost))
+                    cost_min_dec = Decimal(str(cost_min))
+                    order_cost = amount_dec * price_dec
+                except Exception as e:
+                    logger.warning("Failed to compute Decimal order cost for validation: %s", e)
                     order_cost = None
-                if order_cost is not None and order_cost < cost_min_value:
+                if order_cost is not None and order_cost < cost_min_dec:
                     msg = (
-                        f"Order cost ${order_cost:.2f} below exchange minimum "
-                        f"${cost_min_value:.2f}. Trade aborted."
+                        f"Order cost ${order_cost} below exchange minimum ${cost_min}. Trade aborted."
                     )
                     logger.info(msg)
                     return {
@@ -345,9 +374,48 @@ class CcxtBaseAdapter(ExchangeAdapter):
             # special cases for their particular exchange before calling super()
             
             # Step 1: Create the order
-            initial_order = client.create_order(
-                trading_pair, order_type, side, amount, price, params=options
-            )
+            if side == "buy" and order_type == "market":
+                # Prefer quote-size (cost-based) market buys when supported
+                initial_order = None
+                try:
+                    cost_amount = None
+                    # Compute cost from base amount and current price if available
+                    if market and (price_for_cost is not None):
+                        try:
+                            base_amt_dec = amount_dec
+                            price_dec = Decimal(str(price_for_cost))
+                            cost_dec = base_amt_dec * price_dec
+                            # Determine quote precision (2 dp for fiat/stables, else 8 dp default)
+                            quote = market.get("quote") if isinstance(market, dict) else None
+                            fiat_stables = {"USD", "USDC", "USDT", "USDP", "DAI"}
+                            if isinstance(quote, str) and quote.upper() in fiat_stables:
+                                q_decimals = 2
+                            else:
+                                q_decimals = 8
+                            q_quant = Decimal("1").scaleb(-q_decimals)
+                            cost_dec = cost_dec.quantize(q_quant, rounding=ROUND_DOWN)
+                            cost_amount = float(cost_dec)
+                        except Exception:
+                            cost_amount = None
+
+                    # Coinbase Advanced: has a dedicated cost-based market buy helper
+                    if cost_amount is not None and hasattr(client, "create_market_buy_order_with_cost"):
+                        initial_order = client.create_market_buy_order_with_cost(trading_pair, cost_amount)
+                    # Binance: supports quoteOrderQty parameter
+                    elif cost_amount is not None and getattr(client, "id", "").lower() in {"binance", "binanceus"}:
+                        initial_order = client.create_order(trading_pair, "market", "buy", None, None, params={"quoteOrderQty": cost_amount})
+                except Exception as e:
+                    logger.info(f"Cost-based market buy path not used due to: {e}")
+
+                if initial_order is None:
+                    # Fallback to base-size market buy
+                    initial_order = client.create_order(
+                        trading_pair, order_type, side, float(amount_dec), price, params=options
+                    )
+            else:
+                initial_order = client.create_order(
+                    trading_pair, order_type, side, float(amount_dec), price, params=options
+                )
             order_id = initial_order.get("id")
             logger.info(f"Submitted order {order_id} to {cls.get_name()}. Initial response: {initial_order}")
 

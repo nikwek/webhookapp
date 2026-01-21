@@ -573,14 +573,12 @@ class EnhancedWebhookProcessor:
             # Always use the actual cost+fees rather than zeroing out
             # This fixes the issue with Coinbase's size_inclusive_of_fees orders
             quote_spent = total_after_fees if total_after_fees is not None else (cost + total_fees)
-            logger.info(f"Subtracting exact amount spent {quote_spent} from quote asset")
+            if total_after_fees is not None:
+                logger.info(f"Using total_value_after_fees={quote_spent} for BUY quote subtraction")
+            else:
+                logger.info(f"Using cost+fees={quote_spent} for BUY quote subtraction")
             strategy.allocated_quote_asset_quantity -= quote_spent
-            
-            # Only zero out in the 'available_quote' case from earlier in the method
-            # which is the explicit 100% spending logic from the original implementation
-            if 'available_quote' in locals():
-                logger.info("Setting quote asset to zero due to 100% allocation flag")
-                strategy.allocated_quote_asset_quantity = Decimal('0.0')
+
             
             # Clamp tiny negatives caused by rounding
             if strategy.allocated_quote_asset_quantity < 0:
@@ -618,6 +616,10 @@ class EnhancedWebhookProcessor:
                     strategy.allocated_base_asset_quantity = Decimal('0.0')
             # Add proceeds to quote asset (net of fees)
             net_proceeds = total_after_fees if total_after_fees is not None else (cost - total_fees)
+            if total_after_fees is not None:
+                logger.info(f"Using total_value_after_fees={net_proceeds} for SELL quote addition")
+            else:
+                logger.info(f"Using cost-fees={net_proceeds} for SELL quote addition")
             strategy.allocated_quote_asset_quantity += net_proceeds
             
             # Add balance information to trade_result for UI display

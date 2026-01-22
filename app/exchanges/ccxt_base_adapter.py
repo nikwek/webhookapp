@@ -413,9 +413,81 @@ class CcxtBaseAdapter(ExchangeAdapter):
                         trading_pair, order_type, side, float(amount_dec), price, params=options
                     )
             else:
-                initial_order = client.create_order(
-                    trading_pair, order_type, side, float(amount_dec), price, params=options
-                )
+                # For SELL orders, especially on Coinbase, we may hit PREVIEW_INSUFFICIENT_FUND
+                # even after prior capping/cushions. Retry by reducing the amount by one
+                # precision step per attempt.
+                if side == "sell":
+                    initial_order = None
+                    last_error = None
+                    # Determine a reasonable step from market precision or client formatting
+                    step = None
+                    try:
+                        # Default to amount_quant if available
+                        try:
+                            prec = get_market_precisions(client, trading_pair)
+                            step = prec.get('amount_quant') or Decimal('0.00000001')
+                        except Exception:
+                            step = Decimal('0.00000001')
+
+                        # If client exposes amount_to_precision, refine step to match exchange formatting
+                        if hasattr(client, 'amount_to_precision'):
+                            formatted = client.amount_to_precision(trading_pair, float(amount_dec))
+                            if isinstance(formatted, str) and '.' in formatted:
+                                decs = len(formatted.split('.')[-1])
+                                step2 = Decimal('1').scaleb(-decs) if decs > 0 else Decimal('1')
+                                if step2 > 0:
+                                    # Use the larger step to ensure we actually reduce below exchange rounding
+                                    step = max(step, step2)
+                    except Exception:
+                        pass
+
+                    # Ensure step is sane
+                    if not isinstance(step, Decimal) or step <= 0:
+                        step = Decimal('0.00000001')
+
+                    attempt_amount = amount_dec
+                    for attempt in range(3):
+                        try:
+                            initial_order = client.create_order(
+                                trading_pair, order_type, side, float(attempt_amount), price, params=options
+                            )
+                            break
+                        except ExchangeError as e:
+                            last_error = e
+                            emsg = str(e)
+                            # On Coinbase, the preview may fail with various insufficient messages; treat any
+                            # ExchangeError as a signal to step down and retry. On other exchanges, only retry
+                            # for explicit insufficient fund messages.
+                            is_coinbase = getattr(client, 'id', '').lower().startswith('coinbase')
+                            insufficient = ('INSUFFICIENT_FUND' in emsg) or ('PREVIEW_INSUFFICIENT_FUND' in emsg)
+                            if is_coinbase or insufficient:
+                                # Reduce by one more step and retry
+                                new_amount = (attempt_amount - step)
+                                try:
+                                    new_amount = new_amount.quantize(step, rounding=ROUND_DOWN) if new_amount > 0 else Decimal('0')
+                                except Exception:
+                                    # Fallback: no quantize if step not a valid quant
+                                    pass
+                                logger.info(
+                                    "Retrying SELL after insufficient fund (attempt %s): %s -> %s (step=%s)",
+                                    attempt + 1, attempt_amount, new_amount, step,
+                                )
+                                if new_amount <= 0 or new_amount == attempt_amount:
+                                    break
+                                attempt_amount = new_amount
+                                continue
+                            # Other errors: rethrow
+                            raise
+
+                    if initial_order is None:
+                        if last_error is not None:
+                            raise last_error
+                        else:
+                            raise ExchangeError("Failed to create SELL order after retries")
+                else:
+                    initial_order = client.create_order(
+                        trading_pair, order_type, side, float(amount_dec), price, params=options
+                    )
             order_id = initial_order.get("id")
             logger.info(f"Submitted order {order_id} to {cls.get_name()}. Initial response: {initial_order}")
 

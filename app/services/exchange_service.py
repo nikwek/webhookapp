@@ -345,6 +345,34 @@ class ExchangeService:
                 # Strict: quantize to exchange precision to avoid overspending
                 amount = amount.quantize(quant, rounding=ROUND_DOWN)
 
+            # Coinbase-specific safety cushion for SELL orders: subtract one quantum
+            # when attempting near-100% sells to avoid PREVIEW_INSUFFICIENT_FUND due
+            # to exchange-side holds or micro-dust. This only applies to Coinbase.
+            try:
+                if action.lower() == 'sell' and isinstance(exchange, str) and 'coinbase' in exchange.lower():
+                    # Detect near-100% sell scenarios: requested close to allocation, or we derived a full sell
+                    near_all_in = False
+                    try:
+                        if requested_amount is None:
+                            near_all_in = True
+                        else:
+                            requested_amount_dec = Decimal(str(requested_amount))
+                            if abs(requested_amount_dec - strategy.allocated_base_asset_quantity) <= quant:
+                                near_all_in = True
+                    except Exception:
+                        near_all_in = True
+
+                    if near_all_in and amount > Decimal('0'):
+                        safe_amount = amount - quant
+                        if safe_amount > Decimal('0'):
+                            logger.info(
+                                "Coinbase SELL safety cushion: reducing amount from %s to %s (quant=%s)",
+                                amount, safe_amount, quant,
+                            )
+                            amount = safe_amount.quantize(quant, rounding=ROUND_DOWN)
+            except Exception as e:
+                logger.warning("Failed to apply Coinbase SELL safety cushion: %s", e)
+
             # Pass a numeric type to adapters/ccxt; keep to float at the last moment
             payload["amount"] = float(amount)
             payload["type"] = "market"  # Strategies use market orders

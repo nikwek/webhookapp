@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.exchanges.registry import ExchangeRegistry
 from app.models import ExchangeCredentials, Portfolio, TradingStrategy
 from app.exchanges.precision import get_market_precisions
+from flask import current_app
 
 logger = logging.getLogger(__name__)
 
@@ -358,16 +359,23 @@ class ExchangeService:
                             logger.info("SELL constrained by free balance: %s < %s; using free as target", free_dec, target_high)
                         target_high = min(target_high, free_dec)
 
-                    # Apply a one-quantum cushion under the target_high
+                    # Apply a multi-quantum cushion under the target_high
+                    cushion_steps = 2
+                    try:
+                        cushion_steps = int(current_app.config.get('COINBASE_SELL_CUSHION_STEPS', 2))
+                    except Exception:
+                        cushion_steps = 2
+                    if cushion_steps < 1:
+                        cushion_steps = 1
                     if target_high > Decimal('0'):
-                        safe_amount = target_high - quant
+                        safe_amount = target_high - (quant * cushion_steps)
                         if safe_amount <= Decimal('0'):
                             # If subtracting quant drops below zero, revert to target_high
                             safe_amount = target_high
                         if safe_amount != amount:
                             logger.info(
-                                "Coinbase SELL safety cushion: reducing amount from %s to %s (quant=%s, free=%s)",
-                                amount, safe_amount, quant, free_dec if 'free_dec' in locals() else None,
+                                "Coinbase SELL safety cushion: reducing amount from %s to %s (quant=%s, steps=%s, free=%s)",
+                                amount, safe_amount, quant, cushion_steps, free_dec if 'free_dec' in locals() else None,
                             )
                             amount = safe_amount.quantize(quant, rounding=ROUND_DOWN)
             except Exception as e:
@@ -397,6 +405,28 @@ class ExchangeService:
                             amount = post_cushion
             except Exception as e:
                 logger.warning("Failed to apply Coinbase post-precision cushion: %s", e)
+                # Fallback: derive a conservative step without amount_to_precision and apply cushion
+                try:
+                    if action.lower() == 'sell' and isinstance(exchange, str) and 'coinbase' in exchange.lower():
+                        # Prefer market precision if available; otherwise default to 7 dp for Coinbase
+                        decs = 7
+                        try:
+                            if 'client' in locals() and client is not None:
+                                prec = get_market_precisions(client, trading_pair)
+                                if isinstance(prec, dict) and isinstance(prec.get('amount_decimals'), int):
+                                    decs = max(decs, prec.get('amount_decimals'))
+                        except Exception:
+                            pass
+                        step = Decimal('1').scaleb(-decs)
+                        alt_amount = amount - step
+                        if alt_amount > Decimal('0'):
+                            logger.info(
+                                "Coinbase SELL fallback cushion: decs=%s step=%s final=%s",
+                                decs, step, alt_amount,
+                            )
+                            amount = alt_amount
+                except Exception:
+                    pass
 
             # Extra debug for SELLs: log final prepared amount/quant/free before sending
             try:

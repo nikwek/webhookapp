@@ -446,8 +446,37 @@ class CcxtBaseAdapter(ExchangeAdapter):
                         step = Decimal('0.00000001')
 
                     attempt_amount = amount_dec
-                    for attempt in range(3):
+                    # Derive base symbol for free-balance capping per attempt
+                    base_sym = None
+                    try:
+                        if isinstance(trading_pair, str) and "/" in trading_pair:
+                            base_sym = trading_pair.split("/")[0]
+                    except Exception:
+                        base_sym = None
+
+                    # Try up to 10 attempts, stepping down each time if preview rejects
+                    for attempt in range(10):
                         try:
+                            # Cap to current free balance minus one step when available
+                            try:
+                                balances = client.fetch_balance()
+                                free_map = balances.get('free') or {}
+                                if base_sym:
+                                    free_val = free_map.get(base_sym) or free_map.get(str(base_sym).upper())
+                                else:
+                                    free_val = None
+                                if free_val is not None:
+                                    free_dec2 = Decimal(str(free_val))
+                                    cap_target = free_dec2 - step
+                                    if cap_target > Decimal('0') and cap_target < attempt_amount:
+                                        logger.info(
+                                            "SELL attempt cap to free-step: %s -> %s (free=%s, step=%s)",
+                                            attempt_amount, cap_target, free_dec2, step,
+                                        )
+                                        attempt_amount = cap_target
+                            except Exception:
+                                pass
+
                             initial_order = client.create_order(
                                 trading_pair, order_type, side, float(attempt_amount), price, params=options
                             )
@@ -464,9 +493,11 @@ class CcxtBaseAdapter(ExchangeAdapter):
                                 # Reduce by one more step and retry
                                 new_amount = (attempt_amount - step)
                                 try:
-                                    new_amount = new_amount.quantize(step, rounding=ROUND_DOWN) if new_amount > 0 else Decimal('0')
+                                    # If we know decimals, quantize using that step's decimals; else leave raw
+                                    if step.as_tuple().exponent < 0:
+                                        new_amount = new_amount.quantize(step, rounding=ROUND_DOWN) if new_amount > 0 else Decimal('0')
                                 except Exception:
-                                    # Fallback: no quantize if step not a valid quant
+                                    # Fallback: leave unquantized
                                     pass
                                 logger.info(
                                     "Retrying SELL after insufficient fund (attempt %s): %s -> %s (step=%s)",

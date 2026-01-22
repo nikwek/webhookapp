@@ -34,8 +34,9 @@ def make_strategy(*, base="0", quote="0"):
 @pytest.fixture()
 def processor(monkeypatch):
     proc = EnhancedWebhookProcessor()
-    # Disable drift check to avoid hitting adapters / DB
-    monkeypatch.setattr(proc, "_check_portfolio_drift", lambda self, strategy: None)
+    # Disable drift check to avoid hitting adapters / DB. Patch on the CLASS so
+    # the lambda binds correctly and receives `self`.
+    monkeypatch.setattr(EnhancedWebhookProcessor, "_check_portfolio_drift", lambda self, strategy: None)
     return proc
 
 
@@ -119,3 +120,41 @@ def test_rounding_negative_clamp(processor):
     processor._update_strategy_portfolio(strat, "buy", trade_result)
 
     assert strat.allocated_quote_asset_quantity == Decimal("0")
+
+
+def test_buy_preserves_quote_remainder(processor):
+    """Buy should not zero out quote; it must subtract exact total_after_fees and keep remainder."""
+    strat = make_strategy(base="0", quote="4114.398096986165910494")
+
+    trade_result = {
+        "filled": Decimal("1.0"),
+        "order": {
+            "filled": Decimal("1.0"),
+            "cost": Decimal("4114.2488814879"),
+            "info": {"total_value_after_fees": "4114.2488814879"},
+        },
+    }
+
+    processor._update_strategy_portfolio(strat, "buy", trade_result)
+
+    # Expect exact remainder after subtracting total_after_fees
+    assert strat.allocated_quote_asset_quantity == Decimal("0.149215498265910494")
+
+
+def test_sell_fallback_cost_minus_fees(processor):
+    """When total_after_fees missing on SELL, use cost - fees."""
+    strat = make_strategy(base="1.0", quote="0")
+
+    trade_result = {
+        "filled": Decimal("1.0"),
+        "order": {
+            "filled": Decimal("1.0"),
+            "cost": Decimal("4100"),
+            "fee": {"cost": "28", "currency": "USDC"},
+        },
+    }
+
+    processor._update_strategy_portfolio(strat, "sell", trade_result)
+
+    assert strat.allocated_base_asset_quantity == Decimal("0")
+    assert strat.allocated_quote_asset_quantity == Decimal("4072")

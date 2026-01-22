@@ -298,6 +298,30 @@ class ExchangeService:
                 else:
                     # Sell 100% of the base asset
                     amount = strategy.allocated_base_asset_quantity
+
+                # Defensive: cap sell amount to actual free balance on the exchange to avoid
+                # PREVIEW_INSUFFICIENT_FUND errors when allocations slightly drift.
+                try:
+                    client = adapter.get_client(credentials.user_id, credentials.portfolio_name or "default")
+                    if client is not None:
+                        # Determine base asset symbol from strategy or trading_pair
+                        base_sym = getattr(strategy, 'base_asset_symbol', None)
+                        if not base_sym and isinstance(trading_pair, str) and "/" in trading_pair:
+                            base_sym = trading_pair.split("/")[0]
+                        if base_sym:
+                            balances = client.fetch_balance()
+                            free_map = balances.get('free') or {}
+                            free_val = free_map.get(base_sym) or free_map.get(base_sym.upper())
+                            if free_val is not None:
+                                free_dec = Decimal(str(free_val))
+                                if free_dec < amount:
+                                    logger.info(
+                                        "Capping SELL amount from %s to exchange free balance %s for %s to avoid insufficient funds",
+                                        amount, free_dec, base_sym,
+                                    )
+                                    amount = free_dec
+                except Exception as e:
+                    logger.warning("Failed to cap SELL amount to free balance: %s", e)
             else:
                 amount = Decimal("0")
 

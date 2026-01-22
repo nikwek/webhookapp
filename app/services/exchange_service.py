@@ -301,6 +301,7 @@ class ExchangeService:
 
                 # Defensive: cap sell amount to actual free balance on the exchange to avoid
                 # PREVIEW_INSUFFICIENT_FUND errors when allocations slightly drift.
+                free_dec = None
                 try:
                     client = adapter.get_client(credentials.user_id, credentials.portfolio_name or "default")
                     if client is not None:
@@ -346,32 +347,66 @@ class ExchangeService:
                 amount = amount.quantize(quant, rounding=ROUND_DOWN)
 
             # Coinbase-specific safety cushion for SELL orders: subtract one quantum
-            # when attempting near-100% sells to avoid PREVIEW_INSUFFICIENT_FUND due
-            # to exchange-side holds or micro-dust. This only applies to Coinbase.
+            # to avoid PREVIEW_INSUFFICIENT_FUND due to exchange-side holds or micro-dust.
+            # We base this on the smaller of (prepared amount, free balance) when free is known.
             try:
                 if action.lower() == 'sell' and isinstance(exchange, str) and 'coinbase' in exchange.lower():
-                    # Detect near-100% sell scenarios: requested close to allocation, or we derived a full sell
-                    near_all_in = False
-                    try:
-                        if requested_amount is None:
-                            near_all_in = True
-                        else:
-                            requested_amount_dec = Decimal(str(requested_amount))
-                            if abs(requested_amount_dec - strategy.allocated_base_asset_quantity) <= quant:
-                                near_all_in = True
-                    except Exception:
-                        near_all_in = True
+                    # Choose a high-water target constrained by free balance if known
+                    target_high = amount
+                    if 'free_dec' in locals() and isinstance(free_dec, Decimal) and free_dec > Decimal('0'):
+                        if free_dec < target_high:
+                            logger.info("SELL constrained by free balance: %s < %s; using free as target", free_dec, target_high)
+                        target_high = min(target_high, free_dec)
 
-                    if near_all_in and amount > Decimal('0'):
-                        safe_amount = amount - quant
-                        if safe_amount > Decimal('0'):
+                    # Apply a one-quantum cushion under the target_high
+                    if target_high > Decimal('0'):
+                        safe_amount = target_high - quant
+                        if safe_amount <= Decimal('0'):
+                            # If subtracting quant drops below zero, revert to target_high
+                            safe_amount = target_high
+                        if safe_amount != amount:
                             logger.info(
-                                "Coinbase SELL safety cushion: reducing amount from %s to %s (quant=%s)",
-                                amount, safe_amount, quant,
+                                "Coinbase SELL safety cushion: reducing amount from %s to %s (quant=%s, free=%s)",
+                                amount, safe_amount, quant, free_dec if 'free_dec' in locals() else None,
                             )
                             amount = safe_amount.quantize(quant, rounding=ROUND_DOWN)
             except Exception as e:
                 logger.warning("Failed to apply Coinbase SELL safety cushion: %s", e)
+
+            # Final guard for Coinbase: apply a post-precision cushion using the exchange's
+            # own amount_to_precision to ensure we end up strictly below what Coinbase will
+            # accept after its rounding/truncation.
+            try:
+                if action.lower() == 'sell' and isinstance(exchange, str) and 'coinbase' in exchange.lower():
+                    client = adapter.get_client(credentials.user_id, credentials.portfolio_name or "default")
+                    if client is not None and hasattr(client, 'amount_to_precision'):
+                        prec_str = client.amount_to_precision(trading_pair, float(amount))
+                        # Determine step from the formatted precision string
+                        if isinstance(prec_str, str) and '.' in prec_str:
+                            decs = len(prec_str.split('.')[-1])
+                        else:
+                            decs = 0
+                        step = Decimal('1').scaleb(-decs) if decs > 0 else Decimal('1')
+                        current_prec_amount = Decimal(str(prec_str))
+                        post_cushion = current_prec_amount - step
+                        if post_cushion > Decimal('0') and post_cushion < current_prec_amount:
+                            logger.info(
+                                "Coinbase SELL post-precision cushion: amount_to_precision=%s, step=%s, final=%s",
+                                prec_str, step, post_cushion,
+                            )
+                            amount = post_cushion
+            except Exception as e:
+                logger.warning("Failed to apply Coinbase post-precision cushion: %s", e)
+
+            # Extra debug for SELLs: log final prepared amount/quant/free before sending
+            try:
+                if action.lower() == 'sell':
+                    logger.info(
+                        "Final SELL amount prepared: amount=%s, quant=%s, free=%s",
+                        amount, quant, free_dec if 'free_dec' in locals() else None,
+                    )
+            except Exception:
+                pass
 
             # Pass a numeric type to adapters/ccxt; keep to float at the last moment
             payload["amount"] = float(amount)

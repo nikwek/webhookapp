@@ -454,8 +454,8 @@ class CcxtBaseAdapter(ExchangeAdapter):
                     except Exception:
                         base_sym = None
 
-                    # Try up to 10 attempts, stepping down each time if preview rejects
-                    for attempt in range(10):
+                    # Try up to 2 attempts, stepping down each time if preview rejects
+                    for attempt in range(2):
                         try:
                             # Cap to current free balance minus one step when available
                             try:

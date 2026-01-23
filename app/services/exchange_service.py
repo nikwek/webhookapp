@@ -313,17 +313,49 @@ class ExchangeService:
                         if base_sym:
                             balances = client.fetch_balance()
                             free_map = balances.get('free') or {}
-                            free_val = free_map.get(base_sym) or free_map.get(base_sym.upper())
+                            used_map = balances.get('used') or {}
+                            total_map = balances.get('total') or {}
+                            base_key = base_sym.upper() if isinstance(base_sym, str) else base_sym
+                            free_val = free_map.get(base_key)
+                            used_val = used_map.get(base_key)
+                            total_val = total_map.get(base_key)
+                            # Extra logging: snapshot free/used/total for the base asset
+                            try:
+                                logger.info(
+                                    "Exchange balances snapshot for %s: free=%s, used=%s, total=%s",
+                                    base_key, free_val, used_val, total_val,
+                                )
+                            except Exception:
+                                pass
                             if free_val is not None:
                                 free_dec = Decimal(str(free_val))
                                 if free_dec < amount:
-                                    logger.info(
-                                        "Capping SELL amount from %s to exchange free balance %s for %s to avoid insufficient funds",
-                                        amount, free_dec, base_sym,
+                                    # Prepare clearer rejection with balance details
+                                    try:
+                                        total_dec = Decimal(str(total_val)) if total_val is not None else None
+                                    except Exception:
+                                        total_dec = None
+                                    unavailable = None
+                                    if total_dec is not None:
+                                        try:
+                                            unavailable = max(total_dec - free_dec, Decimal('0'))
+                                        except Exception:
+                                            unavailable = None
+                                    msg = (
+                                        f"Insufficient free {base_key} to SELL. "
+                                        f"Requested {amount}, free {free_dec}"
                                     )
-                                    amount = free_dec
+                                    if total_dec is not None and unavailable is not None:
+                                        msg += f", total {total_dec}, unavailable(est) {unavailable}"
+                                    logger.info(msg)
+                                    return {
+                                        "trade_executed": False,
+                                        "message": msg,
+                                        "client_order_id": client_order_id,
+                                        "trade_status": "rejected",
+                                    }
                 except Exception as e:
-                    logger.warning("Failed to cap SELL amount to free balance: %s", e)
+                    logger.warning("Failed to retrieve free balance for SELL validation: %s", e)
             else:
                 amount = Decimal("0")
 
@@ -334,6 +366,15 @@ class ExchangeService:
                 client = adapter.get_client(credentials.user_id, credentials.portfolio_name or "default")
                 if client:
                     prec = get_market_precisions(client, trading_pair)
+                    try:
+                        logger.info(
+                            "Resolved market precision for %s: amount_quant=%s, amount_decimals=%s",
+                            trading_pair,
+                            prec.get('amount_quant'),
+                            prec.get('amount_decimals'),
+                        )
+                    except Exception:
+                        pass
                     q = prec.get('amount_quant')
                     if q is not None:
                         quant = q
@@ -347,7 +388,7 @@ class ExchangeService:
                 # Strict: quantize to exchange precision to avoid overspending
                 amount = amount.quantize(quant, rounding=ROUND_DOWN)
 
-            # Coinbase-specific safety cushion for SELL orders: subtract one quantum
+            # Coinbase-specific safety cushion for SELL orders: subtract quanta (configurable)
             # to avoid PREVIEW_INSUFFICIENT_FUND due to exchange-side holds or micro-dust.
             # We base this on the smaller of (prepared amount, free balance) when free is known.
             try:
@@ -355,19 +396,28 @@ class ExchangeService:
                     # Choose a high-water target constrained by free balance if known
                     target_high = amount
                     if 'free_dec' in locals() and isinstance(free_dec, Decimal) and free_dec > Decimal('0'):
-                        if free_dec < target_high:
-                            logger.info("SELL constrained by free balance: %s < %s; using free as target", free_dec, target_high)
-                        target_high = min(target_high, free_dec)
+                        # Apply a margin under free to account for Coinbase preview quirks
+                        try:
+                            margin_pct = Decimal(str(current_app.config.get('COINBASE_SELL_MARGIN_PCT', 0.0)))
+                        except Exception:
+                            margin_pct = Decimal('0.0')
+                        if margin_pct < 0:
+                            margin_pct = Decimal('0')
+                        margin_free = (free_dec * (Decimal('1') - margin_pct))
+                        if margin_free < target_high:
+                            logger.info(
+                                "SELL constrained by free with margin: free=%s, margin_pct=%s => %s; using as target",
+                                free_dec, margin_pct, margin_free,
+                            )
+                        target_high = min(target_high, margin_free)
 
                     # Apply a multi-quantum cushion under the target_high
-                    cushion_steps = 2
+                    cushion_steps = 0
                     try:
-                        cushion_steps = int(current_app.config.get('COINBASE_SELL_CUSHION_STEPS', 2))
+                        cushion_steps = int(current_app.config.get('COINBASE_SELL_CUSHION_STEPS', 0))
                     except Exception:
-                        cushion_steps = 2
-                    if cushion_steps < 1:
-                        cushion_steps = 1
-                    if target_high > Decimal('0'):
+                        cushion_steps = 0
+                    if cushion_steps >= 1 and target_high > Decimal('0'):
                         safe_amount = target_high - (quant * cushion_steps)
                         if safe_amount <= Decimal('0'):
                             # If subtracting quant drops below zero, revert to target_high
@@ -385,7 +435,7 @@ class ExchangeService:
             # own amount_to_precision to ensure we end up strictly below what Coinbase will
             # accept after its rounding/truncation.
             try:
-                if action.lower() == 'sell' and isinstance(exchange, str) and 'coinbase' in exchange.lower():
+                if action.lower() == 'sell' and isinstance(exchange, str) and 'coinbase' in exchange.lower() and cushion_steps >= 1:
                     client = adapter.get_client(credentials.user_id, credentials.portfolio_name or "default")
                     if client is not None and hasattr(client, 'amount_to_precision'):
                         prec_str = client.amount_to_precision(trading_pair, float(amount))
@@ -405,28 +455,7 @@ class ExchangeService:
                             amount = post_cushion
             except Exception as e:
                 logger.warning("Failed to apply Coinbase post-precision cushion: %s", e)
-                # Fallback: derive a conservative step without amount_to_precision and apply cushion
-                try:
-                    if action.lower() == 'sell' and isinstance(exchange, str) and 'coinbase' in exchange.lower():
-                        # Prefer market precision if available; otherwise default to 7 dp for Coinbase
-                        decs = 7
-                        try:
-                            if 'client' in locals() and client is not None:
-                                prec = get_market_precisions(client, trading_pair)
-                                if isinstance(prec, dict) and isinstance(prec.get('amount_decimals'), int):
-                                    decs = max(decs, prec.get('amount_decimals'))
-                        except Exception:
-                            pass
-                        step = Decimal('1').scaleb(-decs)
-                        alt_amount = amount - step
-                        if alt_amount > Decimal('0'):
-                            logger.info(
-                                "Coinbase SELL fallback cushion: decs=%s step=%s final=%s",
-                                decs, step, alt_amount,
-                            )
-                            amount = alt_amount
-                except Exception:
-                    pass
+                # Fallback cushion disabled when cushion_steps == 0
 
             # Extra debug for SELLs: log final prepared amount/quant/free before sending
             try:

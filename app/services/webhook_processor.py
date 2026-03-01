@@ -3,7 +3,7 @@ import json
 import uuid
 import logging
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from typing import Dict, Any
 
 from app import db
@@ -548,6 +548,10 @@ class EnhancedWebhookProcessor:
         if action.lower() == 'buy':
             # For buy: Add base asset, subtract quote asset (cost)
             strategy.allocated_base_asset_quantity += filled
+            # Quantize to remove precision artifacts
+            strategy.allocated_base_asset_quantity = strategy.allocated_base_asset_quantity.quantize(
+                Decimal('0.000000001'), rounding=ROUND_DOWN
+            )
             
             # Check for Coinbase size_inclusive_of_fees pattern for logging purposes
             info = order_data.get('info', {}) if isinstance(order_data, dict) else {}
@@ -579,14 +583,17 @@ class EnhancedWebhookProcessor:
                 logger.info(f"Using cost+fees={quote_spent} for BUY quote subtraction")
             strategy.allocated_quote_asset_quantity -= quote_spent
 
-            
             # Clamp tiny negatives caused by rounding
             if strategy.allocated_quote_asset_quantity < 0:
-                if strategy.allocated_quote_asset_quantity > Decimal('-0.00000001'):
+                if strategy.allocated_quote_asset_quantity > Decimal('-0.000000001'):
                     strategy.allocated_quote_asset_quantity = Decimal('0.0')
                 else:
                     logger.warning("Quote asset quantity went negative after buy. Setting to 0.")
                     strategy.allocated_quote_asset_quantity = Decimal('0.0')
+            # Quantize to remove precision artifacts
+            strategy.allocated_quote_asset_quantity = strategy.allocated_quote_asset_quantity.quantize(
+                Decimal('0.000000001'), rounding=ROUND_DOWN
+            )
                     
             # Add balance information to trade_result for UI display
             final_base = strategy.allocated_base_asset_quantity
@@ -610,10 +617,18 @@ class EnhancedWebhookProcessor:
             else:
                 # Traditional approach - subtract filled from base asset
                 strategy.allocated_base_asset_quantity -= filled
-                # Ensure we don't go negative
+                # Ensure we don't go negative or have tiny precision artifacts
                 if strategy.allocated_base_asset_quantity < 0:
-                    logger.warning("Base asset quantity went negative after sell. Setting to 0.")
-                    strategy.allocated_base_asset_quantity = Decimal('0.0')
+                    if strategy.allocated_base_asset_quantity > Decimal('-0.000000001'):
+                        # Small negative due to precision - set to exactly 0
+                        strategy.allocated_base_asset_quantity = Decimal('0.0')
+                    else:
+                        logger.warning("Base asset quantity went negative after sell. Setting to 0.")
+                        strategy.allocated_base_asset_quantity = Decimal('0.0')
+                # Quantize to remove precision artifacts
+                strategy.allocated_base_asset_quantity = strategy.allocated_base_asset_quantity.quantize(
+                    Decimal('0.000000001'), rounding=ROUND_DOWN
+                )
             # Add proceeds to quote asset (net of fees)
             net_proceeds = total_after_fees if total_after_fees is not None else (cost - total_fees)
             if total_after_fees is not None:
@@ -621,6 +636,10 @@ class EnhancedWebhookProcessor:
             else:
                 logger.info(f"Using cost-fees={net_proceeds} for SELL quote addition")
             strategy.allocated_quote_asset_quantity += net_proceeds
+            # Quantize to remove precision artifacts
+            strategy.allocated_quote_asset_quantity = strategy.allocated_quote_asset_quantity.quantize(
+                Decimal('0.000000001'), rounding=ROUND_DOWN
+            )
             
             # Add balance information to trade_result for UI display
             final_base = strategy.allocated_base_asset_quantity

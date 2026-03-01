@@ -272,6 +272,8 @@ class ExchangeService:
                 else:
                     # Use all allocated quote assets
                     amount = strategy.allocated_quote_asset_quantity / price_dec
+                    # Quantize to remove any precision artifacts beyond 9 decimal places
+                    amount = amount.quantize(Decimal('0.000000001'), rounding=ROUND_DOWN)
 
             elif action.lower() == "sell":
                 if requested_amount is not None:
@@ -298,7 +300,11 @@ class ExchangeService:
                     amount = requested_amount_dec
                 else:
                     # Sell 100% of the base asset
+                    # Ensure we don't have floating-point precision artifacts
                     amount = strategy.allocated_base_asset_quantity
+                    # Quantize to remove any precision artifacts beyond 9 decimal places
+                    # This prevents issues like 34.169056379000004142 when we mean 34.169056379
+                    amount = amount.quantize(Decimal('0.000000001'), rounding=ROUND_DOWN)
 
                 # Defensive: cap sell amount to actual free balance on the exchange to avoid
                 # PREVIEW_INSUFFICIENT_FUND errors when allocations slightly drift.

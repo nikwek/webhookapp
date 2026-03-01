@@ -137,8 +137,9 @@ def test_buy_preserves_quote_remainder(processor):
 
     processor._update_strategy_portfolio(strat, "buy", trade_result)
 
-    # Expect exact remainder after subtracting total_after_fees
-    assert strat.allocated_quote_asset_quantity == Decimal("0.149215498265910494")
+    # Expect remainder after subtracting total_after_fees, quantized to 9 decimal places
+    # to prevent rounding errors in subsequent trades
+    assert strat.allocated_quote_asset_quantity == Decimal("0.149215498")
 
 
 def test_sell_fallback_cost_minus_fees(processor):

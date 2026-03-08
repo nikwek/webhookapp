@@ -136,7 +136,10 @@ class EnhancedWebhookProcessor:
         return self._process_for_strategy(strategy, payload)
 
     def _execute_and_process_trade(self, **kwargs):
-        """Helper to execute trade and handle logging and session commit."""
+        """Helper to execute trade and handle logging and session commit.
+        
+        Returns 200 OK immediately, then processes portfolio updates and emails asynchronously.
+        """
         try:
             # Create a clean copy of kwargs for the service call, excluding keys
             # that are for internal use by the processor only.
@@ -149,34 +152,13 @@ class EnhancedWebhookProcessor:
             # Log that we're about to check for portfolio updates
             logger.info(f"Checking if we should update portfolio. Trade result keys: {list(trade_result.keys())}")
             
-            # For strategy trades, update the virtual portfolio
-            # Check if trade was successful (either via 'trade_executed' flag or 'success' flag)
-            if (trade_result.get('trade_executed', False) or trade_result.get('success', False)) and kwargs.get('target_type') == 'strategy':
-                # The order data could be in raw_order, order, or be the trade_result itself
-                # Try each in order of preference
-                raw_order = trade_result.get("raw_order", {})
-                if not raw_order:
-                    raw_order = trade_result.get("order", {})
-                if not raw_order:
-                    raw_order = trade_result
-                    
-                # Ensure we have the original payload included
-                if 'original_payload' not in raw_order and 'payload' in kwargs:
-                    raw_order['original_payload'] = kwargs.get('payload')
-                
-                logger.info(f"Updating portfolio for strategy {kwargs['target'].id} with action {kwargs['action']}")
-                self._update_strategy_portfolio(
-                    strategy=kwargs['target'],
-                    action=kwargs['action'],
-                    trade_result=raw_order,
-                )
-
             # Determine status for logging
             status_value = (
                 str(trade_result.get('trade_status') or '')
                 or ('success' if trade_result.get('success', False) else 'error')
             )
             
+            # Log the trade immediately (synchronous)
             self._log_and_commit(
                 strategy_id=kwargs.get('target_id'),
                 status=status_value,
@@ -188,6 +170,68 @@ class EnhancedWebhookProcessor:
 
             # Log the full trade result for debugging
             logger.info(f"Processing Response / Info:\n{json.dumps(trade_result, indent=2, default=str)}")
+
+            # Return 200 OK immediately to TradingView
+            # Portfolio updates and emails happen asynchronously in the background
+            if (trade_result.get('trade_executed', False) or trade_result.get('success', False)) and kwargs.get('target_type') == 'strategy':
+                # Schedule async processing of portfolio updates and notifications
+                self._schedule_async_post_trade_processing(kwargs, trade_result, status_value)
+            
+            return trade_result, 200
+
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Exception during trade execution: {e}", exc_info=True)
+            self._log_and_commit(
+                strategy_id=kwargs.get('target_id'),
+                status='error',
+                message=f"Failed trade {kwargs.get('action')}. Error: {e}",
+                trade_result={'error': str(e)},
+                payload=kwargs.get('payload'),  # Include the original payload
+                client_order_id=kwargs.get('client_order_id')
+            )
+            return {"success": False, "message": f"An internal error occurred: {e}"}, 500
+
+    def _schedule_async_post_trade_processing(self, kwargs, trade_result, status_value):
+        """Schedule portfolio updates and email notifications to run asynchronously.
+        
+        This runs after we've already returned 200 OK to the webhook caller.
+        """
+        try:
+            from threading import Thread
+            # Run portfolio updates and emails in a background thread
+            thread = Thread(
+                target=self._async_post_trade_processing,
+                args=(kwargs, trade_result, status_value),
+                daemon=True
+            )
+            thread.start()
+        except Exception as e:
+            logger.error(f"Failed to schedule async post-trade processing: {e}")
+
+    def _async_post_trade_processing(self, kwargs, trade_result, status_value):
+        """Background task to update portfolio and send notifications.
+        
+        This runs asynchronously after the webhook response has been sent.
+        """
+        try:
+            # The order data could be in raw_order, order, or be the trade_result itself
+            raw_order = trade_result.get("raw_order", {})
+            if not raw_order:
+                raw_order = trade_result.get("order", {})
+            if not raw_order:
+                raw_order = trade_result
+                
+            # Ensure we have the original payload included
+            if 'original_payload' not in raw_order and 'payload' in kwargs:
+                raw_order['original_payload'] = kwargs.get('payload')
+            
+            logger.info(f"Updating portfolio for strategy {kwargs['target'].id} with action {kwargs['action']}")
+            self._update_strategy_portfolio(
+                strategy=kwargs['target'],
+                action=kwargs['action'],
+                trade_result=raw_order,
+            )
 
             # Send user transaction activity email (opt-in)
             try:
@@ -221,20 +265,8 @@ class EnhancedWebhookProcessor:
                     )
             except Exception as notify_exc:
                 logger.error(f"Failed to send transaction email: {notify_exc}")
-            return trade_result, 200
-
         except Exception as e:
-            db.session.rollback()
-            logger.error(f"Exception during trade execution: {e}", exc_info=True)
-            self._log_and_commit(
-                strategy_id=kwargs.get('target_id'),
-                status='error',
-                message=f"Failed trade {kwargs.get('action')}. Error: {e}",
-                trade_result={'error': str(e)},
-                payload=kwargs.get('payload'),  # Include the original payload
-                client_order_id=kwargs.get('client_order_id')
-            )
-            return {"success": False, "message": f"An internal error occurred: {e}"}, 500
+            logger.error(f"Error in async post-trade processing: {e}", exc_info=True)
 
     def _serialize_decimal(self, obj):
         """Helper method to convert Decimal objects to float for JSON serialization."""

@@ -52,11 +52,7 @@ def test_buy_uses_total_after_fees(processor):
     trade_result = {
         "filled": Decimal("0.02"),
         "cost": Decimal("1000"),  # before fees (should be ignored)
-        "order": {
-            "filled": Decimal("0.02"),
-            "cost": Decimal("1000"),
-            "info": {"total_value_after_fees": "990"},
-        },
+        "info": {"total_value_after_fees": "990"},
     }
 
     processor._update_strategy_portfolio(strat, "buy", trade_result)
@@ -72,11 +68,8 @@ def test_buy_fallback_cost_plus_fees(processor):
 
     trade_result = {
         "filled": Decimal("0.02"),
-        "order": {
-            "filled": Decimal("0.02"),
-            "cost": Decimal("1000"),
-            "fee": {"cost": "5", "currency": "USDC"},
-        },
+        "cost": Decimal("1000"),
+        "fee": {"cost": "5", "currency": "USDC"},
     }
 
     processor._update_strategy_portfolio(strat, "buy", trade_result)
@@ -92,11 +85,8 @@ def test_sell_net_proceeds(processor):
 
     trade_result = {
         "filled": Decimal("0.02"),
-        "order": {
-            "filled": Decimal("0.02"),
-            "cost": Decimal("1000"),
-            "info": {"total_value_after_fees": "995"},
-        },
+        "cost": Decimal("1000"),
+        "info": {"total_value_after_fees": "995"},
     }
 
     processor._update_strategy_portfolio(strat, "sell", trade_result)
@@ -111,10 +101,7 @@ def test_rounding_negative_clamp(processor):
 
     trade_result = {
         "filled": Decimal("0.00000001"),
-        "order": {
-            "filled": Decimal("0.00000001"),
-            "cost": Decimal("0.00000002"),
-        },
+        "cost": Decimal("0.00000002"),
     }
 
     processor._update_strategy_portfolio(strat, "buy", trade_result)
@@ -128,11 +115,8 @@ def test_buy_preserves_quote_remainder(processor):
 
     trade_result = {
         "filled": Decimal("1.0"),
-        "order": {
-            "filled": Decimal("1.0"),
-            "cost": Decimal("4114.2488814879"),
-            "info": {"total_value_after_fees": "4114.2488814879"},
-        },
+        "cost": Decimal("4114.2488814879"),
+        "info": {"total_value_after_fees": "4114.2488814879"},
     }
 
     processor._update_strategy_portfolio(strat, "buy", trade_result)
@@ -148,11 +132,8 @@ def test_sell_fallback_cost_minus_fees(processor):
 
     trade_result = {
         "filled": Decimal("1.0"),
-        "order": {
-            "filled": Decimal("1.0"),
-            "cost": Decimal("4100"),
-            "fee": {"cost": "28", "currency": "USDC"},
-        },
+        "cost": Decimal("4100"),
+        "fee": {"cost": "28", "currency": "USDC"},
     }
 
     processor._update_strategy_portfolio(strat, "sell", trade_result)

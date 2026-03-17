@@ -488,18 +488,19 @@ class EnhancedWebhookProcessor:
         try:
             fee_entries = []
             # CCXT order format: single fee dict under 'fee' or list under 'fees'
-            # Note: order_data and trade_result may be the same object, so only check order_data
-            if 'fee' in order_data and order_data['fee']:
-                fee_entries.append(order_data['fee'])
-                logger.info(f"Found fee in order_data: {order_data['fee']}")
+            # Prefer 'fees' list if available, otherwise use 'fee' dict
             if 'fees' in order_data and order_data['fees']:
                 fee_entries.extend(order_data['fees'])
                 logger.info(f"Found fees in order_data: {order_data['fees']}")
-            # As a last-resort, look for info.total_fees (string) inside order_data.info
-            info = order_data.get('info', {}) if isinstance(order_data, dict) else {}
-            if isinstance(info, dict) and info.get('total_fees'):
-                fee_entries.append({'cost': info.get('total_fees'), 'currency': strategy.quote_asset_symbol})
-                logger.info(f"Found total_fees in order_data.info: {info.get('total_fees')}")
+            elif 'fee' in order_data and order_data['fee']:
+                fee_entries.append(order_data['fee'])
+                logger.info(f"Found fee in order_data: {order_data['fee']}")
+            # Only use info.total_fees as last resort if no other fees found
+            if not fee_entries:
+                info = order_data.get('info', {}) if isinstance(order_data, dict) else {}
+                if isinstance(info, dict) and info.get('total_fees'):
+                    fee_entries.append({'cost': info.get('total_fees'), 'currency': strategy.quote_asset_symbol})
+                    logger.info(f"Found total_fees in order_data.info: {info.get('total_fees')}")
 
             logger.info(f"Total fee entries collected: {len(fee_entries)}")
             for fee_item in fee_entries:

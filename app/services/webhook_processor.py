@@ -199,15 +199,25 @@ class EnhancedWebhookProcessor:
         """
         try:
             from threading import Thread
+            from flask import current_app
+            
+            # Capture the app context to use in the background thread
+            app = current_app._get_current_object()
+            
             # Run portfolio updates and emails in a background thread
             thread = Thread(
-                target=self._async_post_trade_processing,
-                args=(kwargs, trade_result, status_value),
+                target=self._async_post_trade_processing_with_context,
+                args=(app, kwargs, trade_result, status_value),
                 daemon=True
             )
             thread.start()
         except Exception as e:
             logger.error(f"Failed to schedule async post-trade processing: {e}")
+
+    def _async_post_trade_processing_with_context(self, app, kwargs, trade_result, status_value):
+        """Wrapper to run async processing within Flask app context."""
+        with app.app_context():
+            self._async_post_trade_processing(kwargs, trade_result, status_value)
 
     def _async_post_trade_processing(self, kwargs, trade_result, status_value):
         """Background task to update portfolio and send notifications.

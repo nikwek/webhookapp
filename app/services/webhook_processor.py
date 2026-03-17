@@ -581,19 +581,26 @@ class EnhancedWebhookProcessor:
                 logger.info(f"Using total_value_after_fees={quote_spent} for BUY quote subtraction")
             else:
                 logger.info(f"Using cost+fees={quote_spent} for BUY quote subtraction")
+            
+            # Log the calculation details
+            logger.info(f"BUY quote calculation: {original_quote} - {quote_spent} = {original_quote - quote_spent}")
             strategy.allocated_quote_asset_quantity -= quote_spent
 
             # Clamp tiny negatives caused by rounding
             if strategy.allocated_quote_asset_quantity < 0:
                 if strategy.allocated_quote_asset_quantity > Decimal('-0.000000001'):
+                    logger.info(f"Clamping small negative {strategy.allocated_quote_asset_quantity} to 0")
                     strategy.allocated_quote_asset_quantity = Decimal('0.0')
                 else:
-                    logger.warning("Quote asset quantity went negative after buy. Setting to 0.")
+                    logger.warning(f"Quote asset quantity went significantly negative after buy: {strategy.allocated_quote_asset_quantity}. Setting to 0.")
                     strategy.allocated_quote_asset_quantity = Decimal('0.0')
             # Quantize to remove precision artifacts
+            before_quantize = strategy.allocated_quote_asset_quantity
             strategy.allocated_quote_asset_quantity = strategy.allocated_quote_asset_quantity.quantize(
                 Decimal('0.000000001'), rounding=ROUND_DOWN
             )
+            if before_quantize != strategy.allocated_quote_asset_quantity:
+                logger.info(f"Quantized quote from {before_quantize} to {strategy.allocated_quote_asset_quantity}")
                     
             # Add balance information to trade_result for UI display
             final_base = strategy.allocated_base_asset_quantity

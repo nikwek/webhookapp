@@ -81,10 +81,10 @@
                 <div class="col-md-6">
                     <dl class="row">
                         <dt class="col-sm-5">Allocated Base Asset:</dt>
-                        <dd class="col-sm-7">{{ (strategy.allocated_base_asset_quantity | float) | round(8) }} {{ strategy.base_asset_symbol }}</dd>
+                        <dd class="col-sm-7">{{ strategy.allocated_base_asset_quantity }} {{ strategy.base_asset_symbol }}</dd>
 
                         <dt class="col-sm-5">Allocated Quote Asset:</dt>
-                        <dd class="col-sm-7">{{ (strategy.allocated_quote_asset_quantity | float) | round(8) }} {{ strategy.quote_asset_symbol }}</dd>
+                        <dd class="col-sm-7">{{ strategy.allocated_quote_asset_quantity }} {{ strategy.quote_asset_symbol }}</dd>
 
                         <dt class="col-sm-5">Est. Total Value (USD):</dt>
                         <dd class="col-sm-7" id="strategyTotalValue">–</dd>

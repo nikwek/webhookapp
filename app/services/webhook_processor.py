@@ -488,15 +488,11 @@ class EnhancedWebhookProcessor:
         try:
             fee_entries = []
             # CCXT order format: single fee dict under 'fee' or list under 'fees'
+            # Note: order_data and trade_result may be the same object, so only check order_data
             if 'fee' in order_data and order_data['fee']:
                 fee_entries.append(order_data['fee'])
             if 'fees' in order_data and order_data['fees']:
                 fee_entries.extend(order_data['fees'])
-            # Some exchanges (e.g., Coinbase) expose fee at the top level too
-            if 'fee' in trade_result and trade_result['fee']:
-                fee_entries.append(trade_result['fee'])
-            if 'fees' in trade_result and trade_result['fees']:
-                fee_entries.extend(trade_result['fees'])
             # As a last-resort, look for info.total_fees (string) inside order_data.info
             info = order_data.get('info', {}) if isinstance(order_data, dict) else {}
             if isinstance(info, dict) and info.get('total_fees'):
@@ -540,8 +536,11 @@ class EnhancedWebhookProcessor:
             val_after_fees = info.get('total_value_after_fees') if isinstance(info, dict) else None
             if val_after_fees is not None:
                 total_after_fees = Decimal(str(val_after_fees))
+                logger.info(f"Parsed total_value_after_fees from order info: {total_after_fees}")
+            else:
+                logger.info("total_value_after_fees not found in order info")
         except Exception as e:
-            logger.debug(f"Could not parse total_value_after_fees: {e}")
+            logger.warning(f"Could not parse total_value_after_fees: {e}")
             total_after_fees = None
 
         # Now update the portfolio
@@ -580,7 +579,7 @@ class EnhancedWebhookProcessor:
             if total_after_fees is not None:
                 logger.info(f"Using total_value_after_fees={quote_spent} for BUY quote subtraction")
             else:
-                logger.info(f"Using cost+fees={quote_spent} for BUY quote subtraction")
+                logger.info(f"Using cost+fees={quote_spent} for BUY quote subtraction (cost={cost}, fees={total_fees})")
             
             # Log the calculation details
             logger.info(f"BUY quote calculation: {original_quote} - {quote_spent} = {original_quote - quote_spent}")

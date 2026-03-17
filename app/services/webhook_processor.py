@@ -371,8 +371,8 @@ class EnhancedWebhookProcessor:
         # Extract data from various sources
         filled = None
         cost = None
-        ticker = trade_result.get('order', {}).get('symbol')
-        order_data = trade_result.get('order', {})
+        ticker = trade_result.get('symbol')
+        order_data = trade_result  # trade_result is already the raw order data
         original_payload = trade_result.get('original_payload', {})
         payload_amount = None
         

@@ -63,13 +63,21 @@ class CoinbaseAdapter(CcxtBaseAdapter):
         # Special handling for Coinbase market buy orders using cost-based approach
         if order_type == "market" and side == "buy":
             try:
-                # Fetch the current price to ensure we meet min order requirements
-                ticker = client.fetch_ticker(trading_pair)
-                current_price = float(ticker['last'])
-                logger.info(f"Current price for {trading_pair}: {current_price}")
+                # Check if quote_amount is provided (for strategy trades using all allocated USDC)
+                quote_amount = payload.get("quote_amount")
                 
-                # Calculate the cost (quote currency amount)
-                cost = float(amount) * current_price
+                if quote_amount is not None:
+                    # Use the provided quote amount directly (already accounts for allocation limits)
+                    cost = float(quote_amount)
+                    logger.info(f"Using provided quote_amount for strategy trade: ${cost}")
+                else:
+                    # Fetch the current price to ensure we meet min order requirements
+                    ticker = client.fetch_ticker(trading_pair)
+                    current_price = float(ticker['last'])
+                    logger.info(f"Current price for {trading_pair}: {current_price}")
+                    
+                    # Calculate the cost (quote currency amount)
+                    cost = float(amount) * current_price
                 
                 # Ensure we meet minimum order requirements
                 if cost < min_order_value:
@@ -77,7 +85,9 @@ class CoinbaseAdapter(CcxtBaseAdapter):
                     cost = min_order_value
                 
                 # Coinbase requires costs to have at most 2 decimal places
-                cost = round(cost, 2)
+                # Round DOWN to ensure we never exceed the allocated amount (with size_inclusive_of_fees)
+                import math
+                cost = math.floor(cost * 100) / 100
                 
                 logger.info(f"Using createMarketBuyOrderWithCost with USD amount: ${cost:.2f}")
                 

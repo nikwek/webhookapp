@@ -271,7 +271,16 @@ class ExchangeService:
                     amount = requested_amount_dec
                 else:
                     # Use all allocated quote assets
-                    amount = strategy.allocated_quote_asset_quantity / price_dec
+                    # For Coinbase, we'll pass the USDC amount directly to use size_inclusive_of_fees
+                    # For other exchanges, calculate the base asset amount
+                    if exchange == 'coinbase':
+                        # Store the quote amount to pass to adapter
+                        # The Coinbase adapter will use this as the quote_size
+                        payload['quote_amount'] = float(strategy.allocated_quote_asset_quantity)
+                        # Calculate a nominal amount for validation (won't be used by Coinbase adapter)
+                        amount = strategy.allocated_quote_asset_quantity / price_dec
+                    else:
+                        amount = strategy.allocated_quote_asset_quantity / price_dec
                     # Quantize to remove any precision artifacts beyond 9 decimal places
                     amount = amount.quantize(Decimal('0.000000001'), rounding=ROUND_DOWN)
 

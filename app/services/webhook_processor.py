@@ -661,31 +661,14 @@ class EnhancedWebhookProcessor:
             f"Quote: {original_quote} -> {strategy.allocated_quote_asset_quantity}"
         )
 
-        # After updating portfolio, create an immediate value snapshot so the UI
-        # charts update without waiting for the nightly cron job.
-        try:
-            from datetime import datetime
-            from app.models.trading import StrategyValueHistory
-            from app.services.strategy_value_service import _value_usd
-            snap_val = _value_usd(strategy)
-            db.session.add(
-                StrategyValueHistory(
-                    strategy_id=strategy.id,
-                    timestamp=datetime.utcnow(),
-                    value_usd=snap_val,
-                    base_asset_quantity_snapshot=strategy.allocated_base_asset_quantity,
-                    quote_asset_quantity_snapshot=strategy.allocated_quote_asset_quantity,
-                )
-            )
-            logger.info("Snapshot added after trade for strategy %s: $%s", strategy.id, snap_val)
-        except Exception as e:
-            logger.error("Failed to add immediate strategy snapshot: %s", e, exc_info=True)
-
         # After updating portfolio, check overall allocations vs actual balances
         try:
             self._check_portfolio_drift(strategy)
         except Exception as e:
             logger.error(f"Error while checking portfolio drift: {e}")
+
+        # Defer snapshot creation to background thread to avoid blocking webhook response
+        self._defer_snapshot_creation(strategy)
 
     def _check_portfolio_drift(self, strategy: TradingStrategy):
         """Compare summed strategy allocations with live exchange balances.
@@ -751,3 +734,48 @@ class EnhancedWebhookProcessor:
                     allocated_qty,
                     live_qty,
                 )
+
+    def _defer_snapshot_creation(self, strategy: TradingStrategy):
+        """Create a strategy value snapshot in a background thread to avoid blocking webhook response."""
+        try:
+            from threading import Thread
+            from flask import current_app
+
+            app = current_app._get_current_object()
+            thread = Thread(
+                target=self._create_snapshot_with_context,
+                args=(app, strategy.id),
+                daemon=True
+            )
+            thread.start()
+        except Exception as e:
+            logger.error(f"Failed to defer snapshot creation: {e}")
+
+    def _create_snapshot_with_context(self, app, strategy_id: int):
+        """Create snapshot within Flask app context (runs in background thread)."""
+        with app.app_context():
+            try:
+                from datetime import datetime
+                from app.models.trading import TradingStrategy, StrategyValueHistory
+                from app.services.strategy_value_service import _value_usd
+
+                strategy = TradingStrategy.query.get(strategy_id)
+                if not strategy:
+                    logger.warning(f"Strategy {strategy_id} not found for snapshot creation")
+                    return
+
+                snap_val = _value_usd(strategy)
+                db.session.add(
+                    StrategyValueHistory(
+                        strategy_id=strategy.id,
+                        timestamp=datetime.utcnow(),
+                        value_usd=snap_val,
+                        base_asset_quantity_snapshot=strategy.allocated_base_asset_quantity,
+                        quote_asset_quantity_snapshot=strategy.allocated_quote_asset_quantity,
+                    )
+                )
+                db.session.commit()
+                logger.info(f"Snapshot created for strategy {strategy_id}: ${snap_val}")
+            except Exception as e:
+                logger.error(f"Failed to create snapshot for strategy {strategy_id}: {e}", exc_info=True)
+                db.session.rollback()

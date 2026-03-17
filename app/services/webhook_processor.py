@@ -491,13 +491,17 @@ class EnhancedWebhookProcessor:
             # Note: order_data and trade_result may be the same object, so only check order_data
             if 'fee' in order_data and order_data['fee']:
                 fee_entries.append(order_data['fee'])
+                logger.info(f"Found fee in order_data: {order_data['fee']}")
             if 'fees' in order_data and order_data['fees']:
                 fee_entries.extend(order_data['fees'])
+                logger.info(f"Found fees in order_data: {order_data['fees']}")
             # As a last-resort, look for info.total_fees (string) inside order_data.info
             info = order_data.get('info', {}) if isinstance(order_data, dict) else {}
             if isinstance(info, dict) and info.get('total_fees'):
                 fee_entries.append({'cost': info.get('total_fees'), 'currency': strategy.quote_asset_symbol})
+                logger.info(f"Found total_fees in order_data.info: {info.get('total_fees')}")
 
+            logger.info(f"Total fee entries collected: {len(fee_entries)}")
             for fee_item in fee_entries:
                 if not fee_item:
                     continue
@@ -505,13 +509,19 @@ class EnhancedWebhookProcessor:
                 fee_currency = fee_item.get('currency') if isinstance(fee_item, dict) else None
                 # Only count fees denominated in the quote asset
                 if fee_cost is None:
+                    logger.info(f"Skipping fee entry with no cost: {fee_item}")
                     continue
                 if fee_currency is None and strategy.quote_asset_symbol:
                     fee_currency = strategy.quote_asset_symbol  # assume quote
                 if (not fee_currency) or (not strategy.quote_asset_symbol):
+                    logger.info(f"Skipping fee entry with no currency: {fee_item}")
                     continue
                 if fee_currency.upper() == strategy.quote_asset_symbol.upper():
                     total_fees += Decimal(str(fee_cost))
+                    logger.info(f"Added fee {fee_cost} {fee_currency} to total_fees, now: {total_fees}")
+                else:
+                    logger.info(f"Skipping fee in different currency: {fee_cost} {fee_currency} (need {strategy.quote_asset_symbol})")
+            logger.info(f"Final total_fees: {total_fees}")
         except Exception as e:
             logger.warning(f"Could not parse fee information from order: {e}")
             total_fees = Decimal('0')

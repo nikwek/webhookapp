@@ -592,3 +592,6 @@ For questions about specific components, refer to:
 - Database models: `app/models/`
 - Exchange integration: `app/exchanges/`
 - Tests: `tests/`
+
+
+Do not include the `🤖 Generated with Claude Code` signature or `Co-Authored-By: Claude` line in commit messages or PR descriptions.

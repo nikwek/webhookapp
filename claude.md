@@ -550,6 +550,40 @@ pytest tests/test_allocation_service.py::test_allocate_assets -v
 
 ---
 
+## Maintenance & Updates
+
+This file should be updated when:
+
+**Architecture Changes:**
+- New models added to `app/models/`
+- New routes or blueprints created in `app/routes/`
+- New services added to `app/services/`
+- Exchange adapters added or removed from `app/exchanges/`
+- Major refactoring of core business logic
+
+**Dependency Updates:**
+- Major version bumps in `requirements.txt` (Flask, SQLAlchemy, CCXT, etc.)
+- New critical dependencies added
+- Python version changes
+
+**Test Suite Changes:**
+- Test count changes significantly (>10 tests added/removed)
+- Code coverage percentage changes by >1%
+- Major test suite restructuring
+
+**Deployment Changes:**
+- Database migration strategy changes
+- Deployment process or infrastructure changes
+- New environment variables required
+- SSL/security configuration changes
+
+**Documentation Gaps:**
+- New features not documented in this file
+- Unclear or outdated sections identified during development
+- New API endpoints or webhook formats
+
+---
+
 ## Contact & Support
 
 For questions about specific components, refer to:

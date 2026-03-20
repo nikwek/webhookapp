@@ -8,6 +8,7 @@ class TestPriceServiceGetPriceUsd:
 
     def test_get_price_usd_success(self):
         """get_price_usd should return price for valid asset."""
+        PriceService._price_cache.clear()
         with patch('app.services.price_service.requests.get') as mock_get:
             mock_response = Mock()
             mock_response.json.return_value = {

@@ -91,23 +91,17 @@ class EnhancedWebhookProcessor:
             self._log_and_commit(strategy_id=strategy.id, status='error', message=msg, payload=payload)
             return {"success": False, "message": msg}, 500
 
-
+        # Validation passed — return 200 immediately and execute the trade in the background.
         client_order_id = f"strat_{strategy.id}_{uuid.uuid4()}"
-
-        trade_kwargs = {
-            'credentials': credentials,
-            'portfolio': None,
+        self._defer_trade_execution({
+            'strategy_id': strategy.id,
             'trading_pair': strategy.trading_pair,
             'action': action,
             'payload': payload,
             'client_order_id': client_order_id,
-            'target_type': 'strategy',
-            'target_id': strategy.id,
-            'target': strategy,
             'webhook_id': strategy.webhook_id,
-        }
-
-        return self._execute_and_process_trade(**trade_kwargs)
+        })
+        return {"received": True, "message": "Webhook received"}, 200
 
     def _process_for_automation(self, automation: Automation, payload: Dict[str, Any]):
         """Processes a webhook for an Automation (legacy)."""
@@ -134,6 +128,58 @@ class EnhancedWebhookProcessor:
             
         # Now we have the strategy, process it as a strategy webhook
         return self._process_for_strategy(strategy, payload)
+
+    def _defer_trade_execution(self, params: dict):
+        """Spawn a background thread to execute the trade so the HTTP response
+        can be returned to TradingView immediately after validation."""
+        from threading import Thread
+        from flask import current_app
+
+        app = current_app._get_current_object()
+        thread = Thread(
+            target=self._execute_trade_with_context,
+            args=(app, params),
+            daemon=True,
+        )
+        thread.start()
+
+    def _execute_trade_with_context(self, app, params: dict):
+        """Run inside a background thread with a fresh Flask app context.
+
+        Re-fetches the strategy and credentials from the DB to avoid
+        DetachedInstanceError when the original request session has closed.
+        """
+        with app.app_context():
+            try:
+                strategy = TradingStrategy.query.get(params['strategy_id'])
+                if not strategy:
+                    logger.error(
+                        "Background trade: strategy %s not found", params['strategy_id']
+                    )
+                    return
+
+                credentials = strategy.exchange_credential
+                if not credentials:
+                    logger.error(
+                        "Background trade: no credentials for strategy %s", strategy.id
+                    )
+                    return
+
+                trade_kwargs = {
+                    'credentials': credentials,
+                    'portfolio': None,
+                    'trading_pair': params['trading_pair'],
+                    'action': params['action'],
+                    'payload': params['payload'],
+                    'client_order_id': params['client_order_id'],
+                    'target_type': 'strategy',
+                    'target_id': strategy.id,
+                    'target': strategy,
+                    'webhook_id': params['webhook_id'],
+                }
+                self._execute_and_process_trade(**trade_kwargs)
+            except Exception as e:
+                logger.error("Background trade execution failed: %s", e, exc_info=True)
 
     def _execute_and_process_trade(self, **kwargs):
         """Helper to execute trade and handle logging and session commit."""

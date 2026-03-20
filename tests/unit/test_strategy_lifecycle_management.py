@@ -95,22 +95,25 @@ class TestStrategyPauseUnpause:
                     "message": "Trade executed successfully",
                     "trade_status": "filled"
                 }
-                
+
                 processor = EnhancedWebhookProcessor()
-                
+                from flask import current_app as _ca
+                _app = _ca._get_current_object()
+                processor._defer_trade_execution = lambda params: processor._execute_trade_with_context(_app, params)
+
                 # Send webhook to active strategy
                 payload = {
                     "action": "sell",
                     "ticker": "BTC/USDT",
                     "amount": "0.5"
                 }
-                
+
                 result, status_code = processor.process_webhook("active-webhook-1", payload)
-                
-                # Should be processed normally
+
+                # Should be accepted immediately
                 assert status_code == 200
-                assert result.get("trade_executed") == True
-                
+                assert result.get("received")
+
                 # Verify trade was attempted
                 mock_trade.assert_called_once()
     
@@ -384,14 +387,18 @@ class TestLifecycleEdgeCases:
                     "message": "Trade executed successfully",
                     "trade_status": "filled"
                 }
-                
+
                 processor = EnhancedWebhookProcessor()
+                from flask import current_app as _ca
+                _app = _ca._get_current_object()
+                processor._defer_trade_execution = lambda params: processor._execute_trade_with_context(_app, params)
+
                 payload = {
                     "action": "sell",
                     "ticker": "BTC/USDT",
                     "amount": "0.5"
                 }
-                
+
                 processor.process_webhook("log-preservation-webhook", payload)
             
             # Verify webhook log was created

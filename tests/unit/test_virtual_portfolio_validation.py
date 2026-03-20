@@ -52,26 +52,35 @@ class TestTradeValidationRules:
                     "message": "Insufficient allocated base assets for this SELL.",
                     "trade_status": "error"
                 }
-                
+
                 processor = EnhancedWebhookProcessor()
-                
+                from flask import current_app as _ca
+                _app = _ca._get_current_object()
+                processor._defer_trade_execution = lambda params: processor._execute_trade_with_context(_app, params)
+
                 # Attempt to sell 2.0 BTC (more than the 1.0 BTC held)
                 payload = {
                     "action": "sell",
-                    "ticker": "BTC/USDT",  # Required field
+                    "ticker": "BTC/USDT",
                     "amount": "2.0"  # Exceeds holdings!
                 }
-                
+
                 result, status_code = processor.process_webhook("test-webhook-1", payload)
-                
-                # Should fail with insufficient assets error
-                assert status_code == 200  # Webhook processed successfully
-                assert result["trade_executed"] == False
-                assert "Insufficient allocated base assets" in result["message"]
-                
-                # Verify trade was attempted but rejected
+
+                # TradingView receives 200 immediately; validation outcome is logged
+                assert status_code == 200
+                assert result.get("received")
+
+                # Verify trade was attempted (and rejected by exchange_service)
                 mock_trade.assert_called_once()
-    
+
+            # Verify the rejection was persisted to the audit log
+            from app.models.webhook import WebhookLog
+            log = WebhookLog.query.filter_by(strategy_id=strategy.id).order_by(WebhookLog.id.desc()).first()
+            assert log is not None
+            assert log.status in ('error', 'rejected')
+            assert "Insufficient" in (log.raw_response or "")
+
     def test_buy_order_exceeds_quote_asset_holdings(self, app, regular_user, dummy_cred):
         """CRITICAL: Strategy cannot buy more than quote asset balance allows."""
         with app.app_context():
@@ -101,23 +110,35 @@ class TestTradeValidationRules:
                     "message": "Insufficient allocated quote assets for this BUY.",
                     "trade_status": "error"
                 }
-                
+
                 processor = EnhancedWebhookProcessor()
-                
+                from flask import current_app as _ca
+                _app = _ca._get_current_object()
+                processor._defer_trade_execution = lambda params: processor._execute_trade_with_context(_app, params)
+
                 # Attempt to buy 2.0 BTC (would cost ~$100,000 but only have $1,000)
                 payload = {
                     "action": "buy",
-                    "ticker": "BTC/USDT",  # Required field
+                    "ticker": "BTC/USDT",
                     "amount": "2.0"  # Would exceed quote balance!
                 }
-                
+
                 result, status_code = processor.process_webhook("test-webhook-2", payload)
-                
-                # Should fail with insufficient quote assets error
+
+                # TradingView receives 200 immediately; validation outcome is logged
                 assert status_code == 200
-                assert result["trade_executed"] == False
-                assert "Insufficient" in result["message"]
-    
+                assert result.get("received")
+
+                # Verify trade was attempted (and rejected by exchange_service)
+                mock_trade.assert_called_once()
+
+            # Verify the rejection was persisted to the audit log
+            from app.models.webhook import WebhookLog
+            log = WebhookLog.query.filter_by(strategy_id=strategy.id).order_by(WebhookLog.id.desc()).first()
+            assert log is not None
+            assert log.status in ('error', 'rejected')
+            assert "Insufficient" in (log.raw_response or "")
+
     def test_partial_sell_within_holdings_succeeds(self, app, regular_user, dummy_cred):
         """Valid trade within holdings should succeed."""
         with app.app_context():
@@ -152,21 +173,24 @@ class TestTradeValidationRules:
                         "info": {"total_value_after_fees": "49500"}
                     }
                 }
-                
+
                 processor = EnhancedWebhookProcessor()
-                
+                from flask import current_app as _ca
+                _app = _ca._get_current_object()
+                processor._defer_trade_execution = lambda params: processor._execute_trade_with_context(_app, params)
+
                 # Sell 1.0 BTC (within the 2.0 BTC holdings)
                 payload = {
                     "action": "sell",
-                    "ticker": "BTC/USDT",  # Required field
+                    "ticker": "BTC/USDT",
                     "amount": "1.0"  # Within holdings
                 }
-                
+
                 result, status_code = processor.process_webhook("test-webhook-3", payload)
-                
-                # Should succeed
+
+                # TradingView receives 200 immediately
                 assert status_code == 200
-                assert result["trade_executed"] == True
+                assert result.get("received")
 
 
 class TestAssetConservationRules:
@@ -478,6 +502,74 @@ class TestEdgeCasesAndRoundingErrors:
 
 
 # Fixtures for the new tests
+class TestBackgroundWorker:
+    """Tests for the async trade execution path (_execute_trade_with_context).
+
+    The sync-execution patch used elsewhere bypasses this code path.  These
+    tests call the background worker directly to verify it re-fetches fresh DB
+    objects, executes the trade, and writes the webhook log correctly.
+    """
+
+    def test_worker_executes_trade_and_logs_result(self, app, regular_user, dummy_cred):
+        """Background worker should run the trade and persist a WebhookLog."""
+        with app.app_context():
+            from app.models.user import User
+            from app.models.webhook import WebhookLog
+
+            user = User.query.filter_by(email="testuser@example.com").first()
+            strategy = TradingStrategy(
+                user_id=user.id,
+                name="BG Worker Strategy",
+                exchange_credential_id=dummy_cred,
+                trading_pair="BTC/USDT",
+                base_asset_symbol="BTC",
+                quote_asset_symbol="USDT",
+                allocated_base_asset_quantity=Decimal("1.0"),
+                allocated_quote_asset_quantity=Decimal("0"),
+                webhook_id="bg-worker-webhook",
+            )
+            db.session.add(strategy)
+            db.session.commit()
+
+            with patch.object(ExchangeService, 'execute_trade') as mock_trade:
+                mock_trade.return_value = {
+                    "trade_executed": True,
+                    "trade_status": "filled",
+                    "filled": Decimal("1.0"),
+                    "cost": Decimal("50000"),
+                }
+
+                processor = EnhancedWebhookProcessor()
+                processor._execute_trade_with_context(app, {
+                    'strategy_id': strategy.id,
+                    'trading_pair': 'BTC/USDT',
+                    'action': 'sell',
+                    'payload': {'action': 'sell', 'ticker': 'BTC/USDT'},
+                    'client_order_id': 'test-bg-order-id',
+                    'webhook_id': strategy.webhook_id,
+                })
+
+            mock_trade.assert_called_once()
+            log = WebhookLog.query.filter_by(strategy_id=strategy.id).first()
+            assert log is not None
+            assert log.client_order_id == 'test-bg-order-id'
+
+    def test_worker_handles_missing_strategy_gracefully(self, app, regular_user):
+        """Background worker should not raise if the strategy no longer exists."""
+        with app.app_context():
+            processor = EnhancedWebhookProcessor()
+            # Should log an error and return without raising
+            processor._execute_trade_with_context(app, {
+                'strategy_id': 999999,
+                'trading_pair': 'BTC/USDT',
+                'action': 'sell',
+                'payload': {'action': 'sell', 'ticker': 'BTC/USDT'},
+                'client_order_id': 'orphan-order',
+                'webhook_id': 'ghost-webhook',
+            })
+            # If we reach here, the worker swallowed the error gracefully
+
+
 @pytest.fixture()
 def dummy_cred(app, regular_user):
     """Create dummy exchange credentials for testing."""

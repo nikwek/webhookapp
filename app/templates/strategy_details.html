@@ -850,10 +850,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         legend: { display: false },
                         datalabels: {
                             anchor: function(ctx) {
-                                return ctx.parsed.y >= 0 ? 'end' : 'start';
+                                return ctx.parsed && ctx.parsed.y >= 0 ? 'end' : 'start';
                             },
                             align: function(ctx) {
-                                return ctx.parsed.y >= 0 ? 'top' : 'bottom';
+                                return ctx.parsed && ctx.parsed.y >= 0 ? 'top' : 'bottom';
                             },
                             offset: 4,
                             color: function(ctx) {

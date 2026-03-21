@@ -855,7 +855,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             align: function(ctx) {
                                 return ctx.parsed && ctx.parsed.y >= 0 ? 'top' : 'bottom';
                             },
-                            offset: 4,
+                            offset: 8,
                             color: function(ctx) {
                                 const i = ctx.dataIndex;
                                 const vals = ctx.chart.data.datasets[0].data;
@@ -863,9 +863,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                 const minIdx = vals.indexOf(Math.min(...vals));
                                 if (i === minIdx) return '#dc3545';
                                 if (i === maxIdx) return '#198754';
-                                return '#000';
+                                return '#333';
                             },
-                            font: { weight: 'bold', size: 11 },
+                            backgroundColor: 'rgba(255,255,255,0.85)',
+                            borderRadius: 4,
+                            padding: { top: 3, bottom: 3, left: 5, right: 5 },
+                            font: { weight: 'bold', size: 13 },
                             display: function(ctx) {
                                 const i = ctx.dataIndex;
                                 const vals = ctx.chart.data.datasets[0].data;

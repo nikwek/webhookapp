@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e # Exit immediately if a command fails
 
+# Print a clear failure message on any error
+trap 'echo ""; echo "❌ DEPLOYMENT FAILED"; exit 1' ERR
+
 # Get current branch
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 echo "Deploying branch: $BRANCH"
@@ -34,9 +37,10 @@ git push origin $BRANCH
 
 # Step 2: SSH to Raspberry Pi and deploy
 echo "Deploying to Raspberry Pi..."
-ssh nik@raspberrypi.local "export BRANCH='$BRANCH'; bash -s" <<'EOF'
+ssh nik@raspberrypi.local "export BRANCH='$BRANCH'; bash -se" <<'EOF'
+ set -e # Exit remote script immediately on any failure
  # Branch is now available as environment variable from local
- 
+
  # Create a backup of the database
  echo 'Creating database backup...'
  mkdir -p /home/nik/webhookapp/backups
@@ -127,12 +131,14 @@ ssh nik@raspberrypi.local "export BRANCH='$BRANCH'; bash -s" <<'EOF'
  echo 'Verifying service is responding to requests...' &&
  response_code=$(curl -s -k https://localhost:5001/ -o /dev/null -w '%{http_code}' 2>/dev/null || echo '000') &&
  if [ "$response_code" = "200" ]; then
-   echo 'Service is responding with status code 200 - deployment successful!'
+   echo 'Service is responding with status code 200.'
  else
-   echo "WARNING: Service not responding with status code 200 (got: $response_code)"
+   echo "❌ Service not responding as expected (got: $response_code)"
    echo 'Recent log entries:'
    sudo journalctl -u webhookapp --no-pager -n 10 --output=short
+   exit 1
  fi
 EOF
 
-echo "Deployment of branch '$BRANCH' complete!"
+echo ""
+echo "✅ DEPLOYMENT SUCCESSFUL — branch '$BRANCH' is live."

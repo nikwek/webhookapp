@@ -235,6 +235,11 @@ class TestCoreStrategyDeletionLogic:
             preserved_log = db.session.get(WebhookLog, log_id)
             assert preserved_log is not None
 
+            # Clean up the orphaned log so its strategy_id isn't reused by a
+            # subsequent test's strategy (SQLite can reuse IDs after deletion).
+            db.session.delete(preserved_log)
+            db.session.commit()
+
 
 class TestCoreLifecycleEdgeCases:
     """Test edge cases in strategy lifecycle management."""

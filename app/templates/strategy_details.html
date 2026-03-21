@@ -849,36 +849,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     plugins: {
                         legend: { display: false },
                         datalabels: {
-                            anchor: 'center',
+                            anchor: function(ctx) {
+                                return ctx.parsed.y >= 0 ? 'end' : 'start';
+                            },
                             align: function(ctx) {
-                                // Position above positive values, below negative values
-                                if (!ctx.parsed || ctx.parsed.y === undefined) return 'top';
                                 return ctx.parsed.y >= 0 ? 'top' : 'bottom';
                             },
-                            offset: 6,
-                            color: '#000',
-                            font: { weight: 'bold', size: 12 },
+                            offset: 4,
+                            color: function(ctx) {
+                                const i = ctx.dataIndex;
+                                const vals = ctx.chart.data.datasets[0].data;
+                                const maxIdx = vals.indexOf(Math.max(...vals));
+                                const minIdx = vals.indexOf(Math.min(...vals));
+                                if (i === minIdx) return '#dc3545';
+                                if (i === maxIdx) return '#198754';
+                                return '#000';
+                            },
+                            font: { weight: 'bold', size: 11 },
                             display: function(ctx) {
-                                const dataset = ctx.chart.data.datasets[ctx.datasetIndex].data;
-                                const count = ctx.chart.data.labels.length;
-                                
-                                // Always show first and last points
-                                if (ctx.dataIndex === 0 || ctx.dataIndex === count - 1) return true;
-                                
-                                // For day view, be more selective
-                                if (period === 'day' && count > 30) {
-                                    // Show significant changes (>0.5% difference from previous)
-                                    if (ctx.dataIndex > 0) {
-                                        const prevValue = dataset[ctx.dataIndex - 1];
-                                        const currentValue = dataset[ctx.dataIndex];
-                                        if (Math.abs(currentValue - prevValue) > 0.5) return true;
-                                    }
-                                    
-                                    // Show every 4th point as backup
-                                    return ctx.dataIndex % 4 === 0;
-                                }
-                                
-                                return true;
+                                const i = ctx.dataIndex;
+                                const vals = ctx.chart.data.datasets[0].data;
+                                const count = vals.length;
+                                const maxIdx = vals.indexOf(Math.max(...vals));
+                                const minIdx = vals.indexOf(Math.min(...vals));
+                                return i === 0 || i === count - 1 || i === maxIdx || i === minIdx;
                             },
                             formatter: v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%'
                         }

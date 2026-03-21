@@ -490,6 +490,15 @@ def get_strategy_risk(strategy_id: int):
         running_max = float(rows[0].value_usd)
         for r in rows:
             equity = float(r.value_usd)
+            # Skip bad $0 snapshots: if equity is 0 but the strategy had assets,
+            # this is a price-fetch failure from before zero-value protection was added.
+            if equity == 0:
+                had_assets = (
+                    (r.base_asset_quantity_snapshot or 0) > 0
+                    or (r.quote_asset_quantity_snapshot or 0) > 0
+                )
+                if had_assets:
+                    continue
             running_max = max(running_max, equity)
             drawdown = (equity / running_max) - 1.0 if running_max else 0.0
             data.append({

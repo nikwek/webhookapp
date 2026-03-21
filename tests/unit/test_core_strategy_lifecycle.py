@@ -195,8 +195,7 @@ class TestCoreStrategyDeletionLogic:
         with app.app_context():
             from app.models.user import User
             user = User.query.filter_by(email="testuser@example.com").first()
-            
-            # Create strategy
+
             strategy = TradingStrategy(
                 user_id=user.id,
                 name="Strategy With Logs",
@@ -206,52 +205,35 @@ class TestCoreStrategyDeletionLogic:
                 quote_asset_symbol="USDT",
                 allocated_base_asset_quantity=Decimal("1.0"),
                 allocated_quote_asset_quantity=Decimal("0"),
-                webhook_id="logs-test-webhook",
+                webhook_id="logs-preserve-test-webhook",
                 is_active=True
             )
             db.session.add(strategy)
-            db.session.commit()
+            db.session.flush()  # get strategy.id without full commit
             strategy_id = strategy.id
-            
-            # Create webhook log
-            with patch('app.services.webhook_processor.ExchangeService.execute_trade') as mock_trade:
-                mock_trade.return_value = {
-                    "trade_executed": True,
-                    "message": "Trade executed successfully",
-                    "trade_status": "filled"
-                }
 
-                processor = EnhancedWebhookProcessor()
-                from flask import current_app as _ca
-                _app = _ca._get_current_object()
-                processor._defer_trade_execution = lambda params: processor._execute_trade_with_context(_app, params)
-
-                payload = {
-                    "action": "sell",
-                    "ticker": "BTC/USDT",
-                    "amount": "0.5"
-                }
-
-                processor.process_webhook("logs-test-webhook", payload)
-            
-            # Verify webhook log was created
-            log = WebhookLog.query.filter_by(strategy_id=strategy_id).first()
-            assert log is not None
+            # Create a webhook log directly — we're testing DB cascade behaviour,
+            # not the webhook processor, so no need for the full exchange stack.
+            log = WebhookLog(
+                strategy_id=strategy_id,
+                payload={"action": "sell", "ticker": "BTC/USDT"},
+                status="success",
+                target_type="strategy",
+            )
+            db.session.add(log)
+            db.session.commit()
             log_id = log.id
-            
-            # Delete strategy (but not logs - they should be preserved)
+
+            # Delete the strategy
             db.session.delete(strategy)
             db.session.commit()
-            
-            # Verify strategy is deleted
-            deleted_strategy = TradingStrategy.query.get(strategy_id)
-            assert deleted_strategy is None
-            
-            # Verify webhook log still exists (for audit trail)
-            preserved_log = WebhookLog.query.get(log_id)
+
+            # Strategy is gone
+            assert db.session.get(TradingStrategy, strategy_id) is None
+
+            # Log record still exists (audit trail must survive strategy deletion)
+            preserved_log = db.session.get(WebhookLog, log_id)
             assert preserved_log is not None
-            # Note: In the current implementation, strategy_id may be nulled on cascade delete
-            # The important thing is that the log record itself is preserved for audit purposes
 
 
 class TestCoreLifecycleEdgeCases:

@@ -16,6 +16,9 @@ from sqlalchemy import desc
 from decimal import Decimal, InvalidOperation
 from app.services import allocation_service
 from app.services.webhook_processor import EnhancedWebhookProcessor
+from app.services.price_service import PriceService
+
+_STABLECOIN_SYMBOLS = {"USDC", "USDT", "DAI", "BUSD", "TUSD", "USDP", "GUSD", "FRAX"}
 
 
 logger = logging.getLogger(__name__)
@@ -157,16 +160,33 @@ def view_exchange(exchange_id: str):
             .all()
         )
 
-        # Attach latest valuation snapshot & build total allocated per asset
+        # Collect unique non-stablecoin base asset symbols for batch price fetch
+        base_symbols_to_fetch = {
+            s.base_asset_symbol.upper()
+            for s in user_strategies
+            if s.base_asset_symbol and s.base_asset_symbol.upper() not in _STABLECOIN_SYMBOLS
+        }
+        try:
+            live_prices = PriceService.get_prices_usd_batch(list(base_symbols_to_fetch))
+        except Exception as exc:
+            logger.warning("Failed to fetch live prices for strategies: %s", exc)
+            live_prices = {}
+
+        # Compute live estimated value for each strategy & build total allocated per asset
         for strategy in user_strategies:
-            latest_snap = (
-                strategy.value_history.order_by(desc(StrategyValueHistory.timestamp)).first()
-                if hasattr(strategy, "value_history")
-                else None
-            )
-            strategy.latest_value_usd = (
-                float(latest_snap.value_usd) if latest_snap else None
-            )
+            try:
+                base_sym = (strategy.base_asset_symbol or "").upper()
+                quote_sym = (strategy.quote_asset_symbol or "").upper()
+                base_qty = Decimal(str(strategy.allocated_base_asset_quantity or 0))
+                quote_qty = Decimal(str(strategy.allocated_quote_asset_quantity or 0))
+
+                base_price = Decimal(str(live_prices.get(base_sym, 0))) if base_sym not in _STABLECOIN_SYMBOLS else Decimal("1")
+                quote_price = Decimal("1") if quote_sym in _STABLECOIN_SYMBOLS else Decimal(str(live_prices.get(quote_sym, 0)))
+
+                strategy.latest_value_usd = float(base_qty * base_price + quote_qty * quote_price)
+            except Exception as exc:
+                logger.warning("Could not compute live value for strategy %s: %s", strategy.id, exc)
+                strategy.latest_value_usd = None
 
             try:
                 if strategy.base_asset_symbol and strategy.allocated_base_asset_quantity is not None:

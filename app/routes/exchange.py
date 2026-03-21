@@ -180,8 +180,22 @@ def view_exchange(exchange_id: str):
                 base_qty = Decimal(str(strategy.allocated_base_asset_quantity or 0))
                 quote_qty = Decimal(str(strategy.allocated_quote_asset_quantity or 0))
 
-                base_price = Decimal(str(live_prices.get(base_sym, 0))) if base_sym not in _STABLECOIN_SYMBOLS else Decimal("1")
-                quote_price = Decimal("1") if quote_sym in _STABLECOIN_SYMBOLS else Decimal(str(live_prices.get(quote_sym, 0)))
+                if base_sym in _STABLECOIN_SYMBOLS:
+                    base_price = Decimal("1")
+                else:
+                    raw = live_prices.get(base_sym)
+                    if raw is None and base_qty > 0:
+                        # Price fetch failed and we have non-zero base quantity — fall back to last snapshot
+                        latest_snap = (
+                            strategy.value_history.order_by(desc(StrategyValueHistory.timestamp)).first()
+                            if hasattr(strategy, "value_history")
+                            else None
+                        )
+                        strategy.latest_value_usd = float(latest_snap.value_usd) if latest_snap else None
+                        continue
+                    base_price = Decimal(str(raw or 0))
+
+                quote_price = Decimal("1") if quote_sym in _STABLECOIN_SYMBOLS else Decimal(str(live_prices.get(quote_sym) or 0))
 
                 strategy.latest_value_usd = float(base_qty * base_price + quote_qty * quote_price)
             except Exception as exc:

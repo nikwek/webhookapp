@@ -1,15 +1,13 @@
 """Simple price retrieval service using CoinGecko public API.
 
-NOTE: This is deliberately lightweight – it avoids adding any new heavy
-external dependencies beyond the already-present ``requests`` package
-and keeps an in-memory cache so that a single daily snapshot run does
-not trigger dozens of HTTP requests for the same symbol.
+Prices are stored in the shared Flask-Caching FileSystemCache so that all
+Gunicorn workers read and write the same cached values, avoiding redundant
+API calls and staying well within CoinGecko's rate limits.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
 from typing import Dict, Optional
 
 import requests
@@ -17,6 +15,8 @@ import requests
 logger = logging.getLogger(__name__)
 
 _API_BASE = "https://api.coingecko.com/api/v3"
+_PRICE_TTL = 300  # seconds (5 minutes)
+_CACHE_KEY_PREFIX = "price_usd_"
 
 
 class PriceService:
@@ -42,19 +42,17 @@ class PriceService:
         "AVAX": "avalanche-2",
     }
 
-    # Map of symbol (upper-case) -> coinGecko id (lower-case) loaded at runtime
+    # Symbol→CoinGecko-id map kept in-memory per process (just ID lookups, not prices)
     _symbol_to_id: Dict[str, str] = _STATIC_SYMBOL_MAP.copy()
-    # Map of symbol -> {"price": float, "ts": datetime}
-    _price_cache: Dict[str, Dict[str, object]] = {}
-    _TTL = timedelta(minutes=5)  # cache freshness window
+
+    @classmethod
+    def _cache(cls):
+        from app import cache
+        return cache
 
     @classmethod
     def _load_symbol_map(cls) -> None:
-        """Populate the symbol→id cache from CoinGecko.
-
-        This call fetches ~10 kB JSON once and then keeps the result in
-        memory for the entire process lifetime.
-        """
+        """Populate the symbol→id map from CoinGecko (once per process)."""
         try:
             logger.debug("Fetching coin list from CoinGecko for symbol map …")
             r = requests.get(f"{_API_BASE}/coins/list", timeout=20)
@@ -64,41 +62,35 @@ class PriceService:
                 if symbol not in cls._symbol_to_id:
                     cls._symbol_to_id[symbol] = coin["id"]
             logger.info("Loaded %s coin symbols from CoinGecko", len(cls._symbol_to_id))
-        except Exception as exc:  # noqa: BLE001 – want broad catch for logging
+        except Exception as exc:  # noqa: BLE001
             logger.error("Unable to fetch symbol map from CoinGecko: %s", exc, exc_info=True)
 
     @classmethod
     def _resolve_id(cls, symbol: str) -> Optional[str]:
         """Return CoinGecko id for *symbol* (BTC -> bitcoin)."""
         symbol = symbol.upper()
-        # Check already-known mapping first (includes static defaults).
         if symbol in cls._symbol_to_id:
             return cls._symbol_to_id[symbol]
-        # Attempt to lazily load the full symbol map only once per process.
+        # Lazily load the full symbol map once per process if needed
         if len(cls._symbol_to_id) == len(cls._STATIC_SYMBOL_MAP):
             cls._load_symbol_map()
         return cls._symbol_to_id.get(symbol)
 
     @classmethod
     def get_price_usd(cls, symbol: str, *, force_refresh: bool = False) -> float:
-        """Return the latest *USD* price for *symbol* (e.g. "BTC").
+        """Return the latest USD price for *symbol* (e.g. "BTC").
 
-        ``force_refresh`` bypasses the in-memory cache and always fetches
-        a fresh price from CoinGecko.  Use this sparingly because the
-        public API has a soft rate-limit of ~50 requests / minute per IP.
+        Results are cached in the shared FileSystemCache for 5 minutes so all
+        Gunicorn workers benefit from a single fetch.
         """
         symbol = symbol.upper()
-        now = datetime.utcnow()
+        cache = cls._cache()
+        key = f"{_CACHE_KEY_PREFIX}{symbol}"
 
-        # short-lived cache (skip when force_refresh=True)
-        cached = cls._price_cache.get(symbol)
-        if not force_refresh and cached and now - cached["ts"] < cls._TTL:
-            # Very small prices are sometimes erroneous if the API returns
-            # inverse values – sanity-check and ignore if clearly wrong.
-            if cached["price"] > 1e-4:
-                return cached["price"]  # type: ignore[return-value]
-            # drop suspicious cached value
-            cls._price_cache.pop(symbol, None)
+        if not force_refresh:
+            cached = cache.get(key)
+            if cached is not None and cached > 1e-4:
+                return cached
 
         coin_id = cls._resolve_id(symbol)
         if not coin_id:
@@ -109,7 +101,7 @@ class PriceService:
             r = requests.get(f"{_API_BASE}/simple/price", params=params, timeout=15)
             r.raise_for_status()
             price = float(r.json()[coin_id]["usd"])
-            cls._price_cache[symbol] = {"price": price, "ts": now}
+            cache.set(key, price, timeout=_PRICE_TTL)
             return price
         except Exception as exc:  # noqa: BLE001
             logger.error("Error fetching price for %s: %s", symbol, exc, exc_info=True)
@@ -117,90 +109,75 @@ class PriceService:
 
     @classmethod
     def get_prices_usd_batch(cls, symbols: list[str], *, force_refresh: bool = False) -> dict[str, float]:
-        """Return USD prices for multiple symbols in a single API call.
-        
-        This is much more efficient than calling get_price_usd() multiple times
-        as it batches all requests into a single CoinGecko API call.
-        
-        Args:
-            symbols: List of asset symbols (e.g. ["BTC", "ETH", "SOL"])
-            force_refresh: Bypass cache and fetch fresh prices
-            
+        """Return USD prices for multiple symbols in a single CoinGecko API call.
+
+        Checks the shared cache first; only fetches symbols whose price is
+        missing or stale, keeping API usage minimal across all workers.
+
         Returns:
-            Dict mapping symbol -> USD price (e.g. {"BTC": 67000.0, "ETH": 3500.0})
+            Dict mapping symbol -> USD price. Symbols whose price could not be
+            fetched are omitted (callers should treat missing keys as unknown).
         """
         if not symbols:
             return {}
-            
-        # Normalize symbols to uppercase
+
         symbols = [s.upper() for s in symbols]
-        now = datetime.utcnow()
-        prices = {}
-        symbols_to_fetch = []
-        
-        # Check cache for each symbol
+        cache = cls._cache()
+        prices: dict[str, float] = {}
+        symbols_to_fetch: list[str] = []
+
         for symbol in symbols:
-            # Check cache if not forcing refresh
-            cached = cls._price_cache.get(symbol)
-            if not force_refresh and cached and now - cached["ts"] < cls._TTL:
-                if cached["price"] > 1e-4:
-                    prices[symbol] = cached["price"]  # type: ignore[assignment]
+            if not force_refresh:
+                cached = cache.get(f"{_CACHE_KEY_PREFIX}{symbol}")
+                if cached is not None and cached > 1e-4:
+                    prices[symbol] = cached
                     continue
-                # Drop suspicious cached value
-                cls._price_cache.pop(symbol, None)
-                
             symbols_to_fetch.append(symbol)
-        
-        # If all symbols were cached or stablecoins, return early
+
         if not symbols_to_fetch:
             return prices
-            
-        # Resolve coin IDs for symbols that need fetching
-        coin_ids = []
-        symbol_to_coin_id = {}
+
+        # Resolve CoinGecko IDs for uncached symbols
+        coin_ids: list[str] = []
+        coin_id_to_symbol: dict[str, str] = {}
         for symbol in symbols_to_fetch:
             coin_id = cls._resolve_id(symbol)
             if coin_id:
                 coin_ids.append(coin_id)
-                symbol_to_coin_id[coin_id] = symbol
+                coin_id_to_symbol[coin_id] = symbol
             else:
-                logger.warning(f"PriceService: Unknown symbol '{symbol}', skipping")
-        
+                logger.warning("PriceService: Unknown symbol '%s', skipping", symbol)
+
         if not coin_ids:
             return prices
-            
-        # Make single batched API call
+
         params = {
             "ids": ",".join(coin_ids),
             "vs_currencies": "usd",
-            "include_last_updated_at": "true"
         }
-        
+
         try:
-            logger.debug(f"Fetching batch prices for {len(coin_ids)} assets: {coin_ids}")
+            logger.debug("Fetching batch prices for %d assets: %s", len(coin_ids), coin_ids)
             r = requests.get(f"{_API_BASE}/simple/price", params=params, timeout=15)
             r.raise_for_status()
-            response_data = r.json()
-            
-            # Parse response and update cache
-            for coin_id, data in response_data.items():
+
+            for coin_id, data in r.json().items():
                 if "usd" in data:
-                    symbol = symbol_to_coin_id[coin_id]
+                    symbol = coin_id_to_symbol[coin_id]
                     price = float(data["usd"])
                     prices[symbol] = price
-                    cls._price_cache[symbol] = {"price": price, "ts": now}
-                    logger.debug(f"Fetched price for {symbol}: ${price}")
-                    
+                    cache.set(f"{_CACHE_KEY_PREFIX}{symbol}", price, timeout=_PRICE_TTL)
+                    logger.debug("Cached price for %s: $%s", symbol, price)
+
             return prices
-            
+
         except Exception as exc:  # noqa: BLE001
-            logger.error("Error fetching batch prices for %s: %s", coin_ids, exc, exc_info=True)
-            # Fall back to individual calls for any symbols we couldn't fetch
+            logger.error("Batch price fetch failed for %s: %s", coin_ids, exc, exc_info=True)
+            # Fall back to individual fetches for any still-missing symbols
             for symbol in symbols_to_fetch:
                 if symbol not in prices:
                     try:
-                        prices[symbol] = cls.get_price_usd(symbol, force_refresh=force_refresh)
+                        prices[symbol] = cls.get_price_usd(symbol)
                     except Exception:
-                        logger.warning(f"Failed to fetch fallback price for {symbol}")
-                        # Don't add to prices dict - let caller handle missing prices
+                        logger.warning("Failed individual fallback price fetch for %s", symbol)
             return prices

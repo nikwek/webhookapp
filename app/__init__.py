@@ -81,8 +81,9 @@ def create_app(test_config: dict | None = None):  # noqa: C901 complex
     mail.init_app(app)
     sess.init_app(app)
 
-    # Cache – default to SimpleCache if none provided
-    app.config.setdefault("CACHE_TYPE", "SimpleCache")
+    # Cache – FileSystemCache so all Gunicorn workers share the same cached values
+    app.config.setdefault("CACHE_TYPE", "FileSystemCache")
+    app.config.setdefault("CACHE_DIR", os.path.join(os.path.dirname(app.instance_path), "cache"))
     app.config.setdefault("CACHE_DEFAULT_TIMEOUT", 300)
     cache.init_app(app)
 

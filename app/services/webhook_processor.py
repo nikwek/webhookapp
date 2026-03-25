@@ -218,11 +218,13 @@ class EnhancedWebhookProcessor:
                 )
 
             # Determine status for logging
-            status_value = (
+            from app.models.webhook import normalize_trade_status
+            raw_status = (
                 str(trade_result.get('trade_status') or '')
                 or ('success' if trade_result.get('success', False) else 'error')
             )
-            
+            status_value = normalize_trade_status(raw_status, trade_result)
+
             self._log_and_commit(
                 strategy_id=kwargs.get('target_id'),
                 status=status_value,
@@ -250,10 +252,7 @@ class EnhancedWebhookProcessor:
                     else:
                         exchange_display_name = ex_name.rsplit('-ccxt', 1)[0] if ex_name.endswith('-ccxt') else ex_name
                     information = f"{kwargs.get('action', '').upper()} {kwargs.get('trading_pair', '')}"
-                    # Normalize status for consistent display (closed -> success)
-                    from app.models.webhook import normalize_trade_status
-                    normalized_status = normalize_trade_status(status_value, trade_result)
-                    status_text = normalized_status.capitalize() if isinstance(normalized_status, str) else str(normalized_status)
+                    status_text = status_value.capitalize() if isinstance(status_value, str) else str(status_value)
                     ts = datetime.utcnow().isoformat()
                     coid = kwargs.get('client_order_id')
                     NotificationService.send_user_transaction_activity(

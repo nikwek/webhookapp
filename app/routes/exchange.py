@@ -656,7 +656,7 @@ def manual_trade(exchange_id: str, strategy_id: int):
         result, status_code = processor._process_for_strategy(strategy, payload)
         
         # Handle the result
-        if result.get('message') == 'success':
+        if status_code == 200:
             flash(f'{trade_type.capitalize()} order executed successfully!', 'success')
         else:
             flash(f'{trade_type.capitalize()} order failed: {result.get("message", "Unknown error")}', 'danger')

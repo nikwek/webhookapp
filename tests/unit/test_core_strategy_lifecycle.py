@@ -142,12 +142,18 @@ class TestCoreWebhookPauseLogic:
             db.session.commit()
             
             processor = EnhancedWebhookProcessor()
+            # Run deferred execution inline so no background threads race against
+            # other tests via the shared in-memory SQLite connection (StaticPool).
+            from flask import current_app as _ca
+            _app = _ca._get_current_object()
+            processor._defer_trade_execution = lambda params: processor._execute_trade_with_context(_app, params)
+
             payload = {
                 "action": "sell",
                 "ticker": "BTC/USDT",
                 "amount": "0.5"
             }
-            
+
             # Mock successful trade for active state
             with patch('app.services.webhook_processor.ExchangeService.execute_trade') as mock_trade:
                 mock_trade.return_value = {

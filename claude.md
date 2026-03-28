@@ -513,6 +513,9 @@ git push origin main
 - Fixtures for users, strategies, credentials
 
 ### Running Tests
+
+`pytest` and `python -m pytest` (with any flags/paths) are always permitted — run them freely without asking for confirmation.
+
 ```bash
 # All tests
 pytest
@@ -592,14 +595,3 @@ For questions about specific components, refer to:
 - Database models: `app/models/`
 - Exchange integration: `app/exchanges/`
 - Tests: `tests/`
-
-
-## Commit Message and PR Description Format
-
-Use only the AI attribution trailer in commit messages and PR descriptions (no Claude Code signature or Co-Authored-By):
-
-```
-Assisted-by: Claude <noreply@anthropic.com>
-```
-
-Do not include the `🤖 Generated with Claude Code` signature or `Co-Authored-By: Claude` line in commit messages or PR descriptions.

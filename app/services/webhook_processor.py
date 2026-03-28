@@ -44,8 +44,16 @@ class EnhancedWebhookProcessor:
         logger.error(f"No Trading Strategy found for identifier: {identifier}")
         return {"success": False, "message": "Identifier not found"}, 404
 
-    def _process_for_strategy(self, strategy: TradingStrategy, payload: Dict[str, Any]):
-        """Processes a webhook for a Trading Strategy."""
+    def _process_for_strategy(self, strategy: TradingStrategy, payload: Dict[str, Any], synchronous: bool = False):
+        """Processes a webhook for a Trading Strategy.
+
+        When *synchronous* is True the trade is executed inline (blocking) and
+        the full trade result is returned to the caller.  Use this for manual
+        trades so the HTTP response reflects the actual outcome.  When False
+        (the default) the trade is deferred to a background thread and a 200
+        acknowledgement is returned immediately — the path used for TradingView
+        webhooks so they get a fast response.
+        """
         logger.info(f"Processing webhook for strategy {strategy.id} (name: {strategy.name})")
         logger.info(f"Webhook Payload:\n{json.dumps(payload, indent=2)}")
 
@@ -91,16 +99,35 @@ class EnhancedWebhookProcessor:
             self._log_and_commit(strategy_id=strategy.id, status='error', message=msg, payload=payload)
             return {"success": False, "message": msg}, 500
 
-        # Validation passed — return 200 immediately and execute the trade in the background.
+        # Validation passed — execute the trade either synchronously or deferred.
         client_order_id = f"strat_{strategy.id}_{uuid.uuid4()}"
-        self._defer_trade_execution({
+        trade_params = {
             'strategy_id': strategy.id,
             'trading_pair': strategy.trading_pair,
             'action': action,
             'payload': payload,
             'client_order_id': client_order_id,
             'webhook_id': strategy.webhook_id,
-        })
+        }
+
+        if synchronous:
+            # Execute inline so the caller receives the real outcome.
+            trade_kwargs = {
+                'credentials': credentials,
+                'portfolio': None,
+                'trading_pair': strategy.trading_pair,
+                'action': action,
+                'payload': payload,
+                'client_order_id': client_order_id,
+                'target_type': 'strategy',
+                'target_id': strategy.id,
+                'target': strategy,
+                'webhook_id': strategy.webhook_id,
+            }
+            return self._execute_and_process_trade(**trade_kwargs)
+
+        # Default: return 200 immediately and execute the trade in the background.
+        self._defer_trade_execution(trade_params)
         return {"received": True, "message": "Webhook received"}, 200
 
     def _process_for_automation(self, automation: Automation, payload: Dict[str, Any]):

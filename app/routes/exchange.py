@@ -650,11 +650,11 @@ def manual_trade(exchange_id: str, strategy_id: int):
             "message": f"Manual {trade_type} order"
         }
         
-        # Use webhook processor directly (same as API calls)
+        # Use webhook processor synchronously so the DB is updated before we redirect.
         processor = EnhancedWebhookProcessor()
         processor.identifier = f"manual_trade_{strategy.id}"
-        result, status_code = processor._process_for_strategy(strategy, payload)
-        
+        result, status_code = processor._process_for_strategy(strategy, payload, synchronous=True)
+
         # Handle the result
         if status_code == 200:
             flash(f'{trade_type.capitalize()} order executed successfully!', 'success')

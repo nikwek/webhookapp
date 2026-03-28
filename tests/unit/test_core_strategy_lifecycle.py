@@ -332,6 +332,149 @@ class TestCoreLifecycleEdgeCases:
             # Note: Other statuses depend on actual implementation
 
 
+class TestSynchronousVsDeferredProcessing:
+    """Tests for the synchronous/deferred trade execution split introduced to
+    support both TradingView webhooks (fast 200 ack) and manual trades (blocking
+    execution so the page reflects the outcome on redirect)."""
+
+    def _make_strategy(self, user_id, cred_id, webhook_id):
+        strategy = TradingStrategy(
+            user_id=user_id,
+            name=f"Sync Test {webhook_id}",
+            exchange_credential_id=cred_id,
+            trading_pair="BTC/USDT",
+            base_asset_symbol="BTC",
+            quote_asset_symbol="USDT",
+            allocated_base_asset_quantity=Decimal("0"),
+            allocated_quote_asset_quantity=Decimal("100"),
+            webhook_id=webhook_id,
+            is_active=True,
+        )
+        db.session.add(strategy)
+        db.session.commit()
+        return strategy
+
+    def test_deferred_returns_received_ack_immediately(self, app, regular_user, dummy_cred):
+        """synchronous=False (default) must return the fast ack before the trade runs."""
+        with app.app_context():
+            from app.models.user import User
+            user = User.query.filter_by(email="testuser@example.com").first()
+            strategy = self._make_strategy(user.id, dummy_cred, "deferred-sync-test")
+
+            processor = EnhancedWebhookProcessor()
+            # Prevent the background thread from actually running during this test
+            processor._defer_trade_execution = lambda params: None
+
+            payload = {"action": "buy", "ticker": "BTC/USDT"}
+            result, status_code = processor._process_for_strategy(strategy, payload, synchronous=False)
+
+            assert status_code == 200
+            assert result.get("received") is True
+            assert result.get("message") == "Webhook received"
+
+    def test_deferred_spawns_background_trade(self, app, regular_user, dummy_cred):
+        """synchronous=False must hand off the trade to _defer_trade_execution."""
+        with app.app_context():
+            from app.models.user import User
+            user = User.query.filter_by(email="testuser@example.com").first()
+            strategy = self._make_strategy(user.id, dummy_cred, "deferred-spawn-test")
+
+            processor = EnhancedWebhookProcessor()
+            deferred_calls = []
+            processor._defer_trade_execution = lambda params: deferred_calls.append(params)
+
+            payload = {"action": "buy", "ticker": "BTC/USDT"}
+            processor._process_for_strategy(strategy, payload, synchronous=False)
+
+            assert len(deferred_calls) == 1
+            assert deferred_calls[0]["action"] == "buy"
+            assert deferred_calls[0]["strategy_id"] == strategy.id
+
+    def test_synchronous_executes_trade_inline(self, app, regular_user, dummy_cred):
+        """synchronous=True must call the exchange and return the real trade result."""
+        with app.app_context():
+            from app.models.user import User
+            user = User.query.filter_by(email="testuser@example.com").first()
+            strategy = self._make_strategy(user.id, dummy_cred, "sync-inline-test")
+
+            with patch('app.services.webhook_processor.ExchangeService.execute_trade') as mock_trade:
+                mock_trade.return_value = {
+                    "trade_executed": True,
+                    "trade_status": "filled",
+                    "message": "Trade executed successfully",
+                }
+
+                processor = EnhancedWebhookProcessor()
+                payload = {"action": "buy", "ticker": "BTC/USDT"}
+                result, status_code = processor._process_for_strategy(strategy, payload, synchronous=True)
+
+            assert status_code == 200
+            mock_trade.assert_called_once()
+            # Synchronous path must NOT return the fast-ack envelope
+            assert result.get("received") is not True
+
+    def test_synchronous_creates_webhook_log(self, app, regular_user, dummy_cred):
+        """synchronous=True must persist a WebhookLog before returning."""
+        with app.app_context():
+            from app.models.user import User
+            user = User.query.filter_by(email="testuser@example.com").first()
+            strategy = self._make_strategy(user.id, dummy_cred, "sync-log-test")
+
+            with patch('app.services.webhook_processor.ExchangeService.execute_trade') as mock_trade:
+                mock_trade.return_value = {
+                    "trade_executed": True,
+                    "trade_status": "filled",
+                    "message": "Trade executed successfully",
+                }
+
+                processor = EnhancedWebhookProcessor()
+                payload = {"action": "buy", "ticker": "BTC/USDT"}
+                processor._process_for_strategy(strategy, payload, synchronous=True)
+
+            log = WebhookLog.query.filter_by(strategy_id=strategy.id).first()
+            assert log is not None
+
+    def test_synchronous_does_not_spawn_background_thread(self, app, regular_user, dummy_cred):
+        """synchronous=True must not call _defer_trade_execution at all."""
+        with app.app_context():
+            from app.models.user import User
+            user = User.query.filter_by(email="testuser@example.com").first()
+            strategy = self._make_strategy(user.id, dummy_cred, "sync-no-defer-test")
+
+            with patch('app.services.webhook_processor.ExchangeService.execute_trade') as mock_trade:
+                mock_trade.return_value = {
+                    "trade_executed": True,
+                    "trade_status": "filled",
+                    "message": "Trade executed successfully",
+                }
+
+                processor = EnhancedWebhookProcessor()
+                deferred_calls = []
+                processor._defer_trade_execution = lambda params: deferred_calls.append(params)
+
+                payload = {"action": "buy", "ticker": "BTC/USDT"}
+                processor._process_for_strategy(strategy, payload, synchronous=True)
+
+            assert deferred_calls == [], "_defer_trade_execution must not be called in synchronous mode"
+
+    def test_synchronous_propagates_trade_failure(self, app, regular_user, dummy_cred):
+        """synchronous=True must surface exchange errors to the caller."""
+        with app.app_context():
+            from app.models.user import User
+            user = User.query.filter_by(email="testuser@example.com").first()
+            strategy = self._make_strategy(user.id, dummy_cred, "sync-fail-test")
+
+            with patch('app.services.webhook_processor.ExchangeService.execute_trade') as mock_trade:
+                mock_trade.side_effect = Exception("Exchange unavailable")
+
+                processor = EnhancedWebhookProcessor()
+                payload = {"action": "buy", "ticker": "BTC/USDT"}
+                result, status_code = processor._process_for_strategy(strategy, payload, synchronous=True)
+
+            assert status_code == 500
+            assert "error" in result.get("message", "").lower() or not result.get("success", True)
+
+
 # Fixtures for the core tests
 @pytest.fixture()
 def dummy_cred(app, regular_user):

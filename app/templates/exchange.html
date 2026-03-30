@@ -1,5 +1,24 @@
 {% extends "base.html" %}
 
+{% macro format_crypto(amount, symbol, price_usd=none) -%}
+    {%- set a = amount | float -%}
+    {%- set s = symbol | upper -%}
+    {%- set stablecoins = ['USDC', 'USDT', 'BUSD', 'DAI', 'TUSD', 'GUSD', 'USDS', 'FDUSD', 'USDP'] -%}
+    {%- if s in stablecoins -%}
+        {%- set usd_val = a -%}
+        {%- if a == 0.0 -%}0.00{%- elif usd_val < 0.01 -%}0*{%- else -%}{{ "{:,.2f}".format(a) }}{%- endif -%}
+    {%- else -%}
+        {%- if a == 0.0 -%}
+            0
+        {%- elif price_usd is not none and price_usd | float > 0 -%}
+            {%- set usd_val = a * (price_usd | float) -%}
+            {%- if usd_val < 0.01 -%}0*{%- else -%}{{ "{:,.8f}".format(a).rstrip('0').rstrip('.') }}{%- endif -%}
+        {%- else -%}
+            {{ "{:,.8f}".format(a).rstrip('0').rstrip('.') }}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
@@ -112,7 +131,10 @@
                                     <strong>{{ asset_balance.asset }}</strong>
                                 </div>
                             </td>
-                            <td class="text-end">{{ asset_balance.get('total', 0)|float }}</td>
+                            {%- set _total = asset_balance.get('total', 0) | float -%}
+                            {%- set _usd = asset_balance.get('usd_value', 0) | float -%}
+                            {%- set _price = (_usd / _total) if _total > 0 else none -%}
+                            <td class="text-end">{{ format_crypto(_total, asset_balance.asset, _price) }}</td>
                             <td class="text-end">
     {% if asset_balance.get('usd_value') is not none %}
         ${{ "{:,.2f}".format(asset_balance.get('usd_value', 0)|float) }}
@@ -120,7 +142,7 @@
         <span class="text-muted">N/A</span>
     {% endif %}
 </td>
-                            <td class="text-end">{{ "{:,.8f}".format(asset_balance.get('unallocated', 0)|float).rstrip('0').rstrip('.') if asset_balance.get('unallocated', 0)|float > 0 else '0' }}</td>
+                            <td class="text-end">{{ format_crypto(asset_balance.get('unallocated', 0), asset_balance.asset, _price) }}</td>
                             <td class="text-end">
     {% if asset_balance.get('unallocated', 0)|float > 0 and asset_balance.get('usd_value') is not none and asset_balance.get('total', 0)|float > 0 %}
         {% set price_per_unit = (asset_balance.get('usd_value', 0)|float) / (asset_balance.get('total', 0)|float) %}
@@ -152,6 +174,9 @@
                         {% endfor %}
                     </tbody>
                 </table>
+            </div>
+            <div class="px-3 pb-2 pt-1">
+                <small class="text-muted">* Amounts shown as 0* are dust-level quantities below the minimum tradeable threshold.</small>
             </div>
             {% else %}
             <div class="text-center p-4">
@@ -205,8 +230,10 @@
                             <tr style="cursor: pointer;" onclick="window.location='{{ url_for('exchange.view_strategy_details', exchange_id=current_exchange_id, strategy_id=strategy.id) }}'">
                                 <td><a href="{{ url_for('exchange.view_strategy_details', exchange_id=current_exchange_id, strategy_id=strategy.id) }}">{{ strategy.name }}</a></td>
                                 <td>{{ strategy.trading_pair }}</td>
-                                <td>{{ (strategy.allocated_base_asset_quantity | float) | round(8) }} {{ strategy.base_asset_symbol }}</td>
-                                <td>{{ (strategy.allocated_quote_asset_quantity | float) | round(8) }} {{ strategy.quote_asset_symbol }}</td>
+                                {%- set _base_price = live_prices.get(strategy.base_asset_symbol | upper) -%}
+                                {%- set _quote_price = live_prices.get(strategy.quote_asset_symbol | upper) -%}
+                                <td>{{ format_crypto(strategy.allocated_base_asset_quantity, strategy.base_asset_symbol, _base_price) }} {{ strategy.base_asset_symbol }}</td>
+                                <td>{{ format_crypto(strategy.allocated_quote_asset_quantity, strategy.quote_asset_symbol, _quote_price) }} {{ strategy.quote_asset_symbol }}</td>
                                 <td>
                                     {% if strategy.latest_value_usd is not none %}
                                          ${{ "{:,.2f}".format(strategy.latest_value_usd | float) }}
@@ -253,6 +280,9 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+                <div class="px-3 pb-2 pt-1">
+                    <small class="text-muted">* Amounts shown as 0* are dust-level quantities below the minimum tradeable threshold.</small>
                 </div>
             {% else %}
                 <div class="p-3">

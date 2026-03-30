@@ -144,6 +144,7 @@ def view_exchange(exchange_id: str):
     # We need 'cred' to exist to fetch strategies. Let's find the credential first.
     
     final_cred = next((c for c in all_creds if c.exchange == exchange_id), None)
+    live_prices: dict = {}
 
     # Fetch trading strategies for the current user and exchange credential
     user_strategies: list[TradingStrategy] = []
@@ -290,6 +291,7 @@ def view_exchange(exchange_id: str):
         strategies_json_data=strategies_json_data,
         main_account_assets_json_data=main_account_assets_json_data,
         current_credential_id=cred.id if cred else None, # Pass JSON-ready strategy data
+        live_prices=live_prices,
         title=f"{current_exchange_display_name} Details"
     )
 

@@ -59,16 +59,22 @@ def test_process_webhook_valid_condition(app, webhook_processor, test_strategy):
     with app.app_context():
         # test_strategy is now just the webhook_id string
         webhook_id = test_strategy
-        
+
         # Re-query the strategy to ensure it's attached to the current session
         strategy = TradingStrategy.query.filter_by(webhook_id=webhook_id).first()
-        
+
         payload = {
             'action': 'buy',
             'trading_pair': 'BTC/USD',  # Use slash format to match strategy
             'amount': 100.0
         }
-        
+
+        # Run deferred execution inline to avoid background threads racing against
+        # other tests over the shared in-memory SQLite connection (StaticPool).
+        from flask import current_app as _ca
+        _app = _ca._get_current_object()
+        webhook_processor._defer_trade_execution = lambda params: webhook_processor._execute_trade_with_context(_app, params)
+
         result, status_code = webhook_processor.process_webhook(webhook_id, payload)
         # The webhook processor should return successfully even if there are trade issues
         assert status_code in [200, 400]  # 200 for success, 400 for expected errors like ticker mismatch
